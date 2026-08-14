@@ -1,0 +1,11 @@
+NEXAMIND CLINICAL - WINDOWS
+
+1. Abre PowerShell dentro de ESTA carpeta.
+2. Confirma que aquí aparece package.json:
+   Get-ChildItem package.json
+3. Ejecuta:
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\setup.ps1
+   .\run.ps1
+
+No vuelvas a escribir "cd nexamind-clinical" si PowerShell ya muestra que estás dentro de esta carpeta.
