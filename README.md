@@ -1,84 +1,158 @@
-# NexaMind Clinical
+# NexaMind Clinical 1.2.0
 
-Prototipo funcional en React para seguimiento farmacoterapéutico psiquiátrico, analíticas longitudinales, alertas y agenda clínica.
+Aplicación React/Vite para demostrar seguimiento longitudinal en psiquiatría, gestión de tratamientos, agenda, recordatorios, recetas membretadas y una vista administrativa con permisos para secretaría.
 
-> Todos los pacientes y resultados son sintéticos. Esta versión es una demostración y no debe almacenar información clínica real.
+> **Datos sintéticos solamente.** Esta versión guarda la información en el navegador (`localStorage`). No debe usarse con pacientes reales hasta conectar Supabase, autenticación, almacenamiento seguro, auditoría y controles legales/operativos.
 
-## Inicio rápido en Windows
+## Instalación rápida en Windows
 
-1. Descomprime el ZIP.
-2. Entra en la carpeta que contiene `package.json`.
-3. Haz clic derecho dentro de la carpeta y abre PowerShell, o navega a ella.
-4. Ejecuta:
+### Opción 1: doble clic
+
+1. Extraiga completamente el ZIP.
+2. Abra la carpeta `NexaMind-Clinical-Completo-v1.2.0`.
+3. Ejecute `INSTALAR-Y-ABRIR.bat`.
+
+El instalador comprueba Node.js, intenta instalar Node.js LTS mediante `winget` cuando hace falta, descarga las dependencias, ejecuta pruebas y genera el build de producción.
+
+### Opción 2: PowerShell
 
 ```powershell
+cd "C:\Users\aleja\Downloads\NexaMind-Clinical-Completo-v1.2.0"
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 .\run.ps1
 ```
 
-El instalador comprobará Node.js y, cuando sea necesario, intentará instalar Node.js LTS mediante `winget`. La aplicación abrirá en `http://localhost:4173`.
-
-## Inicio manual
-
-```powershell
-npm install
-npm run check
-npm run dev
-```
-
-## Estructura
+La aplicación abre en:
 
 ```text
-nexamind-clinical/
-├── AGENTS.md
-├── index.html
-├── package.json
+http://localhost:4173
+```
+
+Después de la primera instalación, basta con ejecutar `ABRIR-NEXAMIND.bat` o `./run.ps1`.
+
+## Funciones incluidas
+
+### Seguimiento clínico
+
+- Dashboard con pacientes prioritarios, agenda y avisos.
+- Registro y edición de pacientes.
+- Fotografía del paciente, optimizada antes de guardarse.
+- Diagnóstico, escala basal y seguimiento longitudinal.
+- Medicamentos activos, dosis, frecuencia, vía e indicación.
+- Aumento o reducción de dosis con historial y motivo.
+- Registro de evolución, adherencia, funcionamiento, sueño y riesgo.
+- Signos vitales, IMC, efectos observados y laboratorios.
+- Línea de tiempo unificada.
+- Analíticas descriptivas de cambio basal frente a valor actual.
+- Lenguaje prudente: cambio observado y asociación temporal, sin afirmar causalidad automática.
+
+### Agenda y recordatorios
+
+- Calendario mensual, semanal y diario.
+- Crear, editar, completar, cancelar o eliminar citas.
+- Recordatorios configurables a 72, 48, 24, 8 o 2 horas.
+- Cola de recordatorios: programado, listo, pendiente o enviado.
+- Mensaje preparado para WhatsApp y registro manual del envío.
+- Exportación `.ics` y apertura de eventos en Google Calendar.
+
+### Clínica, usuarios y documentos
+
+- Paleta profesional: Milk `#FCFDF6`, Ceil `#8FACCB` y Dark Midnight Blue `#05316E`.
+- Logo de clínica y fotografía del médico.
+- Datos profesionales, licencia, contacto y pie de receta.
+- Seguro médico, plan, afiliado, póliza, copago y autorización.
+- Generador de recetas A4 con membrete, múltiples medicamentos, firma y sello.
+- Historial de recetas en el expediente.
+- Usuario de secretaría con vista simplificada.
+- Permisos configurables por función.
+- Selector para probar la vista del médico o de la secretaria.
+- Tutorial inicial guiado y repetible desde Ayuda.
+
+## Archivos principales
+
+```text
+NexaMind-Clinical-Completo-v1.2.0/
+├── INSTALAR-Y-ABRIR.bat
+├── ABRIR-NEXAMIND.bat
 ├── setup.ps1
 ├── run.ps1
-├── vite.config.js
-├── vercel.json
+├── package.json
+├── index.html
 ├── styles.css
 ├── src/
-│   ├── app.js
-│   ├── data.js
-│   └── utils.js
+│   ├── app.js          # Pantallas, formularios, tutorial y navegación
+│   ├── clinical.js     # Operaciones clínicas y agenda
+│   ├── data.js         # Seed sintético y normalización
+│   ├── practice.js     # Clínica, fotos, recetas, recordatorios y permisos
+│   └── utils.js        # Fechas, cálculos y exportaciones
+├── scripts/
+│   └── validate-domain.mjs
 ├── supabase/
 │   ├── schema.sql
 │   ├── seed.sql
-│   └── attach_user.sql
+│   ├── attach_user.sql
+│   └── migrations/
 └── docs/
 ```
 
-## Funciones del prototipo
-
-- Dashboard priorizado.
-- Expediente longitudinal de nueve pacientes ficticios.
-- Escalas PHQ-9, GAD-7, YMRS, ASRS, PANSS, ISI, SDS y Y-BOCS.
-- Cambio basal frente a valor actual.
-- Adherencia, funcionamiento, sueño, biometría y efectos adversos.
-- Alertas clínicas con revisión humana.
-- Calendario mensual, semanal y diario.
-- Creación de citas y persistencia local.
-- Exportación `.ics` y apertura en Google Calendar.
-- Esquema Supabase con RLS y seed sintético.
-
-## Verificación
+## Validación
 
 ```powershell
 npm run check
 ```
 
-Este comando valida los archivos JavaScript y produce el build de Vite.
+El comando realiza:
 
-## Despliegue en Vercel
+1. Revisión de sintaxis de todos los módulos.
+2. Pruebas de dominio con datos ficticios.
+3. Build de producción con Vite.
 
-1. Sube la carpeta a GitHub con `package.json` en la raíz.
-2. Importa el repositorio en Vercel.
-3. Vercel detectará Vite.
-4. Build command: `npm run build`.
-5. Output directory: `dist`.
+También puede usar `VERIFICAR-PROYECTO.bat` después de instalar.
 
-## Codex
+## Reiniciar los datos de demostración
 
-Abre esta carpeta como proyecto en Codex. El archivo `AGENTS.md` contiene las reglas, comandos y límites clínicos del proyecto. Pide cambios pequeños y verificables, y exige `npm run check` antes de aceptar cada tarea.
+Desde la configuración del sistema puede restaurar el seed. También puede borrar el almacenamiento del sitio desde las herramientas del navegador. Esto elimina solamente datos ficticios guardados en ese navegador.
+
+## Publicación en Vercel
+
+```powershell
+npm run check
+npx vercel@latest --prod
+```
+
+Vercel debe usar:
+
+```text
+Build command: npm run build
+Output directory: dist
+```
+
+## GitHub después de verificarlo
+
+Cuando quiera reemplazar el contenido del repositorio con esta versión:
+
+```powershell
+cd "C:\Users\aleja\Downloads\NexaMind-Clinical-Completo-v1.2.0"
+git init
+git branch -M main
+git remote add origin https://github.com/CLinqui7/nexamind-clinical-fixed.git
+git add .
+git commit -m "feat: NexaMind Clinical 1.2.0"
+git push -u origin main --force-with-lease
+```
+
+No ejecute el último comando sin revisar antes `git status`. Si desea conservar el historial remoto sin forzar, clone el repositorio y copie encima estos archivos antes de hacer commit.
+
+## Siguiente fase de producción
+
+La interfaz ya demuestra los flujos, pero la operación clínica real requiere:
+
+- Supabase Auth y MFA.
+- PostgreSQL compartido.
+- Row Level Security.
+- Supabase Storage para fotografías y logos.
+- Usuarios reales y recuperación de acceso.
+- Auditoría de lecturas y cambios.
+- Envío real de recordatorios mediante un proveedor autorizado.
+- Revisión clínica, legal, de privacidad y seguridad.

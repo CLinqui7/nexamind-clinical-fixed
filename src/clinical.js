@@ -20,6 +20,14 @@ function cleanText(value) {
   return String(value ?? '').trim();
 }
 
+function clinicalDateIso(value) {
+  if (!value) return nowIso();
+  const today = new Date();
+  const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  if (value === localToday) return nowIso();
+  return fromDateInput(value);
+}
+
 function sortedByDate(items, field = 'date') {
   return [...items].sort((left, right) => new Date(left[field]) - new Date(right[field]));
 }
@@ -74,9 +82,25 @@ function updateNextVisit(data, patientId) {
 
 export function patientFormDefaults() {
   return {
-    name: '', age: '', sex: 'No registrado', phone: '', email: '',
+    name: '', age: '', sex: 'No registrado', phone: '', email: '', photo: '',
     diagnosis: '', diagnosisCode: '', risk: 'low', status: 'stable',
     scaleCode: 'PHQ-9', initialScore: '', nextVisit: '', notes: '',
+    hasInsurance: false, insuranceProvider: '', insurancePlan: '', insuranceMemberId: '',
+    insurancePolicyNumber: '', insuranceAuthorizationRequired: false, insuranceCopay: '', insuranceNotes: '',
+  };
+}
+
+export function patientEditFormDefaults(patient) {
+  return {
+    name: patient?.name || '', age: patient?.age ?? '', sex: patient?.sex || 'No registrado',
+    phone: patient?.phone || '', email: patient?.email || '', photo: patient?.photo || '',
+    diagnosis: patient?.diagnosis || '', diagnosisCode: patient?.diagnosisCode || '',
+    risk: patient?.risk || 'low', status: patient?.status || 'stable', notes: '',
+    hasInsurance: Boolean(patient?.insurance?.hasInsurance),
+    insuranceProvider: patient?.insurance?.provider || '', insurancePlan: patient?.insurance?.plan || '',
+    insuranceMemberId: patient?.insurance?.memberId || '', insurancePolicyNumber: patient?.insurance?.policyNumber || '',
+    insuranceAuthorizationRequired: Boolean(patient?.insurance?.authorizationRequired),
+    insuranceCopay: patient?.insurance?.copay || '', insuranceNotes: patient?.insurance?.notes || '',
   };
 }
 
@@ -182,6 +206,17 @@ export function createPatient(data, draft) {
     sex: draft.sex || 'No registrado',
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
+    photo: draft.photo || '',
+    insurance: {
+      hasInsurance: Boolean(draft.hasInsurance),
+      provider: cleanText(draft.insuranceProvider),
+      plan: cleanText(draft.insurancePlan),
+      memberId: cleanText(draft.insuranceMemberId),
+      policyNumber: cleanText(draft.insurancePolicyNumber),
+      authorizationRequired: Boolean(draft.insuranceAuthorizationRequired),
+      copay: cleanText(draft.insuranceCopay),
+      notes: cleanText(draft.insuranceNotes),
+    },
     diagnosis,
     diagnosisCode: cleanText(draft.diagnosisCode) || 'Sin código',
     risk: draft.risk || 'low',
@@ -204,6 +239,7 @@ export function createPatient(data, draft) {
     vitals: {},
     adverseEvents: [],
     labs: [],
+    prescriptions: [],
     timeline: [
       { date: timestamp, type: 'context', title: 'Paciente registrado', detail: `Diagnóstico principal: ${diagnosis}.` },
       ...(initialScore === null ? [] : [{ date: timestamp, type: 'assessment', title: `${scale.code}: ${initialScore}`, detail: 'Puntaje inicial registrado.' }]),
@@ -221,6 +257,7 @@ export function createPatient(data, draft) {
         {
           id: uid('appointment'), patientId, title: name, start, end: addMinutes(start, 45),
           type: 'Primera consulta', modality: 'Presencial', status: 'confirmed', notes: 'Cita creada durante el alta del paciente.',
+          reminderLog: [], createdAt: timestamp, updatedAt: timestamp,
         },
       ],
     };
@@ -244,6 +281,17 @@ export function updatePatientProfile(data, patientId, draft) {
     sex: draft.sex || patient.sex,
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
+    photo: draft.photo ?? patient.photo,
+    insurance: draft.hasInsurance === undefined ? patient.insurance : {
+      hasInsurance: Boolean(draft.hasInsurance),
+      provider: cleanText(draft.insuranceProvider),
+      plan: cleanText(draft.insurancePlan),
+      memberId: cleanText(draft.insuranceMemberId),
+      policyNumber: cleanText(draft.insurancePolicyNumber),
+      authorizationRequired: Boolean(draft.insuranceAuthorizationRequired),
+      copay: cleanText(draft.insuranceCopay),
+      notes: cleanText(draft.insuranceNotes),
+    },
     diagnosis,
     diagnosisCode: cleanText(draft.diagnosisCode) || 'Sin código',
     risk: draft.risk || patient.risk,
@@ -260,7 +308,7 @@ export function addMedication(data, patientId, draft) {
   const doseValue = numberOrNull(draft.doseValue);
   if (!name) throw new Error('Escribe el nombre del medicamento.');
   if (doseValue === null || doseValue <= 0) throw new Error('Escribe una dosis mayor que cero.');
-  const date = fromDateInput(draft.startDate);
+  const date = clinicalDateIso(draft.startDate);
   const doseUnit = cleanText(draft.doseUnit) || 'mg';
   const medicationId = uid('medication');
   const medication = {
@@ -314,7 +362,7 @@ export function changeMedicationDose(data, patientId, draft) {
   if (!existing) throw new Error('Selecciona un medicamento activo.');
   const previousValue = numberOrNull(existing.doseValue);
   const unit = cleanText(draft.doseUnit) || existing.doseUnit || 'mg';
-  const effectiveDate = fromDateInput(draft.effectiveDate);
+  const effectiveDate = clinicalDateIso(draft.effectiveDate);
   const reason = cleanText(draft.reason) || 'Ajuste clínico registrado';
   const direction = previousValue === null ? 'Cambio' : newDoseValue > previousValue ? 'Aumento' : newDoseValue < previousValue ? 'Reducción' : 'Confirmación';
   const newDose = `${newDoseValue} ${unit}`;
@@ -385,7 +433,7 @@ export function recordAssessment(data, patientId, draft) {
   if (score === null || score < scale.min || score > scale.max) {
     throw new Error(`${scale.code} admite valores entre ${scale.min} y ${scale.max}.`);
   }
-  const date = fromDateInput(draft.date);
+  const date = clinicalDateIso(draft.date);
   const patient = data.patients.find(item => item.id === patientId);
   const existingScale = patient?.assessments?.find(item => item.code === scale.code);
   const previousPoints = existingScale?.points ? sortedByDate(existingScale.points) : [];
@@ -467,7 +515,7 @@ export function recordAssessment(data, patientId, draft) {
 }
 
 export function recordVitals(data, patientId, draft) {
-  const date = fromDateInput(draft.date);
+  const date = clinicalDateIso(draft.date);
   const weight = numberOrNull(draft.weight);
   const height = numberOrNull(draft.height);
   const systolic = numberOrNull(draft.systolic);
@@ -538,7 +586,7 @@ export function recordVitals(data, patientId, draft) {
 export function recordAdverseEvent(data, patientId, draft) {
   const name = draft.name === 'Otro' ? cleanText(draft.customName) : cleanText(draft.name);
   if (!name) throw new Error('Escribe el efecto observado.');
-  const date = fromDateInput(draft.onset);
+  const date = clinicalDateIso(draft.onset);
   const event = {
     id: uid('adverse'),
     medicationId: draft.medicationId || null,
@@ -604,7 +652,7 @@ export function recordLab(data, patientId, draft) {
   const name = cleanText(draft.name);
   if (!name) throw new Error('Escribe el nombre de la prueba.');
   if (draft.value === '') throw new Error('Escribe el resultado.');
-  const date = fromDateInput(draft.date);
+  const date = clinicalDateIso(draft.date);
   const lab = {
     id: uid('lab'),
     name,
@@ -658,6 +706,9 @@ export function saveAppointment(data, draft) {
     modality: draft.modality || 'Presencial',
     status: draft.status || 'confirmed',
     notes: cleanText(draft.notes),
+    reminderLog: Array.isArray(previousAppointment?.reminderLog) ? previousAppointment.reminderLog : [],
+    createdAt: previousAppointment?.createdAt || nowIso(),
+    updatedAt: nowIso(),
   };
   let next = {
     ...data,

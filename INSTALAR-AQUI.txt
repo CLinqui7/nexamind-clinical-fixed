@@ -1,11 +1,28 @@
-NEXAMIND CLINICAL - WINDOWS
+NEXAMIND CLINICAL 1.2.0 - INSTALACIÓN EN WINDOWS
 
-1. Abre PowerShell dentro de ESTA carpeta.
-2. Confirma que aquí aparece package.json:
-   Get-ChildItem package.json
-3. Ejecuta:
+MÉTODO MÁS FÁCIL
+1. Extraiga completamente el ZIP.
+2. Abra la carpeta "NexaMind-Clinical-Completo-v1.2.0".
+3. Haga doble clic en: INSTALAR-Y-ABRIR.bat
+4. Si Windows muestra una advertencia, elija "Más información" > "Ejecutar de todas formas" solamente si el ZIP fue descargado desde esta conversación.
+5. La primera instalación puede tardar unos minutos porque descarga React y Vite.
+
+MÉTODO CON POWERSHELL
+1. Abra PowerShell dentro de esta carpeta.
+2. Ejecute:
+
    Set-ExecutionPolicy -Scope Process Bypass
    .\setup.ps1
    .\run.ps1
 
-No vuelvas a escribir "cd nexamind-clinical" si PowerShell ya muestra que estás dentro de esta carpeta.
+URL LOCAL
+http://localhost:4173
+
+PARA VOLVER A ABRIRLO DESPUÉS
+No repita la instalación. Haga doble clic en ABRIR-NEXAMIND.bat o ejecute .\run.ps1.
+
+SI EL INSTALADOR ACABA DE INSTALAR NODE.JS
+Cierre PowerShell, ábralo otra vez, regrese a esta carpeta y ejecute .\setup.ps1 de nuevo.
+
+IMPORTANTE
+Esta versión usa datos sintéticos y guarda cambios en el navegador. No use información real de pacientes hasta conectar Supabase, autenticación, permisos y almacenamiento seguro.

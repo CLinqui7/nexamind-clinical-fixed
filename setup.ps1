@@ -1,52 +1,104 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
+Set-Location -LiteralPath $PSScriptRoot
 
-Write-Host "`nNexaMind Clinical | Instalación automática" -ForegroundColor Magenta
-Write-Host "Directorio: $PSScriptRoot`n"
-Set-Location $PSScriptRoot
+function Test-Tool {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
+}
 
-function Test-Command($name) {
-  return [bool](Get-Command $name -ErrorAction SilentlyContinue)
+function Refresh-ProcessPath {
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath"
 }
 
 function Install-NodeLts {
-  if (-not (Test-Command "winget")) {
-    throw "No encontré winget. Instala Node.js LTS desde nodejs.org, abre una nueva terminal y vuelve a ejecutar .\setup.ps1."
-  }
+    if (-not (Test-Tool -Name "winget")) {
+        throw "Node.js is missing and winget is not available. Install Node.js LTS from https://nodejs.org, reopen PowerShell, and run setup.ps1 again."
+    }
 
-  Write-Host "Instalando o actualizando Node.js LTS con winget..." -ForegroundColor Cyan
-  winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements
-  Write-Host "Node.js LTS fue instalado o actualizado." -ForegroundColor Green
-  Write-Host "Cierra PowerShell, ábrelo de nuevo y ejecuta .\setup.ps1 otra vez para refrescar PATH." -ForegroundColor Yellow
-  exit 0
+    Write-Host "" 
+    Write-Host "Installing or updating Node.js LTS with winget..." -ForegroundColor Cyan
+    & winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements --silent
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget could not install Node.js LTS. Install it from https://nodejs.org and run setup.ps1 again."
+    }
+
+    Refresh-ProcessPath
+
+    if (-not (Test-Tool -Name "node") -or -not (Test-Tool -Name "npm.cmd")) {
+        Write-Host "" 
+        Write-Host "Node.js was installed, but Windows must refresh PATH." -ForegroundColor Yellow
+        Write-Host "Close this window, open it again, and run the installer one more time." -ForegroundColor Yellow
+        exit 20
+    }
 }
 
-if (-not (Test-Command "node")) {
-  Write-Host "Node.js no está instalado." -ForegroundColor Yellow
-  Install-NodeLts
+function Get-NodeVersion {
+    $raw = (& node -p "process.versions.node").Trim()
+    try {
+        return [version]$raw
+    }
+    catch {
+        throw "Could not read the installed Node.js version: $raw"
+    }
 }
 
-$nodeParts = (node -v).TrimStart('v').Split('.')
-$nodeMajor = [int]$nodeParts[0]
-$nodeMinor = [int]$nodeParts[1]
-$nodeCompatible = ($nodeMajor -gt 22) -or (($nodeMajor -eq 22) -and ($nodeMinor -ge 12)) -or (($nodeMajor -eq 20) -and ($nodeMinor -ge 19))
-
-if (-not $nodeCompatible) {
-  Write-Host "La versión $(node -v) no cumple el requisito actual de Vite." -ForegroundColor Yellow
-  Install-NodeLts
+function Test-SupportedNode {
+    param([Parameter(Mandatory = $true)][version]$Version)
+    return ($Version.Major -gt 22) -or (($Version.Major -eq 22) -and ($Version.Minor -ge 12)) -or (($Version.Major -eq 20) -and ($Version.Minor -ge 19))
 }
 
-Write-Host "Node: $(node -v)" -ForegroundColor Green
-Write-Host "npm:  $(npm -v)" -ForegroundColor Green
+Write-Host "" 
+Write-Host "==================================================" -ForegroundColor DarkBlue
+Write-Host "  NexaMind Clinical 1.2.1 | Windows setup" -ForegroundColor Blue
+Write-Host "==================================================" -ForegroundColor DarkBlue
+Write-Host "Project folder: $PSScriptRoot"
 
-if (-not (Test-Path "package.json")) {
-  throw "No encuentro package.json. Estás en la carpeta incorrecta o usas el ZIP anterior incompleto."
+if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "package.json"))) {
+    throw "package.json was not found. Run this installer from the extracted NexaMind Clinical folder."
 }
 
-Write-Host "`nInstalando dependencias..." -ForegroundColor Cyan
-npm install
+if (-not (Test-Tool -Name "node") -or -not (Test-Tool -Name "npm.cmd")) {
+    Install-NodeLts
+}
 
-Write-Host "`nValidando código y generando build..." -ForegroundColor Cyan
-npm run check
+$nodeVersion = Get-NodeVersion
+if (-not (Test-SupportedNode -Version $nodeVersion)) {
+    Write-Host "Detected Node.js version: $nodeVersion" -ForegroundColor Yellow
+    Install-NodeLts
+    $nodeVersion = Get-NodeVersion
 
-Write-Host "`nInstalación completada." -ForegroundColor Green
-Write-Host "Ahora ejecuta: .\run.ps1" -ForegroundColor White
+    if (-not (Test-SupportedNode -Version $nodeVersion)) {
+        throw "This project requires Node.js 20.19+, 22.12+, or a newer supported version."
+    }
+}
+
+$npmCommand = (Get-Command "npm.cmd" -ErrorAction Stop).Source
+$npmVersion = (& $npmCommand --version).Trim()
+
+Write-Host "" 
+Write-Host "Node: v$nodeVersion" -ForegroundColor Green
+Write-Host "npm:  $npmVersion" -ForegroundColor Green
+
+Write-Host "" 
+Write-Host "Installing project dependencies..." -ForegroundColor Cyan
+& $npmCommand install --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) {
+    throw "npm install failed with exit code $LASTEXITCODE. Review the message above."
+}
+
+Write-Host "" 
+Write-Host "Running syntax checks, tests, and production build..." -ForegroundColor Cyan
+& $npmCommand run check
+if ($LASTEXITCODE -ne 0) {
+    throw "npm run check failed with exit code $LASTEXITCODE. Review the message above."
+}
+
+Write-Host "" 
+Write-Host "==================================================" -ForegroundColor DarkGreen
+Write-Host "  INSTALLATION COMPLETED" -ForegroundColor Green
+Write-Host "==================================================" -ForegroundColor DarkGreen
+Write-Host "Run the application with:" -ForegroundColor White
+Write-Host "  .\run.ps1" -ForegroundColor Yellow
+Write-Host "You can also double-click ABRIR-NEXAMIND.bat." -ForegroundColor DarkGray

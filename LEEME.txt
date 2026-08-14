@@ -1,0 +1,2 @@
+Copy these files into the existing NexaMind-Clinical-Completo-v1.2.0 folder and replace the old files.
+Then run INSTALAR-SIN-POWERSHELL.cmd or setup.ps1.

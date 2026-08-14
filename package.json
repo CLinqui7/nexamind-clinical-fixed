@@ -1,14 +1,17 @@
 {
   "name": "nexamind-clinical",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
-  "description": "Prototipo React de seguimiento farmacoterapéutico y agenda clínica para psiquiatría.",
+  "description": "NexaMind Clinical: seguimiento psiquiátrico, agenda, recetas, recordatorios, identidad de clínica y permisos por rol.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 4173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check": "node --check src/app.js && node --check src/data.js && node --check src/utils.js && vite build"
+    "check:syntax": "node --check src/app.js && node --check src/data.js && node --check src/utils.js && node --check src/clinical.js && node --check src/practice.js && node --check vite.config.js",
+    "check:domain": "node scripts/validate-domain.mjs",
+    "check": "npm run check:syntax && npm run check:release && npm run check:domain && vite build",
+    "check:release": "node scripts/validate-release.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -19,6 +22,6 @@
     "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "vite": "^7.0.0"
+    "vite": "7.3.6"
   }
 }

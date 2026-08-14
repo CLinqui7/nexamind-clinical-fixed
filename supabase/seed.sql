@@ -1,7 +1,14 @@
 -- Synthetic demo seed. Do not use these records as clinical examples or treatment guidance.
 
-insert into public.organizations (id,name,slug,timezone,is_demo) values
-('10000000-0000-0000-0000-000000000001','NexaMind Demo Clinic','nexamind-demo','America/El_Salvador',true)
+insert into public.organizations (
+  id,name,slug,timezone,is_demo,clinician_name,specialty,professional_license,
+  address,phone,email,prescription_footer,reminder_hours,reminder_channels
+) values (
+  '10000000-0000-0000-0000-000000000001','NexaMind Demo Clinic','nexamind-demo','America/El_Salvador',true,
+  'Dra. Adriana Salazar','Psiquiatría','JVPM DEMO-001','San Salvador, El Salvador',
+  '+503 2200 0000','demo@nexamind.local','Documento sintético para demostración; requiere revisión, firma y sello.',
+  array[24,8],array['whatsapp']
+)
 on conflict (id) do nothing;
 
 insert into public.scale_definitions (id,code,name,domain,minimum_score,maximum_score,direction,response_threshold_percent,remission_threshold,version,license_notes) values
@@ -37,6 +44,14 @@ insert into public.patients (id,organization_id,medical_record_number,first_name
 ('20000000-0000-0000-0000-000000000008','10000000-0000-0000-0000-000000000001','NM-0008','Sofía','Campos','1968-03-10','F','+503 7741 5202','medium','{"demo_status":"review"}'),
 ('20000000-0000-0000-0000-000000000009','10000000-0000-0000-0000-000000000001','NM-0009','Javier','Sol','1990-06-29','M','+503 7355 0099','low','{"demo_status":"partial"}')
 on conflict (id) do nothing;
+
+update public.patients
+set insurance = '{"has_insurance":true,"provider":"Seguro Salud Demo","plan":"Plan Ejecutivo","member_id":"SV-DEMO-001","authorization_required":false,"copay":"US$20"}'::jsonb
+where id = '20000000-0000-0000-0000-000000000001';
+
+update public.patients
+set insurance = '{"has_insurance":true,"provider":"Cobertura Médica Demo","plan":"Plan Familiar","member_id":"SV-DEMO-004","authorization_required":true,"copay":"US$15"}'::jsonb
+where id = '20000000-0000-0000-0000-000000000004';
 
 insert into public.patient_diagnoses (organization_id,patient_id,diagnosis_code,diagnosis_name,primary_diagnosis,diagnosed_at) values
 ('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','F33.1','Trastorno depresivo mayor',true,current_date-interval '2 years'),

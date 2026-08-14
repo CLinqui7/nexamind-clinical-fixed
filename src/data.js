@@ -52,6 +52,7 @@ export function createSeedData() {
   const patients = [
     {
       id: 'p1', initials: 'VM', name: 'Valeria Moreno', age: 34, sex: 'F', phone: '+503 7001 2041',
+      photo: '', insurance: { hasInsurance: true, provider: 'Seguro Centroamericano', plan: 'Plan Médico Ejecutivo', memberId: 'SC-204184', policyNumber: 'POL-83041', authorizationRequired: false, copay: 'US$20', notes: 'Verificar vigencia en cada trimestre.' },
       diagnosis: 'Trastorno depresivo mayor', diagnosisCode: 'F33.1', risk: 'low', status: 'responding',
       clinician: 'Dra. Adriana Salazar', lastVisit: isoDate(-14), nextVisit: isoDate(0, 10, 30),
       medication: { id: 'm1', name: 'Sertralina', dose: '100 mg', frequency: 'cada mañana', startDate: isoDate(-84), indication: 'Depresión', class: 'ISRS' },
@@ -109,6 +110,7 @@ export function createSeedData() {
     },
     {
       id: 'p4', initials: 'DF', name: 'Daniela Flores', age: 38, sex: 'F', phone: '+503 7280 1914',
+      photo: '', insurance: { hasInsurance: true, provider: 'Salud Integral', plan: 'Cobertura Plus', memberId: 'SI-882030', policyNumber: 'P-190244', authorizationRequired: true, copay: 'US$15', notes: 'Solicitar autorización para controles prolongados.' },
       diagnosis: 'Esquizofrenia', diagnosisCode: 'F20.0', risk: 'medium', status: 'review',
       clinician: 'Dra. Adriana Salazar', lastVisit: isoDate(-12), nextVisit: isoDate(4, 11, 30),
       medication: { id: 'm4', name: 'Risperidona', dose: '4 mg', frequency: 'por la noche', startDate: isoDate(-120), indication: 'Síntomas psicóticos', class: 'Antipsicótico' },
@@ -234,12 +236,28 @@ export function createSeedData() {
   ];
 
   return normalizeData({
-    version: 2,
-    organization: { name: 'NexaMind Clinical', clinician: 'Dra. Adriana Salazar', specialty: 'Psiquiatría' },
+    version: 3,
+    organization: {
+      name: 'NexaMind Clinical',
+      clinician: 'Dra. Adriana Salazar',
+      specialty: 'Psiquiatría',
+      professionalLicense: 'JVPM 00000',
+      address: 'San Salvador, El Salvador',
+      phone: '+503 2200 0000',
+      email: 'citas@nexamind.demo',
+      website: '',
+      clinicLogo: '',
+      doctorPhoto: '',
+      prescriptionFooter: 'Documento emitido para revisión, firma y sello del profesional tratante.',
+    },
+    users: [
+      { id: 'user_doctor_1', name: 'Dra. Adriana Salazar', email: 'doctora@nexamind.demo', phone: '+503 2200 0000', title: 'Psiquiatra', role: 'doctor', active: true, avatar: '', permissions: {}, createdAt: new Date().toISOString() },
+      { id: 'user_secretary_1', name: 'María Torres', email: 'secretaria@nexamind.demo', phone: '+503 7000 1111', title: 'Secretaría clínica', role: 'secretary', active: true, avatar: '', permissions: { patientsView: true, patientsCreate: true, patientsEdit: true, appointmentsManage: true, remindersManage: true, clinicalView: false, clinicalEdit: false, medicationsManage: false, prescriptionsCreate: false, alertsView: false, analyticsView: false, exportsManage: false, settingsManage: false, usersManage: false }, createdAt: new Date().toISOString() },
+    ],
     patients,
     appointments,
     alerts,
-    settings: { theme: 'light', googleConnected: false, demoMode: true },
+    settings: { theme: 'light', googleConnected: false, demoMode: true, activeUserId: 'user_doctor_1', reminderHours: [24, 8], reminderChannels: ['whatsapp'], palette: { milk: '#FCFDF6', ceil: '#8FACCB', midnight: '#05316E' } },
   });
 }
 
@@ -323,6 +341,17 @@ export function normalizePatient(patient = {}) {
     sex: patient.sex || 'No registrado',
     phone: patient.phone || '',
     email: patient.email || '',
+    photo: patient.photo || '',
+    insurance: {
+      hasInsurance: Boolean(patient.insurance?.hasInsurance),
+      provider: patient.insurance?.provider || '',
+      plan: patient.insurance?.plan || '',
+      memberId: patient.insurance?.memberId || '',
+      policyNumber: patient.insurance?.policyNumber || '',
+      authorizationRequired: Boolean(patient.insurance?.authorizationRequired),
+      copay: patient.insurance?.copay || '',
+      notes: patient.insurance?.notes || '',
+    },
     diagnosis: patient.diagnosis || 'Diagnóstico pendiente',
     diagnosisCode: patient.diagnosisCode || 'Sin código',
     risk: patient.risk || 'low',
@@ -351,28 +380,65 @@ export function normalizePatient(patient = {}) {
     followUps: Array.isArray(patient.followUps) ? patient.followUps : [],
     archived: Boolean(patient.archived),
     notes: Array.isArray(patient.notes) ? patient.notes : [],
+    prescriptions: Array.isArray(patient.prescriptions) ? patient.prescriptions.map((item, index) => ({ ...item, id: item.id || `rx_${patient.id}_${index}`, items: Array.isArray(item.items) ? item.items : [] })) : [],
     createdAt: patient.createdAt || patient.lastVisit || new Date().toISOString(),
     updatedAt: patient.updatedAt || new Date().toISOString(),
   };
 }
 
 export function normalizeData(input = {}) {
+  const defaultDoctor = {
+    id: 'user_doctor_1', name: input.organization?.clinician || 'Dra. Adriana Salazar',
+    email: 'doctora@nexamind.demo', phone: '', title: input.organization?.specialty || 'Psiquiatría',
+    role: 'doctor', active: true, avatar: input.organization?.doctorPhoto || '', permissions: {}, createdAt: new Date().toISOString(),
+  };
+  const users = Array.isArray(input.users) && input.users.length
+    ? input.users.map((user, index) => ({
+        id: user.id || `user_${index}_${Date.now()}`,
+        name: user.name || (user.role === 'doctor' ? defaultDoctor.name : 'Usuario'),
+        email: user.email || '', phone: user.phone || '', title: user.title || '',
+        role: user.role || 'secretary', active: user.active !== false, avatar: user.avatar || '',
+        permissions: user.permissions && typeof user.permissions === 'object' ? { ...user.permissions } : {},
+        createdAt: user.createdAt || new Date().toISOString(), updatedAt: user.updatedAt || null,
+      }))
+    : [defaultDoctor];
+  const doctor = users.find(user => user.role === 'doctor') || defaultDoctor;
   return {
-    version: 2,
+    version: 3,
     organization: {
       name: input.organization?.name || 'NexaMind Clinical',
-      clinician: input.organization?.clinician || 'Dra. Adriana Salazar',
-      specialty: input.organization?.specialty || 'Psiquiatría',
+      clinician: input.organization?.clinician || doctor.name || 'Dra. Adriana Salazar',
+      specialty: input.organization?.specialty || doctor.title || 'Psiquiatría',
+      professionalLicense: input.organization?.professionalLicense || '',
+      address: input.organization?.address || '',
+      phone: input.organization?.phone || '',
+      email: input.organization?.email || '',
+      website: input.organization?.website || '',
+      clinicLogo: input.organization?.clinicLogo || '',
+      doctorPhoto: input.organization?.doctorPhoto || doctor.avatar || '',
+      prescriptionFooter: input.organization?.prescriptionFooter || 'Documento emitido para revisión, firma y sello del profesional tratante.',
+      updatedAt: input.organization?.updatedAt || null,
     },
+    users,
     patients: Array.isArray(input.patients) ? input.patients.map(normalizePatient) : [],
-    appointments: Array.isArray(input.appointments) ? input.appointments.map(item => ({ ...item })) : [],
+    appointments: Array.isArray(input.appointments) ? input.appointments.map(item => ({ ...item, reminderLog: Array.isArray(item.reminderLog) ? item.reminderLog : [] })) : [],
     alerts: Array.isArray(input.alerts) ? input.alerts.map(item => ({ ...item })) : [],
     settings: {
-      theme: 'light', googleConnected: false, demoMode: true,
+      ...(input.settings || {}),
+      theme: input.settings?.theme || 'light',
+      googleConnected: Boolean(input.settings?.googleConnected),
+      demoMode: input.settings?.demoMode ?? true,
       simpleMode: input.settings?.simpleMode ?? true,
       largeText: input.settings?.largeText ?? false,
       reducedMotion: input.settings?.reducedMotion ?? false,
-      ...input.settings,
+      activeUserId: input.settings?.activeUserId || doctor.id,
+      reminderHours: Array.isArray(input.settings?.reminderHours) && input.settings.reminderHours.length
+        ? [...new Set(input.settings.reminderHours.map(Number).filter(value => Number.isFinite(value) && value > 0))]
+        : [24, 8],
+      reminderChannels: Array.isArray(input.settings?.reminderChannels) && input.settings.reminderChannels.length
+        ? [...new Set(input.settings.reminderChannels.map(value => String(value).trim()).filter(Boolean))]
+        : ['whatsapp'],
+      palette: { milk: '#FCFDF6', ceil: '#8FACCB', midnight: '#05316E', ...(input.settings?.palette || {}) },
     },
   };
 }

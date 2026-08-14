@@ -4,7 +4,7 @@
 
 create extension if not exists pgcrypto;
 
-create type public.member_role as enum ('owner','psychiatrist','clinical_assistant','read_only');
+create type public.member_role as enum ('owner','psychiatrist','secretary','clinical_assistant','read_only');
 create type public.patient_status as enum ('active','inactive','discharged');
 create type public.medication_status as enum ('active','held','stopped','completed');
 create type public.appointment_status as enum ('pending','confirmed','completed','cancelled','no_show');
