@@ -1,15 +1,14 @@
-# Preparación de Supabase
+Ejecute en SQL Editor:
+1. schema.sql
+2. seed.sql (opcional para demo)
+3. migrations/20260814_v1_2_practice_features.sql
+4. migrations/20260821_v1_3_payments.sql
 
-La aplicación local todavía no ejecuta estas consultas. Los archivos preparan la siguiente fase multiusuario.
+Variables en Vercel:
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+VITE_WOMPI_PUBLIC_KEY
+VITE_WOMPI_CHECKOUT_URL
+VITE_WOMPI_REDIRECT_URL
 
-Orden sugerido en un proyecto Supabase nuevo:
-
-1. `schema.sql`
-2. `migrations/20260814_v1_2_practice_features.sql`
-3. `seed.sql` solamente en un entorno de demostración
-4. Crear usuarios en Supabase Auth
-5. Ejecutar `attach_user.sql` con los identificadores correctos
-
-Antes de datos reales deben configurarse MFA, RLS, Storage privado, auditoría, backups, retención y revisión legal.
-
-No coloque la clave `service_role` en variables `VITE_*` ni en el navegador.
+La interfaz todavía conserva almacenamiento local como fallback. Para datos reales, conecte CRUD/Auth/Storage/RLS antes de introducir información clínica real.

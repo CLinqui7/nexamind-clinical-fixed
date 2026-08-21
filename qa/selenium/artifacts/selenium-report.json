@@ -1,0 +1,38 @@
+{
+  "baseUrl": "http://127.0.0.1:4173",
+  "checks": [
+    {
+      "name": "Login médico y rechazo de contraseña incorrecta",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Tutorial guiado, seguro y spotlight exacto",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Tutorial móvil sin pantalla blanca y dentro del viewport",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Fotografía localizada y panel de ayuda arrastrable",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Login de secretaría y vista restringida",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Recorrido completo sin objetivos perdidos",
+      "status": "FAIL",
+      "detail": "886.5 not less than or equal to 851"
+    }
+  ],
+  "passed": 5,
+  "failed": 1,
+  "generatedAt": "2026-08-17T18:16:14"
+}

@@ -1,3 +1,5 @@
+const defaultClinicLogo = '/assets/linkare-logo.jpg';
+const runtimeEnv = import.meta.env ?? {};
 const DAY = 24 * 60 * 60 * 1000;
 
 export const SCALE_CATALOG = [
@@ -238,25 +240,44 @@ export function createSeedData() {
   return normalizeData({
     version: 3,
     organization: {
-      name: 'NexaMind Clinical',
+      name: 'Linkare',
       clinician: 'Dra. Adriana Salazar',
       specialty: 'Psiquiatría',
       professionalLicense: 'JVPM 00000',
       address: 'San Salvador, El Salvador',
       phone: '+503 2200 0000',
-      email: 'citas@nexamind.demo',
+      email: 'citas@linkare.demo',
       website: '',
-      clinicLogo: '',
+      clinicLogo: defaultClinicLogo,
       doctorPhoto: '',
       prescriptionFooter: 'Documento emitido para revisión, firma y sello del profesional tratante.',
     },
     users: [
-      { id: 'user_doctor_1', name: 'Dra. Adriana Salazar', email: 'doctora@nexamind.demo', phone: '+503 2200 0000', title: 'Psiquiatra', role: 'doctor', active: true, avatar: '', permissions: {}, createdAt: new Date().toISOString() },
-      { id: 'user_secretary_1', name: 'María Torres', email: 'secretaria@nexamind.demo', phone: '+503 7000 1111', title: 'Secretaría clínica', role: 'secretary', active: true, avatar: '', permissions: { patientsView: true, patientsCreate: true, patientsEdit: true, appointmentsManage: true, remindersManage: true, clinicalView: false, clinicalEdit: false, medicationsManage: false, prescriptionsCreate: false, alertsView: false, analyticsView: false, exportsManage: false, settingsManage: false, usersManage: false }, createdAt: new Date().toISOString() },
+      { id: 'user_doctor_1', name: 'Dra. Adriana Salazar', email: 'doctora@nexamind.demo', password: 'NexaMind2026!', phone: '+503 2200 0000', title: 'Psiquiatra', role: 'doctor', active: true, avatar: '', permissions: {}, createdAt: new Date().toISOString() },
+      { id: 'user_secretary_1', name: 'María Torres', email: 'secretaria@nexamind.demo', password: 'Agenda2026!', phone: '+503 7000 1111', title: 'Secretaría clínica', role: 'secretary', active: true, avatar: '', permissions: { patientsView: true, patientsCreate: true, patientsEdit: true, appointmentsManage: true, remindersManage: true, clinicalView: false, clinicalEdit: false, medicationsManage: false, prescriptionsCreate: false, alertsView: false, analyticsView: false, exportsManage: false, settingsManage: false, usersManage: false }, createdAt: new Date().toISOString() },
     ],
     patients,
     appointments,
     alerts,
+    billing: {
+      consultationFee: 45,
+      followupFee: 35,
+      currency: 'USD',
+      wompiEnabled: Boolean(runtimeEnv.VITE_WOMPI_CHECKOUT_URL),
+      wompiPublicKey: runtimeEnv.VITE_WOMPI_PUBLIC_KEY || '',
+      wompiCheckoutUrl: runtimeEnv.VITE_WOMPI_CHECKOUT_URL || '',
+      wompiRedirectUrl: runtimeEnv.VITE_WOMPI_REDIRECT_URL || '',
+      transferEnabled: true,
+      transferInstructions: 'Banco Agrícola · Cuenta 000-000000-0 · Enviar comprobante por WhatsApp.',
+      cashEnabled: true,
+      insuranceEnabled: true,
+      note: 'Para cobro real por tarjeta se requiere backend, webhook y verificación del pago.',
+    },
+    payments: [
+      { id: 'pay_1', patientId: 'p1', appointmentId: 'a1', description: 'Consulta de control', amount: 45, method: 'wompi', status: 'pending', createdAt: isoDate(-1, 9, 0) },
+      { id: 'pay_2', patientId: 'p3', appointmentId: 'a2', description: 'Primera consulta', amount: 55, method: 'transfer', status: 'paid', createdAt: isoDate(-3, 12, 30) },
+      { id: 'pay_3', patientId: 'p5', appointmentId: 'a3', description: 'Seguimiento', amount: 35, method: 'cash', status: 'paid', createdAt: isoDate(-6, 11, 15) },
+    ],
     settings: { theme: 'light', googleConnected: false, demoMode: true, activeUserId: 'user_doctor_1', reminderHours: [24, 8], reminderChannels: ['whatsapp'], palette: { milk: '#FCFDF6', ceil: '#8FACCB', midnight: '#05316E' } },
   });
 }
@@ -389,14 +410,14 @@ export function normalizePatient(patient = {}) {
 export function normalizeData(input = {}) {
   const defaultDoctor = {
     id: 'user_doctor_1', name: input.organization?.clinician || 'Dra. Adriana Salazar',
-    email: 'doctora@nexamind.demo', phone: '', title: input.organization?.specialty || 'Psiquiatría',
+    email: 'doctora@nexamind.demo', password: 'NexaMind2026!', phone: '', title: input.organization?.specialty || 'Psiquiatría',
     role: 'doctor', active: true, avatar: input.organization?.doctorPhoto || '', permissions: {}, createdAt: new Date().toISOString(),
   };
   const users = Array.isArray(input.users) && input.users.length
     ? input.users.map((user, index) => ({
         id: user.id || `user_${index}_${Date.now()}`,
         name: user.name || (user.role === 'doctor' ? defaultDoctor.name : 'Usuario'),
-        email: user.email || '', phone: user.phone || '', title: user.title || '',
+        email: user.email || '', password: user.password || (user.role === 'doctor' ? 'NexaMind2026!' : 'Agenda2026!'), phone: user.phone || '', title: user.title || '',
         role: user.role || 'secretary', active: user.active !== false, avatar: user.avatar || '',
         permissions: user.permissions && typeof user.permissions === 'object' ? { ...user.permissions } : {},
         createdAt: user.createdAt || new Date().toISOString(), updatedAt: user.updatedAt || null,
@@ -406,7 +427,7 @@ export function normalizeData(input = {}) {
   return {
     version: 3,
     organization: {
-      name: input.organization?.name || 'NexaMind Clinical',
+      name: input.organization?.name || 'Linkare',
       clinician: input.organization?.clinician || doctor.name || 'Dra. Adriana Salazar',
       specialty: input.organization?.specialty || doctor.title || 'Psiquiatría',
       professionalLicense: input.organization?.professionalLicense || '',
@@ -414,7 +435,7 @@ export function normalizeData(input = {}) {
       phone: input.organization?.phone || '',
       email: input.organization?.email || '',
       website: input.organization?.website || '',
-      clinicLogo: input.organization?.clinicLogo || '',
+      clinicLogo: input.organization?.clinicLogo || defaultClinicLogo,
       doctorPhoto: input.organization?.doctorPhoto || doctor.avatar || '',
       prescriptionFooter: input.organization?.prescriptionFooter || 'Documento emitido para revisión, firma y sello del profesional tratante.',
       updatedAt: input.organization?.updatedAt || null,
@@ -423,11 +444,27 @@ export function normalizeData(input = {}) {
     patients: Array.isArray(input.patients) ? input.patients.map(normalizePatient) : [],
     appointments: Array.isArray(input.appointments) ? input.appointments.map(item => ({ ...item, reminderLog: Array.isArray(item.reminderLog) ? item.reminderLog : [] })) : [],
     alerts: Array.isArray(input.alerts) ? input.alerts.map(item => ({ ...item })) : [],
+    billing: {
+      consultationFee: Number(input.billing?.consultationFee) || 45,
+      followupFee: Number(input.billing?.followupFee) || 35,
+      currency: input.billing?.currency || 'USD',
+      wompiEnabled: Boolean(input.billing?.wompiEnabled || runtimeEnv.VITE_WOMPI_CHECKOUT_URL),
+      wompiPublicKey: input.billing?.wompiPublicKey || runtimeEnv.VITE_WOMPI_PUBLIC_KEY || '',
+      wompiCheckoutUrl: input.billing?.wompiCheckoutUrl || runtimeEnv.VITE_WOMPI_CHECKOUT_URL || '',
+      wompiRedirectUrl: input.billing?.wompiRedirectUrl || runtimeEnv.VITE_WOMPI_REDIRECT_URL || '',
+      transferEnabled: input.billing?.transferEnabled !== false,
+      transferInstructions: input.billing?.transferInstructions || 'Banco Agrícola · Cuenta 000-000000-0 · Enviar comprobante por WhatsApp.',
+      cashEnabled: input.billing?.cashEnabled !== false,
+      insuranceEnabled: input.billing?.insuranceEnabled !== false,
+      note: input.billing?.note || 'Para cobro real por tarjeta se requiere backend, webhook y verificación del pago.',
+    },
+    payments: Array.isArray(input.payments) ? input.payments.map(item => ({ ...item })) : [],
     settings: {
       ...(input.settings || {}),
       theme: input.settings?.theme || 'light',
       googleConnected: Boolean(input.settings?.googleConnected),
       demoMode: input.settings?.demoMode ?? true,
+      requireLogin: input.settings?.requireLogin ?? true,
       simpleMode: input.settings?.simpleMode ?? true,
       largeText: input.settings?.largeText ?? false,
       reducedMotion: input.settings?.reducedMotion ?? false,

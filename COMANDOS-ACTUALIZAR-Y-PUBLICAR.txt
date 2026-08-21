@@ -1,0 +1,31 @@
+RUTA DEL PROYECTO
+C:\Users\aleja\Downloads\NexaMind-Clinical-Completo-v1.2.0
+
+DESPUÉS DE APLICAR EL PATCH
+cd "C:\Users\aleja\Downloads\NexaMind-Clinical-Completo-v1.2.0"
+npm run dev
+
+VALIDAR
+npm run check
+
+SELENIUM OPCIONAL
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\qa\selenium\RUN-SELENIUM-QA.ps1" -Headed
+
+GIT + VERCEL
+git status
+git add .
+git commit -m "feat: Linkare, tutorial estable, cobros y Wompi"
+git push origin main
+
+VARIABLES DE VERCEL
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_WOMPI_PUBLIC_KEY=...
+VITE_WOMPI_CHECKOUT_URL=...
+VITE_WOMPI_REDIRECT_URL=...
+
+SUPABASE SQL EDITOR
+1. supabase/schema.sql
+2. supabase/seed.sql (opcional)
+3. supabase/migrations/20260814_v1_2_practice_features.sql
+4. supabase/migrations/20260821_v1_3_payments.sql
