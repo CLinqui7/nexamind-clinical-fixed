@@ -1,0 +1,34 @@
+1. SQL EDITOR DE SUPABASE
+Pegue todo el contenido de:
+supabase\SQL-EDITOR-PRODUCCION.sql
+
+NO EJECUTE supabase\seed.sql EN PRODUCCIÓN.
+
+2. VERCEL ENVIRONMENT VARIABLES
+VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+VITE_SUPABASE_ANON_KEY=TU_ANON_O_PUBLISHABLE_KEY
+
+3. WOMPI / SUPABASE EDGE FUNCTION SECRETS
+WOMPI_CLIENT_ID=APP_ID_DE_WOMPI
+WOMPI_CLIENT_SECRET=API_SECRET_DE_WOMPI
+WOMPI_AUTH_URL=https://id.wompi.sv/connect/token
+WOMPI_API_URL=https://api.wompi.sv
+WOMPI_AUDIENCE=wompi_api
+APP_PUBLIC_URL=https://nexamind-clinical.vercel.app
+WOMPI_NOTIFICATION_EMAIL=TU_CORREO
+LINKARE_ADMIN_KEY=UNA_CLAVE_LARGA_PRIVADA
+LINKARE_BILLING_ACCOUNT_SLUG=consultorio-demo
+WOMPI_REQUIRE_AUTH=false
+
+4. DESPLEGAR EDGE FUNCTIONS
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\supabase\DEPLOY-WOMPI.ps1" -PublicUrl "https://nexamind-clinical.vercel.app"
+
+5. PROBAR LOCAL
+npm install
+npm run check
+npm run dev
+
+6. GIT Y VERCEL
+git add .
+git commit -m "feat: platform subscription billing with Wompi and Supabase"
+git push origin main
