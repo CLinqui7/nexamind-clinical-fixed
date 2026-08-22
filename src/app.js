@@ -87,14 +87,21 @@ import {
   whatsappReminderUrl,
 } from './practice.js';
 import {
+  createWompiPaymentLink,
   fetchWompiAppInfo,
+  fetchSubscriptionInvoices,
   supabaseConfigured,
 } from './services/wompi.js';
 import {
-  createPlatformPaymentLink,
-  fetchPlatformBillingSummary,
-  savePlatformBillingPrice,
-} from './services/billing.js';
+  productionMode,
+  signUpProduction,
+  signInProduction,
+  getProductionSession,
+  signOutProduction,
+  bootstrapAndLoadState,
+  saveProductionState,
+  savePlatformBillingSettings,
+} from './services/appState.js';
 
 const html = htm.bind(React.createElement);
 const STORAGE_KEY = 'nexamind-clinical-demo-v3';
@@ -263,8 +270,8 @@ function greeting() {
 }
 
 
-const TUTORIAL_STORAGE_KEY = 'linkare-tutorial-v4';
-const TUTORIAL_VERSION = 4;
+const TUTORIAL_STORAGE_KEY = 'linkare-tutorial-v3';
+const TUTORIAL_VERSION = 3;
 
 const TOUR_STEPS = [
   { id: 'welcome', chapter: '1 · Bienvenida', title: 'Así funciona el recorrido', description: 'Este tutorial es más general y estable. Le enseña el flujo completo pantalla por pantalla sin depender de localizar cada botón.', view: 'dashboard', quick: true, icon: 'help', items: ['No modifica datos.', 'Puede avanzar, retroceder o cerrar.', 'Cada paso abre una pantalla real.'] },
@@ -278,7 +285,7 @@ const TOUR_STEPS = [
   { id: 'agenda', chapter: '9 · Agenda', title: 'Agenda y recordatorios', description: 'La agenda organiza citas, confirmaciones y recordatorios.', view: 'agenda', quick: true, icon: 'calendar', items: ['Mes, semana o día.', 'Cambiar estado.', 'Preparar recordatorios.'] },
   { id: 'analytics', chapter: '10 · Resultados', title: 'Resultados descriptivos', description: 'Resultados muestra tendencias agregadas de los pacientes.', view: 'analytics', quick: false, icon: 'trend', items: ['Mejoría media.', 'Adherencia promedio.', 'Resumen por clase.'] },
   { id: 'alerts', chapter: '11 · Alertas', title: 'Alertas priorizadas', description: 'Las alertas ayudan a ordenar la revisión clínica.', view: 'alerts', quick: true, icon: 'alert', items: ['Abrir paciente.', 'Marcar revisada.', 'Reabrir si hace falta.'] },
-  { id: 'payments', chapter: '12 · Suscripción', title: 'El psiquiatra paga Linkare', description: 'Esta pantalla no cobra consultas a pacientes. Muestra el plan de la clínica, el precio definido por Linkare y el botón para pagar con Wompi.', view: 'payments', quick: true, icon: 'insurance', items: ['Administración Linkare modifica el precio.', 'Supabase guarda la factura.', 'El psiquiatra paga el monto fijo con Wompi.'] },
+  { id: 'payments', chapter: '12 · Cobros', title: 'Cobros, Wompi y métodos de pago', description: 'Cobros centraliza tarifas, enlace de Wompi y otros métodos.', view: 'payments', quick: true, icon: 'insurance', items: ['Activar Wompi con checkout URL.', 'Configurar transferencia, efectivo y seguro.', 'Ver pagos pendientes y recibidos.'] },
   { id: 'settings', chapter: '13 · Configuración', title: 'Clínica, equipo y respaldo', description: 'Configuración permite editar branding, usuarios y respaldos.', view: 'settings', quick: false, icon: 'settings', items: ['Logo y datos de clínica.', 'Permisos.', 'Respaldos.'] },
   { id: 'finish', chapter: '14 · Listo', title: 'Ya conoce el flujo general', description: 'Este recorrido compacto reduce fallos y mantiene la enseñanza completa.', view: 'dashboard', quick: true, icon: 'check', items: ['Repítalo desde Ayuda.', 'Explore cada módulo.', 'Use Cobros para configurar Wompi.'] },
 ];
@@ -343,20 +350,25 @@ class App extends React.Component {
     } catch (_) {
       data = createSeedData();
     }
-    const authenticatedUserId = readAuthSession(data);
+    const authenticatedUserId = productionMode ? null : readAuthSession(data);
     if (authenticatedUserId) {
       try { data = setActiveUser(data, authenticatedUserId); } catch (_) { /* Session will be ignored below. */ }
     }
     this.state = {
       data,
       authenticatedUserId,
+      authView: 'login',
       loginDraft: { email: '', password: '', showPassword: false },
+      registerDraft: { fullName: '', clinicName: '', email: '', password: '', confirmPassword: '', showPassword: false },
+      authNotice: '',
       loginError: '',
       loginBusy: false,
+      productionLoading: productionMode,
+      remoteOrganizationId: null,
+      remoteReady: false,
+      remoteSaveStatus: productionMode ? 'waiting' : 'local',
       wompiBusy: false,
       wompiStatus: { state: supabaseConfigured ? 'idle' : 'not-configured', app: null, error: '' },
-      platformBilling: { state: supabaseConfigured ? 'idle' : 'not-configured', account: null, invoice: null, error: '' },
-      platformPaymentBusy: false,
       view: 'dashboard',
       selectedPatientId: data.patients[0]?.id || null,
       patientTab: 'overview',
@@ -403,13 +415,73 @@ class App extends React.Component {
     }
   };
 
+  applyProductionSession = async (session, requestedOrganizationName = null) => {
+    const seed = createSeedData();
+    const remote = await bootstrapAndLoadState(seed, requestedOrganizationName);
+    let data = normalizeData(remote.payload || seed);
+    const email = String(session?.user?.email || '').toLowerCase();
+    const mappedRole = remote.memberRole === 'psychiatrist' ? 'doctor' : remote.memberRole;
+    let user = (data.users || []).find(item => String(item.email || '').toLowerCase() === email && item.active !== false);
+    if (!user && mappedRole) user = (data.users || []).find(item => item.role === mappedRole && item.active !== false);
+    if (!user) user = (data.users || []).find(item => item.role === 'owner' && item.active !== false)
+      || (data.users || []).find(item => item.role === 'doctor' && item.active !== false)
+      || data.users?.[0];
+    if (user && email && String(user.email || '').toLowerCase() !== email) {
+      data = { ...data, users: data.users.map(item => item.id === user.id ? { ...item, email, name: remote.memberName || item.name } : item) };
+      user = data.users.find(item => item.id === user.id) || user;
+    }
+    if (user) data = setActiveUser(data, user.id);
+    this.setState({
+      data,
+      authenticatedUserId: user?.id || session?.user?.id || null,
+      remoteOrganizationId: remote.organizationId,
+      remoteReady: true,
+      remoteSaveStatus: 'saved',
+      productionLoading: false,
+      loginBusy: false,
+      loginError: '',
+      view: 'dashboard',
+      selectedPatientId: data.patients?.[0]?.id || null,
+      patientTab: 'overview',
+      modal: null,
+      tutorialIntro: false,
+      tourActive: false,
+    }, () => {
+      this.scheduleTutorialIntro();
+      this.loadWompiStatus();
+      this.loadSubscriptionInvoices();
+    });
+  };
+
+  restoreProductionSession = async () => {
+    try {
+      const session = await getProductionSession();
+      if (!session) {
+        this.setState({ productionLoading: false, remoteReady: false, authenticatedUserId: null });
+        return;
+      }
+      await this.applyProductionSession(session);
+    } catch (error) {
+      this.setState({
+        productionLoading: false,
+        remoteReady: false,
+        authenticatedUserId: null,
+        loginError: error instanceof Error ? error.message : 'No se pudo recuperar la sesión de producción.',
+      });
+    }
+  };
+
   componentDidMount() {
-    this.schedulePersist();
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('resize', this.handleTourViewportChange, { passive: true });
     window.addEventListener('scroll', this.handleTourViewportChange, true);
-    this.scheduleTutorialIntro();
-    if (supabaseConfigured) { this.loadWompiStatus(); this.loadPlatformBilling(); }
+    if (productionMode) {
+      this.restoreProductionSession();
+    } else {
+      this.schedulePersist();
+      this.scheduleTutorialIntro();
+      if (supabaseConfigured) this.loadWompiStatus();
+    }
   }
 
   componentWillUnmount() {
@@ -484,6 +556,61 @@ class App extends React.Component {
     this.setState(prev => ({ loginDraft: { ...prev.loginDraft, [key]: value }, loginError: '' }));
   };
 
+  updateRegisterDraft = (key, value) => {
+    this.setState(prev => ({ registerDraft: { ...prev.registerDraft, [key]: value }, loginError: '', authNotice: '' }));
+  };
+
+  showRegister = () => {
+    this.setState({
+      authView: 'register',
+      loginError: '',
+      authNotice: '',
+      registerDraft: { fullName: '', clinicName: '', email: this.state.loginDraft.email || '', password: '', confirmPassword: '', showPassword: false },
+    });
+  };
+
+  showLogin = () => {
+    this.setState({ authView: 'login', loginError: '', authNotice: '' });
+  };
+
+  submitRegister = async event => {
+    event?.preventDefault?.();
+    if (!productionMode) {
+      this.setState({ loginError: 'El registro de cuentas está disponible cuando VITE_APP_MODE=production y Supabase está conectado.' });
+      return;
+    }
+    if (this.state.loginBusy) return;
+    const draft = this.state.registerDraft;
+    if (draft.password !== draft.confirmPassword) {
+      this.setState({ loginError: 'Las contraseñas no coinciden.' });
+      return;
+    }
+    this.setState({ loginBusy: true, loginError: '', authNotice: '' });
+    try {
+      const result = await signUpProduction({
+        fullName: draft.fullName,
+        clinicName: draft.clinicName,
+        email: draft.email,
+        password: draft.password,
+      });
+      if (result?.session) {
+        await this.applyProductionSession(result.session, result.clinicName);
+        return;
+      }
+      this.setState({
+        authView: 'login',
+        loginBusy: false,
+        loginDraft: { email: draft.email, password: '', showPassword: false },
+        registerDraft: { fullName: '', clinicName: '', email: '', password: '', confirmPassword: '', showPassword: false },
+        authNotice: result?.needsEmailConfirmation
+          ? 'Cuenta creada. Revise su correo y confirme la cuenta antes de iniciar sesión.'
+          : 'Cuenta creada. Ya puede iniciar sesión.',
+      });
+    } catch (error) {
+      this.setState({ loginBusy: false, loginError: error instanceof Error ? error.message : 'No se pudo crear la cuenta.' });
+    }
+  };
+
   fillDemoCredentials = role => {
     const user = (this.state.data.users || []).find(item => item.role === role && item.active !== false);
     if (!user) {
@@ -493,18 +620,25 @@ class App extends React.Component {
     this.setState({
       loginDraft: {
         email: user.email || '',
-        password: user.password || (role === 'owner' ? 'LinkareAdmin2026!' : role === 'doctor' ? 'NexaMind2026!' : 'Agenda2026!'),
+        password: user.password || (role === 'owner' ? 'Linkare2026!' : role === 'doctor' ? 'NexaMind2026!' : 'Agenda2026!'),
         showPassword: false,
       },
       loginError: '',
     });
   };
 
-  submitLogin = event => {
+  submitLogin = async event => {
     event?.preventDefault?.();
     if (this.state.loginBusy) return;
     this.setState({ loginBusy: true, loginError: '' });
     try {
+      if (productionMode) {
+        const session = await signInProduction(this.state.loginDraft.email, this.state.loginDraft.password);
+        if (!session) throw new Error('Supabase no devolvió una sesión válida.');
+        await this.applyProductionSession(session);
+        return;
+      }
+
       const user = authenticateLocalUser(this.state.data, this.state.loginDraft.email, this.state.loginDraft.password);
       const data = setActiveUser(this.state.data, user.id);
       try {
@@ -516,7 +650,7 @@ class App extends React.Component {
         loginBusy: false,
         loginError: '',
         loginDraft: { email: '', password: '', showPassword: false },
-        view: user.role === 'owner' ? 'payments' : 'dashboard',
+        view: 'dashboard',
         patientTab: 'overview',
         modal: null,
         appointmentDetails: null,
@@ -525,18 +659,28 @@ class App extends React.Component {
         tourActive: false,
       });
     } catch (error) {
-      this.setState({ loginBusy: false, loginError: error instanceof Error ? error.message : 'No se pudo iniciar sesión.' });
+      this.setState({ loginBusy: false, productionLoading: false, loginError: error instanceof Error ? error.message : 'No se pudo iniciar sesión.' });
     }
   };
 
-  logoutUser = () => {
-    try { localStorage.removeItem(AUTH_SESSION_KEY); } catch (_) { /* Ignore storage restrictions. */ }
+  logoutUser = async () => {
+    if (productionMode) {
+      try { await signOutProduction(); } catch (_) { /* Continue local logout. */ }
+    } else {
+      try { localStorage.removeItem(AUTH_SESSION_KEY); } catch (_) { /* Ignore storage restrictions. */ }
+    }
     clearTimeout(this.tutorialIntroTimer);
     document.body.style.overflow = '';
     const user = this.activeUser();
     this.setState({
       authenticatedUserId: null,
+      remoteOrganizationId: null,
+      remoteReady: false,
+      remoteSaveStatus: productionMode ? 'waiting' : 'local',
+      authView: 'login',
       loginDraft: { email: user?.email || '', password: '', showPassword: false },
+      registerDraft: { fullName: '', clinicName: '', email: '', password: '', confirmPassword: '', showPassword: false },
+      authNotice: '',
       loginError: '',
       loginBusy: false,
       modal: null,
@@ -1375,9 +1519,22 @@ class App extends React.Component {
 
   schedulePersist = () => {
     clearTimeout(this.persistTimer);
-    this.persistTimer = setTimeout(() => {
+    this.persistTimer = setTimeout(async () => {
+      if (productionMode) {
+        if (!this.state.remoteReady || !this.state.remoteOrganizationId) return;
+        this.setState({ remoteSaveStatus: 'saving' });
+        try {
+          await saveProductionState(this.state.remoteOrganizationId, this.state.data);
+          this.setState({ remoteSaveStatus: 'saved' });
+        } catch (error) {
+          console.error('Supabase save error', error);
+          this.setState({ remoteSaveStatus: 'error' });
+          this.notify('No se pudo guardar en Supabase. Revise la conexión.', 'danger');
+        }
+        return;
+      }
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state.data)); } catch (_) { /* Browser storage can be unavailable. */ }
-    }, 180);
+    }, productionMode ? 650 : 180);
   };
 
   notify = (message, tone = 'success') => {
@@ -1387,9 +1544,7 @@ class App extends React.Component {
   };
 
   setView = view => {
-    this.setState({ view, mobileNav: false, appointmentDetails: null }, () => {
-      if (view === 'payments') this.loadPlatformBilling();
-    });
+    this.setState({ view, mobileNav: false, appointmentDetails: null });
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
   };
 
@@ -1514,164 +1669,96 @@ class App extends React.Component {
   };
 
   openBillingSettings = () => {
-    if (!this.can('settingsManage')) return this.permissionDenied();
+    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
     const billing = this.state.data.billing || {};
     this.setState({ modal: { type: 'billingSettings', draft: {
-      consultationFee: billing.consultationFee ?? 45,
-      followupFee: billing.followupFee ?? 35,
+      planName: billing.planName || 'Plan Profesional Linkare',
+      planDescription: billing.planDescription || 'Licencia mensual de la plataforma Linkare para gestión clínica.',
+      subscriptionPrice: Number(billing.subscriptionPrice) || 40,
+      billingCycle: billing.billingCycle || 'mensual',
       currency: billing.currency || 'USD',
+      payerName: billing.payerName || this.state.data.organization?.clinician || '',
+      payerEmail: billing.payerEmail || this.state.data.organization?.email || '',
       wompiEnabled: Boolean(billing.wompiEnabled),
-      wompiPublicKey: billing.wompiPublicKey || '',
-      wompiCheckoutUrl: billing.wompiCheckoutUrl || '',
-      wompiRedirectUrl: billing.wompiRedirectUrl || '',
-      transferEnabled: billing.transferEnabled !== false,
-      transferInstructions: billing.transferInstructions || '',
-      cashEnabled: billing.cashEnabled !== false,
-      insuranceEnabled: billing.insuranceEnabled !== false,
+      manualCheckoutUrl: billing.manualCheckoutUrl || '',
       note: billing.note || '',
     } }, modalError: '' });
   };
 
-  saveBillingSettingsForm = event => {
+  saveBillingSettingsForm = async event => {
     event.preventDefault();
+    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
     const draft = this.state.modal?.draft || {};
-    const data = { ...this.state.data, billing: {
-      consultationFee: Number(draft.consultationFee) || 0,
-      followupFee: Number(draft.followupFee) || 0,
+    const price = Number(draft.subscriptionPrice);
+    if (!Number.isFinite(price) || price < 0.01) return this.setState({ modalError: 'Ingrese un precio mayor o igual a US$0.01.' });
+    const billing = {
+      planName: String(draft.planName || '').trim() || 'Plan Profesional Linkare',
+      planDescription: String(draft.planDescription || '').trim() || 'Licencia de la plataforma Linkare.',
+      subscriptionPrice: price,
+      billingCycle: String(draft.billingCycle || 'mensual').trim(),
       currency: String(draft.currency || 'USD').trim().toUpperCase() || 'USD',
+      payerName: String(draft.payerName || '').trim(),
+      payerEmail: String(draft.payerEmail || '').trim(),
       wompiEnabled: Boolean(draft.wompiEnabled),
-      wompiPublicKey: String(draft.wompiPublicKey || '').trim(),
-      wompiCheckoutUrl: String(draft.wompiCheckoutUrl || '').trim(),
-      wompiRedirectUrl: String(draft.wompiRedirectUrl || '').trim(),
-      transferEnabled: Boolean(draft.transferEnabled),
-      transferInstructions: String(draft.transferInstructions || '').trim(),
-      cashEnabled: Boolean(draft.cashEnabled),
-      insuranceEnabled: Boolean(draft.insuranceEnabled),
+      manualCheckoutUrl: String(draft.manualCheckoutUrl || '').trim(),
       note: String(draft.note || '').trim(),
-    } };
-    this.setState({ data, modal: null, modalError: '' }, () => this.notify('Métodos de pago actualizados.'));
+      active: true,
+    };
+    try {
+      if (productionMode && this.state.remoteOrganizationId) {
+        await savePlatformBillingSettings(this.state.remoteOrganizationId, billing);
+      }
+      const data = { ...this.state.data, billing };
+      this.setState({ data, modal: null, modalError: '' }, () => this.notify('Precio y plan de Linkare actualizados.'));
+    } catch (error) {
+      this.setState({ modalError: error instanceof Error ? error.message : 'No se pudo guardar el precio en Supabase.' });
+    }
   };
 
   openPaymentLink = url => {
-    if (!url) return this.notify('Primero configure el enlace de Wompi.', 'danger');
+    if (!url) return this.notify('Primero genere o configure un enlace de Wompi.', 'danger');
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  loadSubscriptionInvoices = async () => {
+    if (!productionMode || !this.state.remoteOrganizationId || !supabaseConfigured) return;
+    try {
+      const payments = await fetchSubscriptionInvoices(this.state.remoteOrganizationId);
+      this.setState(prev => ({ data: { ...prev.data, payments } }));
+    } catch (error) {
+      console.error('Invoice refresh error', error);
+      this.notify('No se pudo actualizar el historial de facturación.', 'danger');
+    }
   };
 
   loadWompiStatus = async () => {
     if (!supabaseConfigured) {
-      this.setState({ wompiStatus: { state: 'not-configured', app: null, error: 'Faltan variables públicas de Supabase.' } });
+      this.setState({ wompiStatus: { state: 'not-configured', app: null, error: 'Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.' } });
       return;
     }
     this.setState({ wompiStatus: { state: 'loading', app: null, error: '' } });
     try {
       const app = await fetchWompiAppInfo();
-      this.setState({ wompiStatus: { state: 'ready', app, error: '' } });
+      this.setState({ wompiStatus: { state: 'ready', app, error: '' } }, () => this.loadSubscriptionInvoices());
     } catch (error) {
       this.setState({ wompiStatus: { state: 'error', app: null, error: error instanceof Error ? error.message : 'No se pudo verificar Wompi.' } });
     }
   };
 
-  loadPlatformBilling = async () => {
-    if (!supabaseConfigured) {
-      this.setState({ platformBilling: { state: 'not-configured', account: null, invoice: null, error: 'Agregue VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.' } });
-      return;
-    }
-    this.setState(prev => ({ platformBilling: { ...prev.platformBilling, state: 'loading', error: '' } }));
-    try {
-      const result = await fetchPlatformBillingSummary();
-      this.setState({ platformBilling: { state: 'ready', account: result.account || null, invoice: result.invoice || null, error: '' } });
-    } catch (error) {
-      this.setState({ platformBilling: { state: 'error', account: null, invoice: null, error: error instanceof Error ? error.message : 'No se pudo cargar la factura.' } });
-    }
-  };
-
-  openPlatformBillingAdmin = () => {
-    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
-    const account = this.state.platformBilling.account || {};
-    const invoice = this.state.platformBilling.invoice || {};
-    this.setState({
-      modal: {
-        type: 'platformBillingAdmin',
-        draft: {
-          adminKey: '',
-          clinicName: account.clinic_name || this.state.data.organization?.name || 'Consultorio',
-          billingEmail: account.billing_email || this.state.data.organization?.email || '',
-          planName: account.plan_name || 'Plan Profesional Linkare',
-          amount: invoice.amount ?? account.price ?? 49,
-          currency: invoice.currency || account.currency || 'USD',
-          billingCycle: account.billing_cycle || 'monthly',
-          periodLabel: invoice.period_label || 'Suscripción mensual Linkare',
-          dueDate: invoice.due_date || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-          isDemo: account.is_demo ?? true,
-        },
-      },
-      modalError: '',
-    });
-  };
-
-  submitPlatformBillingAdmin = async event => {
-    event.preventDefault();
-    const draft = this.state.modal?.draft || {};
-    const amount = Number(draft.amount);
-    if (!String(draft.adminKey || '').trim()) return this.setState({ modalError: 'Escriba la clave administrativa de Linkare.' });
-    if (!Number.isFinite(amount) || amount < 0.01) return this.setState({ modalError: 'El precio debe ser mayor o igual a US$0.01.' });
-    this.setState({ platformPaymentBusy: true, modalError: '' });
-    try {
-      const result = await savePlatformBillingPrice({
-        clinicName: String(draft.clinicName || '').trim(),
-        billingEmail: String(draft.billingEmail || '').trim(),
-        planName: String(draft.planName || '').trim(),
-        amount,
-        currency: String(draft.currency || 'USD').trim().toUpperCase(),
-        billingCycle: draft.billingCycle || 'monthly',
-        periodLabel: String(draft.periodLabel || '').trim(),
-        dueDate: draft.dueDate || null,
-        isDemo: Boolean(draft.isDemo),
-      }, String(draft.adminKey).trim());
-      this.setState({
-        platformPaymentBusy: false,
-        modal: null,
-        modalError: '',
-        platformBilling: { state: 'ready', account: result.account || null, invoice: result.invoice || null, error: '' },
-      }, () => this.notify('Precio y factura actualizados en Supabase.'));
-    } catch (error) {
-      this.setState({ platformPaymentBusy: false, modalError: error instanceof Error ? error.message : 'No se pudo actualizar el precio.' });
-    }
-  };
-
-  payPlatformInvoice = async () => {
-    const invoice = this.state.platformBilling.invoice;
-    if (!invoice?.payment_token) return this.notify('No hay una factura disponible para pagar.', 'danger');
-    if (invoice.status === 'paid') return this.notify('Esta factura ya está pagada.', 'neutral');
-    this.setState({ platformPaymentBusy: true });
-    try {
-      const result = await createPlatformPaymentLink(invoice.payment_token);
-      const nextInvoice = result.invoice || invoice;
-      this.setState(prev => ({
-        platformPaymentBusy: false,
-        platformBilling: { ...prev.platformBilling, state: 'ready', invoice: nextInvoice, error: '' },
-      }), () => {
-        this.notify(result.payment?.productive === false ? 'Enlace de prueba Wompi creado.' : 'Enlace Wompi creado.');
-        if (result.payment?.url) window.open(result.payment.url, '_blank', 'noopener,noreferrer');
-      });
-    } catch (error) {
-      this.setState({ platformPaymentBusy: false });
-      this.notify(error instanceof Error ? error.message : 'No se pudo crear el enlace Wompi.', 'danger');
-    }
-  };
-
   openWompiPaymentRequest = () => {
-    const patient = this.selectedPatient();
+    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
     const billing = this.state.data.billing || {};
+    const period = new Date().toISOString().slice(0, 7);
     this.setState({
       modal: {
         type: 'paymentRequest',
         draft: {
-          patientId: patient?.id || this.state.data.patients?.[0]?.id || '',
-          appointmentId: patient ? (this.state.data.appointments || []).find(item => item.patientId === patient.id && item.status !== 'cancelled')?.id || '' : '',
-          description: 'Consulta psiquiátrica Linkare',
-          amount: Number(billing.consultationFee) || 45,
-          customerEmail: patient?.email || '',
+          planName: billing.planName || 'Plan Profesional Linkare',
+          description: `${billing.planName || 'Plan Profesional Linkare'} · ${period}`,
+          amount: Number(billing.subscriptionPrice) || 40,
+          payerName: billing.payerName || this.state.data.organization?.clinician || '',
+          customerEmail: billing.payerEmail || this.state.data.organization?.email || '',
+          billingPeriod: period,
         },
       },
       modalError: '',
@@ -1681,29 +1768,35 @@ class App extends React.Component {
   submitWompiPaymentRequest = async event => {
     event.preventDefault();
     if (this.state.wompiBusy) return;
+    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
     const draft = this.state.modal?.draft || {};
     const amount = Number(draft.amount);
-    if (!draft.patientId) return this.setState({ modalError: 'Seleccione un paciente.' });
     if (!Number.isFinite(amount) || amount < 0.01) return this.setState({ modalError: 'Ingrese un monto válido.' });
     if (!String(draft.description || '').trim()) return this.setState({ modalError: 'Escriba el concepto del cobro.' });
+    if (!String(draft.customerEmail || '').trim()) return this.setState({ modalError: 'Escriba el correo del psiquiatra que pagará.' });
 
     this.setState({ wompiBusy: true, modalError: '' });
     try {
       const result = await createWompiPaymentLink({
-        patientId: draft.patientId,
-        appointmentId: draft.appointmentId || null,
+        organizationId: this.state.remoteOrganizationId || null,
         description: String(draft.description).trim(),
         amount,
         customerEmail: String(draft.customerEmail || '').trim(),
+        payerName: String(draft.payerName || '').trim(),
+        billingPeriod: String(draft.billingPeriod || '').trim(),
+        planName: String(draft.planName || '').trim(),
+        purpose: 'linkare_subscription',
       });
+      const serverAmount = Number(result.payment?.amount) || amount;
       const payment = {
-        id: `pay_${Date.now()}`,
-        patientId: draft.patientId,
-        appointmentId: draft.appointmentId || null,
+        id: `subscription_${Date.now()}`,
         description: String(draft.description).trim(),
-        amount,
+        amount: serverAmount,
         method: 'wompi',
         status: 'pending',
+        payerName: String(draft.payerName || '').trim(),
+        payerEmail: String(draft.customerEmail || '').trim(),
+        billingPeriod: String(draft.billingPeriod || '').trim(),
         externalReference: result.reference,
         paymentUrl: result.payment?.url || '',
         qrUrl: result.payment?.qrUrl || '',
@@ -1716,7 +1809,7 @@ class App extends React.Component {
         modalError: '',
         wompiBusy: false,
       }), () => {
-        this.notify(result.payment?.productive === false ? 'Enlace de prueba creado en Wompi.' : 'Enlace de pago creado en Wompi.');
+        this.notify(result.payment?.productive === false ? 'Enlace de prueba creado para el psiquiatra.' : 'Enlace de pago creado para el psiquiatra.');
         if (result.payment?.url) window.open(result.payment.url, '_blank', 'noopener,noreferrer');
       });
     } catch (error) {
@@ -1725,8 +1818,8 @@ class App extends React.Component {
   };
 
   copyPaymentLink = async url => {
-    if (!url) return this.notify('Primero configure el enlace de Wompi.', 'danger');
-    try { await navigator.clipboard.writeText(url); this.notify('Enlace copiado.'); }
+    if (!url) return this.notify('Primero genere un enlace de Wompi.', 'danger');
+    try { await navigator.clipboard.writeText(url); this.notify('Enlace de pago copiado.'); }
     catch (_) { this.notify('No se pudo copiar el enlace.', 'danger'); }
   };
 
@@ -2081,40 +2174,10 @@ class App extends React.Component {
     const owner = (this.state.data.users || []).find(user => user.role === 'owner' && user.active !== false);
     const doctor = (this.state.data.users || []).find(user => user.role === 'doctor' && user.active !== false);
     const secretary = (this.state.data.users || []).find(user => user.role === 'secretary' && user.active !== false);
-    const draft = this.state.loginDraft;
-    return html`<main className="login-shell"><div className="login-ambient login-ambient-one"></div><div className="login-ambient login-ambient-two"></div><section className="login-card"><aside className="login-intro"><${Logo} organization=${organization}/><div className="login-copy"><span className="login-kicker">Gestión psiquiátrica sencilla</span><h1>Seguimiento clínico, recetas y agenda en un solo lugar</h1><p>Ingrese con la cuenta médica, de secretaría o de administración Linkare. Cada rol muestra únicamente las funciones autorizadas.</p></div><div className="login-benefits"><div><span><${Icon} name="activity" size=${18}/></span><b>Evolución longitudinal</b><small>Escalas, dosis, adherencia y funcionamiento.</small></div><div><span><${Icon} name="prescription" size=${18}/></span><b>Recetas membretadas</b><small>Documentos listos para imprimir o guardar en PDF.</small></div><div><span><${Icon} name="calendar" size=${18}/></span><b>Agenda y recordatorios</b><small>Citas, estados y mensajes preparados.</small></div><div><span><${Icon} name="shield" size=${18}/></span><b>Permisos por rol</b><small>La secretaría ve solo lo que el médico autoriza.</small></div></div><div className="login-demo-note"><${Icon} name="shield" size=${17}/><span>Acceso local para demostración. Antes de usar datos reales se conectará Supabase Auth y almacenamiento privado.</span></div></aside><section className="login-panel"><div className="login-panel-head"><span className="login-icon"><${Icon} name="lock" size=${24}/></span><div><span className="eyebrow">Acceso al consultorio</span><h2>Iniciar sesión</h2><p>Use su correo y contraseña.</p></div></div><form className="login-form" onSubmit=${this.submitLogin}>${this.state.loginError ? html`<div className="login-error" role="alert"><${Icon} name="alert" size=${17}/><span>${this.state.loginError}</span></div>` : null}<label><span>Correo</span><div className="login-input"><${Icon} name="mail" size=${18}/><input type="email" autoComplete="username" autoFocus value=${draft.email} onChange=${event => this.updateLoginDraft('email', event.target.value)} placeholder="usuario@clinica.com" required/></div></label><label><span>Contraseña</span><div className="login-input"><${Icon} name="lock" size=${18}/><input type=${draft.showPassword ? 'text' : 'password'} autoComplete="current-password" value=${draft.password} onChange=${event => this.updateLoginDraft('password', event.target.value)} placeholder="Escriba su contraseña" required/><button type="button" className="password-toggle" aria-label=${draft.showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick=${() => this.updateLoginDraft('showPassword', !draft.showPassword)}><${Icon} name=${draft.showPassword ? 'eyeOff' : 'eye'} size=${18}/></button></div></label><${Button} type="submit" icon="lock" className="login-submit" disabled=${this.state.loginBusy}>${this.state.loginBusy ? 'Verificando…' : 'Ingresar a Linkare'}</${Button}></form><div className="login-divider"><span>Accesos de demostración</span></div><div className="login-demo-accounts">${owner ? html`<button type="button" onClick=${() => this.fillDemoCredentials('owner')}><${UserAvatar} user=${owner} organization=${organization} size="md"/><div><b>Administración Linkare</b><span>${owner.email}</span><small>Contraseña: ${owner.password || 'LinkareAdmin2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Cuenta médica</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Cuenta de secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}</div><small className="login-footnote">Al elegir una cuenta se completan los campos. Presione “Ingresar” para continuar.</small></section></section></main>`;
-  }
-
-  renderTopbar() {
-    const user = this.activeUser();
-    const isPlatformOwner = user?.role === 'owner';
-    const nav = (isPlatformOwner ? [
-      ['payments', 'insurance', 'Cobros Linkare', true],
-    ] : [
-      ['dashboard', 'overview', 'Inicio', true],
-      ['patients', 'patients', 'Pacientes', this.can('patientsView')],
-      ['agenda', 'calendar', 'Agenda', this.can('appointmentsManage')],
-      ['payments', 'insurance', 'Mi plan', user?.role === 'doctor'],
-      ['analytics', 'analytics', 'Resultados', this.can('analyticsView')],
-      ['alerts', 'alert', 'Alertas', this.can('alertsView')],
-    ]).filter(item => item[3]);
-    const active = this.state.view === 'patient' ? 'patients' : this.state.view;
-    const openAlerts = this.state.data.alerts.filter(item => item.status === 'open').length;
-    const canConfigure = this.can('settingsManage') || this.can('usersManage');
-    return html`<header className="topbar">
-      <${Logo} organization=${this.state.data.organization}/>
-      <nav data-tour="main-navigation" className=${`nav-pill ${this.state.mobileNav ? 'nav-open' : ''}`} aria-label="Navegación principal">
-        ${nav.map(([key, icon, label]) => html`<button key=${key} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
-      </nav>
-      <div className="top-actions">
-        <button className="help-button" data-tour="help-button" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
-        ${this.can('alertsView') ? html`<button className="icon-button notification-button" aria-label="Ver alertas" onClick=${() => this.setView('alerts')}><${Icon} name="alert"/>${openAlerts ? html`<i></i>` : null}</button>` : null}
-        ${canConfigure ? html`<button className="icon-button" data-tour="settings-button" aria-label="Configuración" onClick=${() => this.setView('settings')}><${Icon} name="settings"/></button>` : null}
-        <button className="profile-chip profile-chip-button" onClick=${this.openAccount} title="Cuenta y cierre de sesión"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="sm"/><div><b>${user?.name || 'Usuario'}</b><small>${user?.title || (user?.role === 'secretary' ? 'Secretaría' : 'Psiquiatría')}</small></div><${Icon} name="arrowDown" size=${14}/></button>
-        <button className="mobile-account icon-button" aria-label="Cuenta y cierre de sesión" onClick=${this.openAccount}><${Icon} name="lock"/></button>
-        <button className="mobile-menu icon-button" aria-label="Abrir menú" onClick=${() => this.setState({ mobileNav: !this.state.mobileNav })}><${Icon} name="menu"/></button>
-      </div>
-    </header>`;
+    const login = this.state.loginDraft;
+    const register = this.state.registerDraft;
+    const registering = productionMode && this.state.authView === 'register';
+    return html`<main className="login-shell"><div className="login-ambient login-ambient-one"></div><div className="login-ambient login-ambient-two"></div><section className="login-card"><aside className="login-intro"><${Logo} organization=${organization}/><div className="login-copy"><span className="login-kicker">Gestión psiquiátrica sencilla</span><h1>Su clínica, pacientes, agenda y recetas en un solo lugar</h1><p>${productionMode ? 'Cree su cuenta o inicie sesión. Cada profesional tendrá su propia organización en Supabase.' : 'Ingrese con una cuenta de demostración para explorar Linkare.'}</p></div><div className="login-benefits"><div><span><${Icon} name="patients" size=${18}/></span><b>Expedientes</b><small>Pacientes, tratamientos y seguimiento.</small></div><div><span><${Icon} name="prescription" size=${18}/></span><b>Recetas</b><small>Documentos listos para imprimir.</small></div><div><span><${Icon} name="calendar" size=${18}/></span><b>Agenda</b><small>Citas y recordatorios.</small></div><div><span><${Icon} name="shield" size=${18}/></span><b>Supabase</b><small>${productionMode ? 'Auth, RLS y persistencia remota.' : 'Datos ficticios en modo demo.'}</small></div></div><div className="login-demo-note"><${Icon} name="shield" size=${17}/><span>${productionMode ? 'Use un correo real al registrarse para poder confirmar su cuenta si Supabase lo solicita.' : 'No use datos reales de pacientes en la demostración.'}</span></div></aside><section className="login-panel"><div className="auth-tabs">${productionMode ? html`<button type="button" className=${!registering ? 'active' : ''} onClick=${this.showLogin}>Iniciar sesión</button><button type="button" className=${registering ? 'active' : ''} onClick=${this.showRegister}>Crear cuenta</button>` : null}</div>${registering ? html`<div className="login-panel-head"><span className="login-icon"><${Icon} name="userPlus" size=${24}/></span><div><span className="eyebrow">Nuevo consultorio</span><h2>Crear cuenta</h2><p>Registre al médico responsable y su clínica.</p></div></div><form className="login-form" onSubmit=${this.submitRegister}>${this.state.loginError ? html`<div className="login-error" role="alert"><${Icon} name="alert" size=${17}/><span>${this.state.loginError}</span></div>` : null}<label><span>Nombre completo</span><div className="login-input"><${Icon} name="patients" size=${18}/><input type="text" autoComplete="name" autoFocus value=${register.fullName} onChange=${event => this.updateRegisterDraft('fullName', event.target.value)} placeholder="Dra. Ana Martínez" required/></div></label><label><span>Clínica o consultorio</span><div className="login-input"><${Icon} name="building" size=${18}/><input type="text" value=${register.clinicName} onChange=${event => this.updateRegisterDraft('clinicName', event.target.value)} placeholder="Clínica Martínez" required/></div></label><label><span>Correo</span><div className="login-input"><${Icon} name="mail" size=${18}/><input type="email" autoComplete="email" value=${register.email} onChange=${event => this.updateRegisterDraft('email', event.target.value)} placeholder="doctor@clinica.com" required/></div></label><label><span>Contraseña</span><div className="login-input"><${Icon} name="lock" size=${18}/><input type=${register.showPassword ? 'text' : 'password'} autoComplete="new-password" minLength="8" value=${register.password} onChange=${event => this.updateRegisterDraft('password', event.target.value)} placeholder="Mínimo 8 caracteres" required/><button type="button" className="password-toggle" aria-label=${register.showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick=${() => this.updateRegisterDraft('showPassword', !register.showPassword)}><${Icon} name=${register.showPassword ? 'eyeOff' : 'eye'} size=${18}/></button></div></label><label><span>Confirmar contraseña</span><div className="login-input"><${Icon} name="lock" size=${18}/><input type=${register.showPassword ? 'text' : 'password'} autoComplete="new-password" minLength="8" value=${register.confirmPassword} onChange=${event => this.updateRegisterDraft('confirmPassword', event.target.value)} placeholder="Repita la contraseña" required/></div></label><${Button} type="submit" icon="userPlus" className="login-submit" disabled=${this.state.loginBusy}>${this.state.loginBusy ? 'Creando cuenta…' : 'Crear mi cuenta Linkare'}</${Button}><small className="signup-terms">Al registrarse, se crea una organización propia y aislada mediante las políticas de Supabase.</small></form>` : html`<div className="login-panel-head"><span className="login-icon"><${Icon} name="lock" size=${24}/></span><div><span className="eyebrow">${productionMode ? 'Acceso seguro' : 'Acceso de demostración'}</span><h2>Iniciar sesión</h2><p>Use su correo y contraseña.</p></div></div>${this.state.authNotice ? html`<div className="auth-notice"><${Icon} name="check" size=${18}/><span>${this.state.authNotice}</span></div>` : null}<form className="login-form" onSubmit=${this.submitLogin}>${this.state.loginError ? html`<div className="login-error" role="alert"><${Icon} name="alert" size=${17}/><span>${this.state.loginError}</span></div>` : null}<label><span>Correo</span><div className="login-input"><${Icon} name="mail" size=${18}/><input type="email" autoComplete="username" autoFocus value=${login.email} onChange=${event => this.updateLoginDraft('email', event.target.value)} placeholder="usuario@clinica.com" required/></div></label><label><span>Contraseña</span><div className="login-input"><${Icon} name="lock" size=${18}/><input type=${login.showPassword ? 'text' : 'password'} autoComplete="current-password" value=${login.password} onChange=${event => this.updateLoginDraft('password', event.target.value)} placeholder="Escriba su contraseña" required/><button type="button" className="password-toggle" aria-label=${login.showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick=${() => this.updateLoginDraft('showPassword', !login.showPassword)}><${Icon} name=${login.showPassword ? 'eyeOff' : 'eye'} size=${18}/></button></div></label><${Button} type="submit" icon="lock" className="login-submit" disabled=${this.state.loginBusy}>${this.state.loginBusy ? 'Verificando…' : 'Ingresar a Linkare'}</${Button}></form>${!productionMode ? html`<div className="login-divider"><span>Accesos de demostración</span></div><div className="login-demo-accounts">${owner ? html`<button type="button" onClick=${() => this.fillDemoCredentials('owner')}><${UserAvatar} user=${owner} organization=${organization} size="md"/><div><b>Administración Linkare</b><span>${owner.email}</span><small>Contraseña: ${owner.password || 'Linkare2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Cuenta médica</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Cuenta de secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}</div>` : html`<div className="production-login-note"><${Icon} name="shield" size=${18}/><div><b>¿Aún no tiene cuenta?</b><button type="button" className="inline-auth-link" onClick=${this.showRegister}>Crear una cuenta nueva</button></div></div>`}</section>`}</section></section></main>`;
   }
 
   renderSecretaryDashboard() {
@@ -2606,77 +2669,43 @@ class App extends React.Component {
 
   renderPayments() {
     const user = this.activeUser();
-    if (user?.role === 'secretary') return html`<${EmptyState} icon="shield" title="Acceso restringido" text="Los pagos de la suscripción Linkare solo son visibles para el médico y la administración de la plataforma."/>`;
-
-    const state = this.state.platformBilling || { state: 'idle', account: null, invoice: null, error: '' };
-    const account = state.account || {};
-    const invoice = state.invoice || {};
     const isOwner = user?.role === 'owner';
-    const currency = invoice.currency || account.currency || 'USD';
+    const isDoctor = user?.role === 'doctor';
+    if (!isOwner && !isDoctor) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="La suscripción Linkare solo está disponible para administración y el médico titular."/>`;
+
+    const billing = this.state.data.billing || {};
+    const payments = Array.isArray(this.state.data.payments) ? this.state.data.payments : [];
+    const currency = billing.currency || 'USD';
     const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(value) || 0);
-    const statusTone = invoice.status === 'paid' ? 'success' : invoice.status === 'overdue' ? 'danger' : invoice.status === 'cancelled' ? 'neutral' : 'warning';
-    const statusText = invoice.status === 'paid' ? 'Pagado' : invoice.status === 'overdue' ? 'Vencido' : invoice.status === 'cancelled' ? 'Cancelado' : invoice.status === 'draft' ? 'Borrador' : 'Pendiente';
-    const wompi = this.state.wompiStatus || { state: 'idle', app: null, error: '' };
-    const appInfo = wompi.app || {};
-    const wompiText = wompi.state === 'ready'
-      ? (appInfo.estaProductivo ? 'Wompi activo' : 'Wompi en modo de prueba')
-      : wompi.state === 'loading' ? 'Verificando Wompi…'
-        : wompi.state === 'not-configured' ? 'Supabase pendiente'
-          : wompi.state === 'error' ? 'Wompi no disponible' : 'Sin verificar';
+    const pending = payments.filter(item => item.status === 'pending');
+    const paid = payments.filter(item => item.status === 'paid');
+    const latestPending = pending[0] || null;
+    const latestPaid = paid[0] || null;
+    const wompiStatus = this.state.wompiStatus || { state: 'idle', app: null, error: '' };
+    const appInfo = wompiStatus.app || {};
+    const wompiStatusText = wompiStatus.state === 'ready'
+      ? (appInfo.estaProductivo ? 'Conectado · Producción' : 'Conectado · Prueba')
+      : wompiStatus.state === 'loading' ? 'Verificando…'
+        : wompiStatus.state === 'not-configured' ? 'Falta Supabase'
+          : wompiStatus.state === 'error' ? 'Error de conexión' : 'Sin verificar';
 
-    return html`<div className="view-enter subscription-view">
-      <${PageHeader}
-        eyebrow=${isOwner ? 'Administración de Linkare' : 'Suscripción de la clínica'}
-        title=${isOwner ? 'Precio y cobro de la plataforma' : 'Mi plan Linkare'}
-        subtitle=${isOwner
-          ? 'Aquí modifica el precio que pagará el psiquiatra y genera una factura guardada en Supabase.'
-          : 'Desde aquí paga la suscripción de Linkare. El precio lo define la administración y Wompi genera el checkout seguro.'}
-        actions=${html`<div className="tour-actions-group">
-          <${Button} tone="secondary" icon="refresh" onClick=${() => { this.loadPlatformBilling(); this.loadWompiStatus(); }} disabled=${state.state === 'loading'}>Actualizar</${Button}>
-          ${isOwner ? html`<${Button} icon="edit" onClick=${this.openPlatformBillingAdmin} disabled=${!supabaseConfigured}>Modificar precio</${Button}>` : null}
-        </div>`}
-      />
+    return html`<div className="view-enter"><${PageHeader}
+      eyebrow="Suscripción de la plataforma"
+      title="Mi plan Linkare"
+      subtitle=${isOwner ? 'Administre el precio que pagará el psiquiatra y genere un enlace único de Wompi.' : 'Revise el precio de su licencia y pague mediante el enlace seguro de Wompi.'}
+      actions=${html`<div className="tour-actions-group">${isOwner ? html`<${Button} tone="secondary" icon="settings" onClick=${this.openBillingSettings}>Editar precio</${Button}><${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Pagar con Wompi</${Button}>` : null}<${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus} disabled=${wompiStatus.state === 'loading'}>Verificar Wompi</${Button}></div>`}
+    />
 
-      ${state.state === 'not-configured' ? html`<div className="form-information billing-setup-warning"><${Icon} name="alert" size=${20}/><div><b>Falta conectar Supabase</b><p>En Vercel solo agregue VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY. El App ID y API Secret de Wompi van únicamente en Supabase Edge Function Secrets.</p></div></div>` : null}
-      ${state.error ? html`<div className="form-error"><${Icon} name="alert" size=${18}/><span>${state.error}</span></div>` : null}
+      <div className="subscription-hero">
+        <div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>${billing.planName || 'Plan Profesional Linkare'}</h2><p>${billing.planDescription || 'Licencia de la plataforma Linkare.'}</p><div className="subscription-price"><strong>${money(billing.subscriptionPrice)}</strong><span>/ ${billing.billingCycle || 'mes'}</span></div></div>
+        <div className="subscription-status-card"><span>Estado de la licencia</span><b>${latestPaid ? 'Pago registrado' : latestPending ? 'Pago pendiente' : 'Sin factura generada'}</b><small>${latestPaid ? `Último pago: ${formatDateTime(latestPaid.paidAt || latestPaid.createdAt)}` : latestPending ? `Periodo: ${latestPending.billingPeriod || 'actual'}` : 'Administración debe generar el enlace.'}</small>${isDoctor && latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Abrir pago seguro</${Button}>` : null}</div>
+      </div>
 
-      <div className="dashboard-grid subscription-grid">
-        <${Card} className="span-7 subscription-plan-card" title=${account.plan_name || 'Plan Profesional Linkare'} subtitle=${account.clinic_name || 'Consultorio psiquiátrico'}>
-          <div className="subscription-price-row">
-            <div><span>Precio de la factura actual</span><strong>${money(invoice.amount ?? account.price ?? 0)}</strong><small>${account.billing_cycle === 'annual' ? 'por año' : account.billing_cycle === 'quarterly' ? 'por trimestre' : account.billing_cycle === 'one_time' ? 'pago único' : 'por mes'}</small></div>
-            <${Badge} tone=${statusTone} dot=${true}>${statusText}</${Badge}>
-          </div>
-          <div className="subscription-details">
-            <div><span>Concepto</span><b>${invoice.period_label || 'Suscripción Linkare'}</b></div>
-            <div><span>Fecha límite</span><b>${invoice.due_date ? formatDate(invoice.due_date) : 'Sin fecha definida'}</b></div>
-            <div><span>Correo de cobro</span><b>${account.billing_email || 'Pendiente de configurar'}</b></div>
-            <div><span>Entorno</span><b>${account.is_demo ? 'Demostración' : 'Producción'}</b></div>
-          </div>
-          ${!isOwner ? html`<div className="subscription-pay-actions">
-            <${Button} icon="external" onClick=${this.payPlatformInvoice} disabled={!supabaseConfigured || this.state.platformPaymentBusy || invoice.status === 'paid'}>${this.state.platformPaymentBusy ? 'Generando enlace…' : invoice.status === 'paid' ? 'Factura pagada' : 'Pagar con Wompi'}</${Button}>
-            ${invoice.payment_url && invoice.status !== 'paid' ? html`<${Button} tone="secondary" onClick=${() => window.open(invoice.payment_url, '_blank', 'noopener,noreferrer')}>Abrir último enlace</${Button}>` : null}
-          </div>` : html`<div className="subscription-pay-actions"><${Button} icon="edit" onClick=${this.openPlatformBillingAdmin} disabled={!supabaseConfigured}>Editar monto y factura</${Button}></div>`}
-          <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> El monto no se toma del navegador al pagar. La Edge Function consulta la factura guardada en Supabase y crea el enlace Wompi con ese valor.</div>
-        </${Card}>
+      <div className="kpi-grid"><${KpiCard} label="Precio actual" value=${money(billing.subscriptionPrice)} hint=${billing.billingCycle || 'mensual'} icon="file" tone="blue"/><${KpiCard} label="Facturas pendientes" value=${pending.length} hint="por pagar" icon="clock" tone=${pending.length ? 'coral' : 'teal'}/><${KpiCard} label="Pagos registrados" value=${paid.length} hint="historial" icon="check" tone="teal"/><${KpiCard} label="Wompi" value=${wompiStatusText} hint=${wompiStatus.state === 'ready' ? (appInfo.nombre || 'Aplicativo conectado') : (wompiStatus.error || 'Use Verificar Wompi')} icon="insurance" tone="purple"/></div>
 
-        <${Card} className="span-5" title="Estado de la conexión" subtitle="Credenciales protegidas fuera de React.">
-          <div className="billing-connection-list">
-            <div><span><${Icon} name="file" size=${17}/></span><div><b>Supabase</b><small>${supabaseConfigured ? 'Variables públicas configuradas' : 'Faltan URL y anon key'}</small></div><${Badge} tone=${supabaseConfigured ? 'success' : 'warning'}>${supabaseConfigured ? 'Listo' : 'Pendiente'}</${Badge}></div>
-            <div><span><${Icon} name="insurance" size=${17}/></span><div><b>Wompi API</b><small>${wompi.state === 'ready' ? `${appInfo.nombre || 'Aplicativo'} · ${appInfo.numeroCuenta || 'cuenta pendiente'}` : (wompi.error || 'App ID y API Secret en Supabase')}</small></div><${Badge} tone=${wompi.state === 'ready' ? 'success' : 'warning'}>${wompiText}</${Badge}></div>
-            <div><span><${Icon} name="shield" size=${17}/></span><div><b>Webhook</b><small>Actualiza la factura cuando Wompi confirma el pago.</small></div><${Badge} tone="blue">Automático</${Badge}></div>
-          </div>
-          <div className="notes-box"><span>Lo que entrega Wompi</span><p><b>App ID</b> equivale a client_id y <b>API Secret</b> equivale a client_secret. No necesita VITE_WOMPI_PUBLIC_KEY.</p></div>
-        </${Card}>
+      <div className="dashboard-grid"><${Card} className="span-7" title="Cómo funciona el cobro" subtitle="Este módulo es para que el psiquiatra pague la licencia de Linkare, no para cobrarle a pacientes."><div className="subscription-flow"><div><b>1</b><span>Administración edita el precio</span></div><i></i><div><b>2</b><span>Linkare crea un enlace único</span></div><i></i><div><b>3</b><span>El psiquiatra paga en Wompi</span></div><i></i><div><b>4</b><span>Webhook confirma en Supabase</span></div></div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> App ID y API Secret se guardan únicamente en Supabase Secrets. La tarjeta nunca se captura dentro de Linkare.</div></${Card}><${Card} className="span-5" title="Datos del pagador"><div className="billing-summary-grid"><div className="billing-summary-card"><span>Nombre</span><strong>${billing.payerName || this.state.data.organization?.clinician || 'Psiquiatra'}</strong><small>Cliente de Linkare</small></div><div className="billing-summary-card"><span>Correo</span><strong>${billing.payerEmail || 'Sin correo'}</strong><small>Recibe confirmación de Wompi</small></div><div className="billing-summary-card"><span>Modo Wompi</span><strong>${appInfo.estaProductivo ? 'Producción' : 'Prueba'}</strong><small>${wompiStatus.state === 'ready' ? 'Determinado por el aplicativo Wompi' : 'Pendiente de verificar'}</small></div></div>${isOwner ? html`<${Button} tone="secondary" icon="edit" onClick=${this.openBillingSettings}>Modificar plan y precio</${Button}>` : null}</${Card}>
 
-        <${Card} className="span-12" title="Cómo funciona este cobro" subtitle="El psiquiatra paga a Linkare, no cobra a sus pacientes desde esta pantalla.">
-          <div className="billing-flow">
-            <div><b>1</b><span>Administración Linkare modifica el precio.</span></div>
-            <div><b>2</b><span>Supabase guarda la factura y el monto.</span></div>
-            <div><b>3</b><span>El psiquiatra presiona “Pagar con Wompi”.</span></div>
-            <div><b>4</b><span>Wompi genera el checkout con monto fijo.</span></div>
-            <div><b>5</b><span>El webhook marca la factura como pagada.</span></div>
-          </div>
-        </${Card}>
+        <${Card} className="span-12" title="Historial de facturación" subtitle="Los enlaces generados se guardan en Supabase y se actualizan por webhook."><div className="table-wrap"><table className="data-table"><thead><tr><th>Periodo</th><th>Concepto</th><th>Pagador</th><th>Monto</th><th>Modo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${payments.length ? payments.map(item => html`<tr key=${item.id}><td><b>${item.billingPeriod || '—'}</b><small>${formatDate(item.createdAt)}</small></td><td>${item.description || billing.planName}</td><td>${item.payerName || billing.payerName || 'Psiquiatra'}<small>${item.payerEmail || billing.payerEmail || ''}</small></td><td>${money(item.amount)}</td><td>${item.isTest ? html`<${Badge} tone="warning">Prueba</${Badge}>` : html`<${Badge} tone="success">Producción</${Badge}>`}</td><td><${Badge} tone=${item.status === 'paid' ? 'success' : item.status === 'pending' ? 'warning' : 'neutral'}>${item.status === 'paid' ? 'Pagado' : item.status === 'pending' ? 'Pendiente' : 'Cancelado'}</${Badge}></td><td>${item.paymentUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(item.paymentUrl)}>Abrir enlace <${Icon} name="external" size=${14}/></button>` : '—'}</td></tr>`) : html`<tr><td colSpan="7">Todavía no hay facturas.</td></tr>`}</tbody></table></div></${Card}>
       </div>
     </div>`;
   }
@@ -2745,7 +2774,6 @@ class App extends React.Component {
     if (modal.type === 'userPermissions') return this.renderUserPermissionsModal();
     if (modal.type === 'account') return this.renderAccountModal();
     if (modal.type === 'userSwitcher') return this.renderUserSwitcherModal();
-    if (modal.type === 'platformBillingAdmin') return this.renderPlatformBillingAdminModal();
     if (modal.type === 'billingSettings') return this.renderBillingSettingsModal();
     if (modal.type === 'paymentRequest') return this.renderPaymentRequestModal();
     if (modal.type === 'prescription') return this.renderPrescriptionModal();
@@ -2762,28 +2790,15 @@ class App extends React.Component {
     return null;
   }
 
-  renderPlatformBillingAdminModal() {
-    const draft = this.state.modal?.draft || {};
-    return html`<${Modal} title="Administrar precio de Linkare" subtitle="Este formulario cambia el monto que pagará el psiquiatra. El valor se guarda en Supabase y no puede ser alterado desde el botón de pago." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.submitPlatformBillingAdmin}>${this.renderModalError()}
-      <fieldset><legend>Clínica y plan</legend><div className="form-grid"><${FormField} label="Nombre de la clínica" required=${true}><input value=${draft.clinicName} onChange=${event => this.updateDraft('clinicName', event.target.value)} required/></${FormField}><${FormField} label="Correo de cobro"><input type="email" value=${draft.billingEmail} onChange=${event => this.updateDraft('billingEmail', event.target.value)} placeholder="cliente@clinica.com"/></${FormField}></div><div className="form-grid"><${FormField} label="Nombre del plan" required=${true}><input value=${draft.planName} onChange=${event => this.updateDraft('planName', event.target.value)} required/></${FormField}><${FormField} label="Ciclo de cobro"><select value=${draft.billingCycle} onChange=${event => this.updateDraft('billingCycle', event.target.value)}><option value="monthly">Mensual</option><option value="quarterly">Trimestral</option><option value="annual">Anual</option><option value="one_time">Pago único</option></select></${FormField}></div></fieldset>
-      <fieldset><legend>Factura actual</legend><div className="form-grid"><${FormField} label="Precio" required=${true}><input type="number" min="0.01" step="0.01" value=${draft.amount} onChange=${event => this.updateDraft('amount', event.target.value)} required/></${FormField}><${FormField} label="Moneda"><input value=${draft.currency} onChange=${event => this.updateDraft('currency', event.target.value)} placeholder="USD"/></${FormField}></div><div className="form-grid"><${FormField} label="Concepto"><input value=${draft.periodLabel} onChange=${event => this.updateDraft('periodLabel', event.target.value)} placeholder="Suscripción mensual Linkare"/></${FormField}><${FormField} label="Fecha límite"><input type="date" value=${draft.dueDate} onChange=${event => this.updateDraft('dueDate', event.target.value)}/></${FormField}></div><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.isDemo)} onChange=${event => this.updateDraft('isDemo', event.target.checked)}/><span><b>Cuenta de demostración</b><small>Actívelo para presentar el sistema sin mezclarlo con una clínica real.</small></span></label></fieldset>
-      <fieldset><legend>Autorización de Linkare</legend><${FormField} label="Clave administrativa" required=${true} hint="Es la clave LINKARE_ADMIN_KEY guardada en Supabase Secrets. Nunca se guarda en el navegador."><input type="password" autoComplete="off" value=${draft.adminKey} onChange=${event => this.updateDraft('adminKey', event.target.value)} placeholder="Clave privada de administración" required/></${FormField}></fieldset>
-      <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Al guardar, Supabase actualiza el precio y reinicia la factura pendiente. El psiquiatra solo puede pagar el monto guardado.</div>
-      <${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.platformPaymentBusy ? 'Guardando…' : 'Guardar precio y factura'}/></form></${Modal}>`;
-  }
-
   renderPaymentRequestModal() {
     const draft = this.state.modal?.draft || {};
-    const patients = this.state.data.patients || [];
-    const appointments = this.state.data.appointments || [];
-    const selectedAppointments = appointments.filter(item => !draft.patientId || item.patientId === draft.patientId);
-    return html`<${Modal} title="Crear cobro con Wompi" subtitle="Linkare generará un enlace único y Wompi mostrará la pantalla segura de pago." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.submitWompiPaymentRequest}>${this.renderModalError()}<fieldset><legend>Paciente y consulta</legend><div className="form-grid"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)} required><option value="">Seleccione</option>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name}</option>`)}</select></${FormField}><${FormField} label="Cita relacionada"><select value=${draft.appointmentId || ''} onChange=${event => this.updateDraft('appointmentId', event.target.value)}><option value="">Sin cita específica</option>${selectedAppointments.map(item => html`<option key=${item.id} value=${item.id}>${formatDateTime(item.start)} · ${item.type}</option>`)}</select></${FormField}></div><${FormField} label="Concepto" required=${true}><input value=${draft.description} onChange=${event => this.updateDraft('description', event.target.value)} placeholder="Consulta psiquiátrica Linkare" required/></${FormField}><div className="form-grid"><${FormField} label="Monto (USD)" required=${true}><input type="number" min="0.01" step="0.01" value=${draft.amount} onChange=${event => this.updateDraft('amount', event.target.value)} required/></${FormField}><${FormField} label="Correo de notificación"><input type="email" value=${draft.customerEmail} onChange=${event => this.updateDraft('customerEmail', event.target.value)} placeholder="paciente@correo.com"/></${FormField}></div></fieldset><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Pago seguro fuera de Linkare</b><p>Linkare no captura tarjetas. Wompi genera el checkout, el QR y la confirmación por webhook.</p></div></div><${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.wompiBusy ? 'Creando enlace…' : 'Crear enlace Wompi'}/></form></${Modal}>`;
+    return html`<${Modal} title="Generar enlace de pago Linkare" subtitle="Linkare usará el precio que administración guardó en Mi plan y generará un enlace único de Wompi para el psiquiatra." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.submitWompiPaymentRequest}>${this.renderModalError()}<fieldset><legend>Factura de la licencia</legend><div className="form-grid"><${FormField} label="Plan"><input value=${draft.planName} readOnly/></${FormField}><${FormField} label="Periodo"><input type="month" value=${draft.billingPeriod} onChange=${event => this.updateDraft('billingPeriod', event.target.value)}/></${FormField}></div><${FormField} label="Concepto" required=${true}><input value=${draft.description} onChange=${event => this.updateDraft('description', event.target.value)} placeholder="Licencia mensual Linkare" required/></${FormField}><div className="form-grid"><${FormField} label="Monto a cobrar (USD)" required=${true} hint="Este monto viene del precio guardado por administración. Para cambiarlo, cierre y use Editar precio."><input autoFocus type="number" min="0.01" step="0.01" value=${draft.amount} readOnly required/></${FormField}><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)} placeholder="Dra. / Dr."/></${FormField}></div><${FormField} label="Correo del psiquiatra" required=${true}><input type="email" value=${draft.customerEmail} onChange=${event => this.updateDraft('customerEmail', event.target.value)} placeholder="doctor@clinica.com" required/></${FormField}></fieldset><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Pago seguro administrado por Wompi</b><p>Linkare no recibe datos de tarjeta. El API Secret vive en Supabase, Wompi genera el checkout y el webhook confirma el pago. El servidor vuelve a leer el precio guardado para evitar modificaciones desde el navegador.</p></div></div><${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.wompiBusy ? 'Generando enlace…' : 'Generar enlace Wompi'}/></form></${Modal}>`;
   }
 
   renderBillingSettingsModal() {
     const draft = this.state.modal?.draft || {};
     const status = this.state.wompiStatus || { state: 'idle', app: null, error: '' };
-    return html`<${Modal} title="Métodos de pago" subtitle="Las credenciales de Wompi se configuran una sola vez como secretos de Supabase. Aquí solo administra tarifas y métodos." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveBillingSettingsForm}>${this.renderModalError()}<fieldset><legend>Tarifas</legend><div className="form-grid"><${FormField} label="Consulta inicial"><input type="number" step="0.01" min="0" value=${draft.consultationFee} onChange=${event => this.updateDraft('consultationFee', event.target.value)}/></${FormField}><${FormField} label="Seguimiento"><input type="number" step="0.01" min="0" value=${draft.followupFee} onChange=${event => this.updateDraft('followupFee', event.target.value)}/></${FormField}></div><${FormField} label="Moneda"><input value=${draft.currency} onChange=${event => this.updateDraft('currency', event.target.value)} placeholder="USD"/></${FormField}></fieldset><fieldset><legend>Conexión Wompi API</legend><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>${status.state === 'ready' ? (status.app?.estaProductivo ? 'Wompi en vivo' : 'Wompi en modo de prueba') : 'Wompi pendiente de verificar'}</b><p>${status.state === 'ready' ? `${status.app?.nombre || 'Aplicativo'} · ${status.app?.numeroCuenta || 'Cuenta pendiente'}` : (status.error || 'Pegue App ID y API Secret en Supabase Secrets y despliegue las Edge Functions.')}</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus}>Verificar API</${Button}></div><${FormField} label="Enlace manual de respaldo" hint="Opcional. Puede pegar aquí el enlace genérico de Wompi que ya creó."><input value=${draft.wompiCheckoutUrl} onChange=${event => this.updateDraft('wompiCheckoutUrl', event.target.value)} placeholder="https://s.wompi.sv/..."/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.wompiEnabled)} onChange=${event => this.updateDraft('wompiEnabled', event.target.checked)}/><span><b>Mostrar Wompi en Cobros</b><small>Activa los botones de cobro una vez que Supabase esté configurado.</small></span></label></fieldset><fieldset><legend>Otros métodos</legend><div className="form-grid"><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.transferEnabled)} onChange=${event => this.updateDraft('transferEnabled', event.target.checked)}/><span><b>Transferencia</b></span></label><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.cashEnabled)} onChange=${event => this.updateDraft('cashEnabled', event.target.checked)}/><span><b>Efectivo</b></span></label></div><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.insuranceEnabled)} onChange=${event => this.updateDraft('insuranceEnabled', event.target.checked)}/><span><b>Seguro</b></span></label><${FormField} label="Instrucciones de transferencia"><textarea rows="3" value=${draft.transferInstructions} onChange=${event => this.updateDraft('transferInstructions', event.target.value)}></textarea></${FormField}></fieldset><${FormField} label="Nota interna"><textarea rows="2" value=${draft.note} onChange=${event => this.updateDraft('note', event.target.value)}></textarea></${FormField}><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Nunca coloque el API Secret en React, GitHub o variables VITE_. El secreto queda únicamente en Supabase Edge Functions.</div><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar pagos"/></form></${Modal}>`;
+    return html`<${Modal} title="Precio y plan de Linkare" subtitle="Solo administración puede cambiar el precio que pagará el psiquiatra." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveBillingSettingsForm}>${this.renderModalError()}<fieldset><legend>Plan comercial</legend><div className="form-grid"><${FormField} label="Nombre del plan" required=${true}><input autoFocus value=${draft.planName} onChange=${event => this.updateDraft('planName', event.target.value)} required/></${FormField}><${FormField} label="Ciclo"><select value=${draft.billingCycle} onChange=${event => this.updateDraft('billingCycle', event.target.value)}><option value="mensual">Mensual</option><option value="trimestral">Trimestral</option><option value="semestral">Semestral</option><option value="anual">Anual</option><option value="único">Pago único</option></select></${FormField}></div><${FormField} label="Descripción"><textarea rows="3" value=${draft.planDescription} onChange=${event => this.updateDraft('planDescription', event.target.value)}></textarea></${FormField}><div className="form-grid"><${FormField} label="Precio" required=${true}><input type="number" step="0.01" min="0.01" value=${draft.subscriptionPrice} onChange=${event => this.updateDraft('subscriptionPrice', event.target.value)} required/></${FormField}><${FormField} label="Moneda"><input value=${draft.currency} onChange=${event => this.updateDraft('currency', event.target.value)} placeholder="USD"/></${FormField}></div></fieldset><fieldset><legend>Quién pagará</legend><div className="form-grid"><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)}/></${FormField}><${FormField} label="Correo"><input type="email" value=${draft.payerEmail} onChange=${event => this.updateDraft('payerEmail', event.target.value)}/></${FormField}></div></fieldset><fieldset><legend>Conexión Wompi</legend><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>${status.state === 'ready' ? (status.app?.estaProductivo ? 'Wompi en producción' : 'Wompi en modo de prueba') : 'Wompi pendiente de verificar'}</b><p>${status.state === 'ready' ? `${status.app?.nombre || 'Aplicativo'} · ${status.app?.numeroCuenta || 'Cuenta pendiente'}` : (status.error || 'App ID y API Secret se guardan en Supabase Secrets.')}</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus}>Verificar API</${Button}></div><${FormField} label="Enlace manual de respaldo" hint="Opcional. Puede pegar el enlace genérico que ya creó en Wompi."><input value=${draft.manualCheckoutUrl} onChange=${event => this.updateDraft('manualCheckoutUrl', event.target.value)} placeholder="https://s.wompi.sv/..."/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.wompiEnabled)} onChange=${event => this.updateDraft('wompiEnabled', event.target.checked)}/><span><b>Habilitar Wompi</b><small>Permite generar enlaces únicos desde la API.</small></span></label></fieldset><${FormField} label="Nota interna"><textarea rows="2" value=${draft.note} onChange=${event => this.updateDraft('note', event.target.value)}></textarea></${FormField}><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> No existe VITE_WOMPI_PUBLIC_KEY en esta integración de Wompi El Salvador. App ID y API Secret son credenciales del backend.</div><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar plan y precio"/></form></${Modal}>`;
   }
 
   renderPatientFormModal() {
@@ -2949,6 +2964,7 @@ class App extends React.Component {
   }
 
   render() {
+    if (productionMode && this.state.productionLoading) return html`<main className="production-loading"><section><div className="guide-orb small"><span></span><span></span><span></span></div><h1>Conectando Linkare</h1><p>Verificando sesión y cargando la base de datos de Supabase…</p></section></main>`;
     if (!this.state.authenticatedUserId) return this.renderLogin();
     const view = this.state.view;
     const settings = this.state.data.settings || {};
@@ -2960,7 +2976,7 @@ class App extends React.Component {
               : view === 'analytics' ? this.renderAnalytics()
                 : view === 'alerts' ? this.renderAlerts()
                   : this.renderSettings();
-    return html`<div className=${`app-shell ${settings.largeText ? 'large-text-mode' : ''} ${settings.reducedMotion ? 'reduced-motion-mode' : ''} ${this.state.tourActive ? 'tour-visible-layout' : ''}`}><div className="ambient ambient-one"></div><div className="ambient ambient-two"></div><div className="app-frame">${this.renderTopbar()}<main className="main-content">${body}</main><footer><span>Linkare · Apoyo al seguimiento</span><span>Datos sintéticos · No usar para atención real</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderTutorialIntro()}${this.renderGuidedTour()}${this.state.toast ? html`<div className=${`toast toast-${this.state.toastTone}`}><${Icon} name=${this.state.toastTone === 'danger' ? 'alert' : 'check'} size=${18}/>${this.state.toast}</div>` : null}</div>`;
+    return html`<div className=${`app-shell ${settings.largeText ? 'large-text-mode' : ''} ${settings.reducedMotion ? 'reduced-motion-mode' : ''} ${this.state.tourActive ? 'tour-visible-layout' : ''}`}><div className="ambient ambient-one"></div><div className="ambient ambient-two"></div><div className="app-frame">${this.renderTopbar()}<main className="main-content">${body}</main><footer><span>Linkare · Apoyo al seguimiento</span><span>${productionMode ? (this.state.remoteSaveStatus === 'saving' ? 'Guardando en Supabase…' : this.state.remoteSaveStatus === 'error' ? 'Error de guardado' : 'Supabase conectado') : 'Modo demo · Datos sintéticos'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderTutorialIntro()}${this.renderGuidedTour()}${this.state.toast ? html`<div className=${`toast toast-${this.state.toastTone}`}><${Icon} name=${this.state.toastTone === 'danger' ? 'alert' : 'check'} size=${18}/>${this.state.toast}</div>` : null}</div>`;
   }
 }
 

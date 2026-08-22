@@ -24,3 +24,30 @@ export async function createWompiPaymentLink(payload) {
   });
   return unwrapFunctionResponse(data, error);
 }
+
+export async function fetchSubscriptionInvoices(organizationId) {
+  const client = assertSupabaseConfigured();
+  if (!organizationId) return [];
+  const { data, error } = await client
+    .from('linkare_subscription_invoices')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message || 'No se pudo cargar el historial de facturación.');
+  return (data || []).map(row => ({
+    id: row.id,
+    description: row.description,
+    amount: Number(row.amount) || 0,
+    method: row.method || 'wompi',
+    status: row.status || 'pending',
+    payerName: row.payer_name || '',
+    payerEmail: row.payer_email || '',
+    billingPeriod: row.billing_period || '',
+    externalReference: row.external_reference || '',
+    paymentUrl: row.payment_url || '',
+    qrUrl: row.qr_url || '',
+    isTest: Boolean(row.is_test),
+    createdAt: row.created_at,
+    paidAt: row.paid_at,
+  }));
+}

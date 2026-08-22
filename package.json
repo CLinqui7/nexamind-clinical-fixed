@@ -1,20 +1,20 @@
 {
   "name": "nexamind-clinical",
-  "version": "1.6.0",
+  "version": "1.8.0",
   "private": true,
   "type": "module",
-  "description": "Linkare: gestión psiquiátrica y cobro de la suscripción de la clínica mediante Wompi y Supabase.",
+  "description": "Linkare: gestión psiquiátrica con registro self-service, Supabase Auth, suscripción mensual de US$40 y Wompi mediante Edge Functions.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 4173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check:syntax": "node --check src/app.js && node --check src/data.js && node --check src/utils.js && node --check src/clinical.js && node --check src/practice.js && node --check src/lib/supabase.js && node --check src/services/wompi.js && node --check src/services/billing.js && node --check vite.config.js",
+    "check:syntax": "node --check src/app.js && node --check src/data.js && node --check src/utils.js && node --check src/clinical.js && node --check src/practice.js && node --check src/lib/supabase.js && node --check src/services/wompi.js && node --check src/services/appState.js && node --check vite.config.js",
     "check:domain": "node scripts/validate-domain.mjs",
-    "check": "npm run check:syntax && npm run check:release && npm run check:domain && npm run check:linkare && npm run check:wompi && npm run check:billing && vite build",
+    "check": "npm run check:syntax && npm run check:release && npm run check:domain && npm run check:linkare && npm run check:wompi && npm run check:production && vite build",
     "check:release": "node scripts/validate-release.mjs",
-    "check:linkare": "node scripts/validate-linkare-v1.3.mjs",
-    "check:wompi": "node scripts/validate-wompi-v1.6.mjs",
-    "check:billing": "node scripts/validate-platform-billing-v1.6.mjs"
+    "check:linkare": "node scripts/validate-linkare-v1.8.mjs",
+    "check:wompi": "node scripts/validate-wompi-v1.5.mjs",
+    "check:production": "node scripts/validate-production-v1.7.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
