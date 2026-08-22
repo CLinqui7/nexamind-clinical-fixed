@@ -2278,6 +2278,35 @@ class App extends React.Component {
     </main>`;
   }
 
+  renderTopbar() {
+    const user = this.activeUser();
+    const nav = [
+      ['dashboard', 'overview', 'Inicio', true],
+      ['patients', 'patients', 'Pacientes', this.can('patientsView')],
+      ['agenda', 'calendar', 'Agenda', this.can('appointmentsManage')],
+      ['payments', 'insurance', 'Mi plan', user?.role === 'owner' || user?.role === 'doctor'],
+      ['analytics', 'analytics', 'Resultados', this.can('analyticsView')],
+      ['alerts', 'alert', 'Alertas', this.can('alertsView')],
+    ].filter(item => item[3]);
+    const active = this.state.view === 'patient' ? 'patients' : this.state.view;
+    const openAlerts = this.state.data.alerts.filter(item => item.status === 'open').length;
+    const canConfigure = this.can('settingsManage') || this.can('usersManage');
+    return html`<header className="topbar">
+      <${Logo} organization=${this.state.data.organization}/>
+      <nav data-tour="main-navigation" className=${`nav-pill ${this.state.mobileNav ? 'nav-open' : ''}`} aria-label="Navegación principal">
+        ${nav.map(([key, icon, label]) => html`<button key=${key} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
+      </nav>
+      <div className="top-actions">
+        <button className="help-button" data-tour="help-button" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
+        ${this.can('alertsView') ? html`<button className="icon-button notification-button" aria-label="Ver alertas" onClick=${() => this.setView('alerts')}><${Icon} name="alert"/>${openAlerts ? html`<i></i>` : null}</button>` : null}
+        ${canConfigure ? html`<button className="icon-button" data-tour="settings-button" aria-label="Configuración" onClick=${() => this.setView('settings')}><${Icon} name="settings"/></button>` : null}
+        <button className="profile-chip profile-chip-button" onClick=${this.openAccount} title="Cuenta y cierre de sesión"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="sm"/><div><b>${user?.name || 'Usuario'}</b><small>${user?.title || (user?.role === 'secretary' ? 'Secretaría' : 'Psiquiatría')}</small></div><${Icon} name="arrowDown" size=${14}/></button>
+        <button className="mobile-account icon-button" aria-label="Cuenta y cierre de sesión" onClick=${this.openAccount}><${Icon} name="lock"/></button>
+        <button className="mobile-menu icon-button" aria-label="Abrir menú" onClick=${() => this.setState({ mobileNav: !this.state.mobileNav })}><${Icon} name="menu"/></button>
+      </div>
+    </header>`;
+  }
+
   renderSecretaryDashboard() {
     const { patients, appointments } = this.state.data;
     const user = this.activeUser();

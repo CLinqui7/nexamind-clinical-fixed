@@ -2,6 +2,9 @@ import { supabase, supabaseConfigured } from '../lib/supabase.js';
 
 export const appMode = String(import.meta.env.VITE_APP_MODE || 'demo').trim().toLowerCase();
 export const productionMode = appMode === 'production';
+export const publicAppUrl = String(
+  import.meta.env.VITE_PUBLIC_APP_URL || 'https://nexamind-clinical.vercel.app'
+).trim().replace(/\/+$/, '');
 
 export async function signUpProduction({ fullName, clinicName, email, password }) {
   if (!productionMode) return null;
@@ -17,6 +20,7 @@ export async function signUpProduction({ fullName, clinicName, email, password }
     email: cleanEmail,
     password,
     options: {
+      emailRedirectTo: `${publicAppUrl || window.location.origin}/?email_confirmed=1`,
       data: {
         full_name: cleanName,
         clinic_name: cleanClinic,
@@ -57,11 +61,27 @@ export async function bootstrapAndLoadState(seedPayload, requestedOrganizationNa
   if (!productionMode) return { organizationId: null, payload: seedPayload };
   if (!supabaseConfigured || !supabase) throw new Error('Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
 
-  const { data: organizationId, error: bootstrapError } = await supabase.rpc('linkare_bootstrap_organization', {
-    requested_name: requestedOrganizationName || seedPayload?.organization?.name || 'Linkare Clinic',
+  const requestedName = requestedOrganizationName || seedPayload?.organization?.name || 'Linkare Clinic';
+  let organizationId = null;
+
+  const { data: rpcOrganizationId, error: bootstrapError } = await supabase.rpc('linkare_bootstrap_organization', {
+    requested_name: requestedName,
     requested_slug: null,
   });
-  if (bootstrapError) throw new Error(bootstrapError.message || 'No se pudo preparar la organización.');
+
+  if (!bootstrapError && rpcOrganizationId) {
+    organizationId = rpcOrganizationId;
+  } else {
+    const missingRpc = /Could not find the function|schema cache|PGRST202/i.test(String(bootstrapError?.message || ''));
+    if (!missingRpc) throw new Error(bootstrapError?.message || 'No se pudo preparar la organización.');
+
+    const { data: functionData, error: functionError } = await supabase.functions.invoke('linkare-bootstrap', {
+      body: { requestedName },
+    });
+    if (functionError) throw new Error(functionError.message || 'No se pudo preparar la organización.');
+    organizationId = functionData?.organizationId || null;
+    if (!organizationId) throw new Error(functionData?.error || 'No se pudo crear la organización en Supabase.');
+  }
 
   const { data: userData } = await supabase.auth.getUser();
   const currentUserId = userData?.user?.id || null;

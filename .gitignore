@@ -10,3 +10,9 @@ backup-*/
 _patch-*/
 .DS_Store
 Thumbs.db
+
+_backups/
+
+.qa-selenium-venv/
+
+supabase/.temp/

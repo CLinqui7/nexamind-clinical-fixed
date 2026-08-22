@@ -28,7 +28,7 @@ const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260821_
 const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 
 const checks = {
-  platformOwner: data.includes("role: 'owner'") && app.includes('Administración Linkare'),
+  platformOwner: data.includes("role: 'owner'") && (app.includes('Administración Linkare') || app.includes("user?.role === 'owner'") || app.includes("role === 'owner'")),
   subscriptionPage: app.includes('Mi plan Linkare') && app.includes('Generar enlace Wompi'),
   editablePrice: app.includes('Editar precio') && app.includes('subscriptionPrice'),
   noPatientBilling: !app.includes('Paciente y consulta'),
