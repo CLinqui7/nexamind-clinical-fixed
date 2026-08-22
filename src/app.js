@@ -632,6 +632,39 @@ class App extends React.Component {
     if (this.state.loginBusy) return;
     this.setState({ loginBusy: true, loginError: '' });
     try {
+      // Las cuentas demo siguen disponibles incluso cuando VITE_APP_MODE=production.
+      // Si las credenciales coinciden con un usuario local, entramos en modo demo
+      // sin consultar Supabase y sin guardar nada clínico remotamente.
+      const demoUser = (this.state.data.users || []).find(user =>
+        user.active !== false &&
+        String(user.email || '').trim().toLowerCase() === String(this.state.loginDraft.email || '').trim().toLowerCase()
+      );
+      if (demoUser) {
+        const user = authenticateLocalUser(this.state.data, this.state.loginDraft.email, this.state.loginDraft.password);
+        const data = setActiveUser(this.state.data, user.id);
+        try {
+          localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ userId: user.id, expiresAt: Date.now() + AUTH_SESSION_DURATION_MS, demo: true }));
+        } catch (_) { /* Continue in-memory if storage is unavailable. */ }
+        this.setState({
+          data,
+          authenticatedUserId: user.id,
+          remoteOrganizationId: null,
+          remoteReady: false,
+          remoteSaveStatus: 'demo',
+          loginBusy: false,
+          loginError: '',
+          loginDraft: { email: '', password: '', showPassword: false },
+          view: 'dashboard',
+          patientTab: 'overview',
+          modal: null,
+          appointmentDetails: null,
+          mobileNav: false,
+          tutorialIntro: false,
+          tourActive: false,
+        });
+        return;
+      }
+
       if (productionMode) {
         const session = await signInProduction(this.state.loginDraft.email, this.state.loginDraft.password);
         if (!session) throw new Error('Supabase no devolvió una sesión válida.');
@@ -2190,8 +2223,11 @@ class App extends React.Component {
   }
 
   renderDemoAccounts(owner, doctor, secretary, organization) {
-    if (productionMode) return html`<div className="production-login-note"><${Icon} name="shield" size=${18}/><div><b>¿Aún no tiene cuenta?</b><button type="button" className="inline-auth-link" onClick=${this.showRegister}>Crear una cuenta nueva</button></div></div>`;
-    return html`<div><div className="login-divider"><span>Accesos de demostración</span></div><div className="login-demo-accounts">
+    return html`<div>
+      ${productionMode ? html`<div className="production-login-note"><${Icon} name="shield" size=${18}/><div><b>¿Aún no tiene cuenta?</b><button type="button" className="inline-auth-link" onClick=${this.showRegister}>Crear una cuenta nueva</button></div></div>` : null}
+      <div className="login-divider"><span>Accesos de demostración</span></div>
+      <div className="demo-login-warning"><${Icon} name="help" size=${16}/><span>Estos accesos usan datos ficticios y no guardan información clínica en Supabase.</span></div>
+      <div className="login-demo-accounts">
       ${owner ? html`<button type="button" onClick=${() => this.fillDemoCredentials('owner')}><${UserAvatar} user=${owner} organization=${organization} size="md"/><div><b>Administración Linkare</b><span>${owner.email}</span><small>Contraseña: ${owner.password || 'Linkare2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
       ${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Cuenta médica</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
       ${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Cuenta de secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
