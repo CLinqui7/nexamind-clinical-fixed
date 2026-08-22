@@ -4195,3 +4195,9 @@ body.tour-panel-dragging {
   .auth-tabs { margin-bottom: 16px; }
   .auth-tabs button { padding: 10px 8px; font-size: 12px; }
 }
+
+
+/* Linkare v1.9.2 billing layout fix */
+.dashboard-grid > *, [class*="payer"], [class*="billing"] { min-width: 0; }
+[class*="payer"] b, [class*="payer"] strong, [class*="payer"] span, [class*="payer"] p, [class*="billing"] b, [class*="billing"] strong { overflow-wrap: anywhere; word-break: break-word; white-space: normal; max-width: 100%; }
+@media (max-width: 900px) { [class*="payer"] { grid-template-columns: 1fr !important; } }

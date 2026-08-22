@@ -253,7 +253,6 @@ export function createSeedData() {
       prescriptionFooter: 'Documento emitido para revisión, firma y sello del profesional tratante.',
     },
     users: [
-      { id: 'user_owner_1', name: 'Administración Linkare', email: 'admin@linkare.demo', password: 'Linkare2026!', phone: '+503 7000 0000', title: 'Propietario de plataforma', role: 'owner', active: true, avatar: '', permissions: {}, createdAt: new Date().toISOString() },
       { id: 'user_doctor_1', name: 'Dra. Adriana Salazar', email: 'doctora@nexamind.demo', password: 'NexaMind2026!', phone: '+503 2200 0000', title: 'Psiquiatra', role: 'doctor', active: true, avatar: '', permissions: {}, createdAt: new Date().toISOString() },
       { id: 'user_secretary_1', name: 'María Torres', email: 'secretaria@nexamind.demo', password: 'Agenda2026!', phone: '+503 7000 1111', title: 'Secretaría clínica', role: 'secretary', active: true, avatar: '', permissions: { patientsView: true, patientsCreate: true, patientsEdit: true, appointmentsManage: true, remindersManage: true, clinicalView: false, clinicalEdit: false, medicationsManage: false, prescriptionsCreate: false, alertsView: false, analyticsView: false, exportsManage: false, settingsManage: false, usersManage: false }, createdAt: new Date().toISOString() },
     ],

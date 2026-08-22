@@ -1702,7 +1702,7 @@ class App extends React.Component {
   };
 
   openBillingSettings = () => {
-    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
+    if (!['owner', 'doctor'].includes(this.activeUser()?.role)) return this.permissionDenied();
     const billing = this.state.data.billing || {};
     this.setState({ modal: { type: 'billingSettings', draft: {
       planName: billing.planName || 'Plan Profesional Linkare',
@@ -1720,7 +1720,7 @@ class App extends React.Component {
 
   saveBillingSettingsForm = async event => {
     event.preventDefault();
-    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
+    if (!['owner', 'doctor'].includes(this.activeUser()?.role)) return this.permissionDenied();
     const draft = this.state.modal?.draft || {};
     const price = Number(draft.subscriptionPrice);
     if (!Number.isFinite(price) || price < 0.01) return this.setState({ modalError: 'Ingrese un precio mayor o igual a US$0.01.' });
@@ -1765,6 +1765,10 @@ class App extends React.Component {
   };
 
   loadWompiStatus = async () => {
+    if (!this.state.remoteOrganizationId) {
+      this.setState({ wompiStatus: { state: 'demo', app: null, error: '' } });
+      return;
+    }
     if (!supabaseConfigured) {
       this.setState({ wompiStatus: { state: 'not-configured', app: null, error: 'Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.' } });
       return;
@@ -1779,7 +1783,11 @@ class App extends React.Component {
   };
 
   openWompiPaymentRequest = () => {
-    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
+    if (!['owner', 'doctor'].includes(this.activeUser()?.role)) return this.permissionDenied();
+    if (!this.state.remoteOrganizationId) {
+      this.notify('Este acceso es de demostración. Para generar un enlace Wompi real, inicie sesión con una cuenta registrada.', 'danger');
+      return;
+    }
     const billing = this.state.data.billing || {};
     const period = new Date().toISOString().slice(0, 7);
     this.setState({
@@ -1801,7 +1809,7 @@ class App extends React.Component {
   submitWompiPaymentRequest = async event => {
     event.preventDefault();
     if (this.state.wompiBusy) return;
-    if (this.activeUser()?.role !== 'owner') return this.permissionDenied();
+    if (!['owner', 'doctor'].includes(this.activeUser()?.role)) return this.permissionDenied();
     const draft = this.state.modal?.draft || {};
     const amount = Number(draft.amount);
     if (!Number.isFinite(amount) || amount < 0.01) return this.setState({ modalError: 'Ingrese un monto válido.' });
@@ -2225,10 +2233,9 @@ class App extends React.Component {
   renderDemoAccounts(owner, doctor, secretary, organization) {
     return html`<div>
       ${productionMode ? html`<div className="production-login-note"><${Icon} name="shield" size=${18}/><div><b>¿Aún no tiene cuenta?</b><button type="button" className="inline-auth-link" onClick=${this.showRegister}>Crear una cuenta nueva</button></div></div>` : null}
-      <div className="login-divider"><span>Accesos de demostración</span></div>
+      <div className="login-divider"><span>Accesos de demostración · Médico y Secretaría</span></div>
       <div className="demo-login-warning"><${Icon} name="help" size=${16}/><span>Estos accesos usan datos ficticios y no guardan información clínica en Supabase.</span></div>
       <div className="login-demo-accounts">
-      ${owner ? html`<button type="button" onClick=${() => this.fillDemoCredentials('owner')}><${UserAvatar} user=${owner} organization=${organization} size="md"/><div><b>Administración Linkare</b><span>${owner.email}</span><small>Contraseña: ${owner.password || 'Linkare2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
       ${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Cuenta médica</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
       ${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Cuenta de secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
     </div></div>`;
@@ -2820,17 +2827,17 @@ class App extends React.Component {
       eyebrow="Suscripción de la plataforma"
       title="Mi plan Linkare"
       subtitle=${isOwner ? 'Administre el precio que pagará el psiquiatra y genere un enlace único de Wompi.' : 'Revise el precio de su licencia y pague mediante el enlace seguro de Wompi.'}
-      actions=${html`<div className="tour-actions-group">${isOwner ? html`<${Button} tone="secondary" icon="settings" onClick=${this.openBillingSettings}>Editar precio</${Button}><${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Pagar con Wompi</${Button}>` : null}<${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus} disabled=${wompiStatus.state === 'loading'}>Verificar Wompi</${Button}></div>`}
+      actions=${html`<div className="tour-actions-group">${isOwner ? html`<${Button} tone="secondary" icon="settings" onClick=${this.openBillingSettings}>Editar precio</${Button}><${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Pagar con Wompi</${Button}>` : isDoctor ? html`<${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : null}<${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus} disabled=${wompiStatus.state === 'loading'}>Verificar Wompi</${Button}></div>`}
     />
 
       <div className="subscription-hero">
         <div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>${billing.planName || 'Plan Profesional Linkare'}</h2><p>${billing.planDescription || 'Licencia de la plataforma Linkare.'}</p><div className="subscription-price"><strong>${money(billing.subscriptionPrice)}</strong><span>/ ${billing.billingCycle || 'mes'}</span></div></div>
-        <div className="subscription-status-card"><span>Estado de la licencia</span><b>${latestPaid ? 'Pago registrado' : latestPending ? 'Pago pendiente' : 'Sin factura generada'}</b><small>${latestPaid ? `Último pago: ${formatDateTime(latestPaid.paidAt || latestPaid.createdAt)}` : latestPending ? `Periodo: ${latestPending.billingPeriod || 'actual'}` : 'Administración debe generar el enlace.'}</small>${isDoctor && latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Abrir pago seguro</${Button}>` : null}</div>
+        <div className="subscription-status-card"><span>Estado de la licencia</span><b>${latestPaid ? 'Pago registrado' : latestPending ? 'Pago pendiente' : 'Sin factura generada'}</b><small>${latestPaid ? `Último pago: ${formatDateTime(latestPaid.paidAt || latestPaid.createdAt)}` : latestPending ? `Periodo: ${latestPending.billingPeriod || 'actual'}` : 'Presione “Generar enlace Wompi” para crear su checkout seguro de US$40.'}</small>${isDoctor && latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Abrir pago seguro</${Button}>` : null}</div>
       </div>
 
       <div className="kpi-grid"><${KpiCard} label="Precio actual" value=${money(billing.subscriptionPrice)} hint=${billing.billingCycle || 'mensual'} icon="file" tone="blue"/><${KpiCard} label="Facturas pendientes" value=${pending.length} hint="por pagar" icon="clock" tone=${pending.length ? 'coral' : 'teal'}/><${KpiCard} label="Pagos registrados" value=${paid.length} hint="historial" icon="check" tone="teal"/><${KpiCard} label="Wompi" value=${wompiStatusText} hint=${wompiStatus.state === 'ready' ? (appInfo.nombre || 'Aplicativo conectado') : (wompiStatus.error || 'Use Verificar Wompi')} icon="insurance" tone="purple"/></div>
 
-      <div className="dashboard-grid"><${Card} className="span-7" title="Cómo funciona el cobro" subtitle="Este módulo es para que el psiquiatra pague la licencia de Linkare, no para cobrarle a pacientes."><div className="subscription-flow"><div><b>1</b><span>Administración edita el precio</span></div><i></i><div><b>2</b><span>Linkare crea un enlace único</span></div><i></i><div><b>3</b><span>El psiquiatra paga en Wompi</span></div><i></i><div><b>4</b><span>Webhook confirma en Supabase</span></div></div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> App ID y API Secret se guardan únicamente en Supabase Secrets. La tarjeta nunca se captura dentro de Linkare.</div></${Card}><${Card} className="span-5" title="Datos del pagador"><div className="billing-summary-grid"><div className="billing-summary-card"><span>Nombre</span><strong>${billing.payerName || this.state.data.organization?.clinician || 'Psiquiatra'}</strong><small>Cliente de Linkare</small></div><div className="billing-summary-card"><span>Correo</span><strong>${billing.payerEmail || 'Sin correo'}</strong><small>Recibe confirmación de Wompi</small></div><div className="billing-summary-card"><span>Modo Wompi</span><strong>${appInfo.estaProductivo ? 'Producción' : 'Prueba'}</strong><small>${wompiStatus.state === 'ready' ? 'Determinado por el aplicativo Wompi' : 'Pendiente de verificar'}</small></div></div>${isOwner ? html`<${Button} tone="secondary" icon="edit" onClick=${this.openBillingSettings}>Modificar plan y precio</${Button}>` : null}</${Card}>
+      <div className="dashboard-grid"><${Card} className="span-7" title="Cómo funciona el cobro" subtitle="Este módulo es para que el psiquiatra pague la licencia de Linkare, no para cobrarle a pacientes."><div className="subscription-flow"><div><b>1</b><span>Linkare define el precio</span></div><i></i><div><b>2</b><span>Linkare crea un enlace único</span></div><i></i><div><b>3</b><span>El psiquiatra paga en Wompi</span></div><i></i><div><b>4</b><span>Webhook confirma en Supabase</span></div></div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> App ID y API Secret se guardan únicamente en Supabase Secrets. La tarjeta nunca se captura dentro de Linkare.</div></${Card}><${Card} className="span-5" title="Datos del pagador"><div className="billing-summary-grid"><div className="billing-summary-card"><span>Nombre</span><strong>${billing.payerName || this.state.data.organization?.clinician || 'Psiquiatra'}</strong><small>Cliente de Linkare</small></div><div className="billing-summary-card"><span>Correo</span><strong>${billing.payerEmail || 'Sin correo'}</strong><small>Recibe confirmación de Wompi</small></div><div className="billing-summary-card"><span>Modo Wompi</span><strong>${appInfo.estaProductivo ? 'Producción' : 'Prueba'}</strong><small>${wompiStatus.state === 'ready' ? 'Determinado por el aplicativo Wompi' : 'Pendiente de verificar'}</small></div></div>${isOwner ? html`<${Button} tone="secondary" icon="edit" onClick=${this.openBillingSettings}>Modificar plan y precio</${Button}>` : null}</${Card}>
 
         <${Card} className="span-12" title="Historial de facturación" subtitle="Los enlaces generados se guardan en Supabase y se actualizan por webhook."><div className="table-wrap"><table className="data-table"><thead><tr><th>Periodo</th><th>Concepto</th><th>Pagador</th><th>Monto</th><th>Modo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${payments.length ? payments.map(item => html`<tr key=${item.id}><td><b>${item.billingPeriod || '—'}</b><small>${formatDate(item.createdAt)}</small></td><td>${item.description || billing.planName}</td><td>${item.payerName || billing.payerName || 'Psiquiatra'}<small>${item.payerEmail || billing.payerEmail || ''}</small></td><td>${money(item.amount)}</td><td>${item.isTest ? html`<${Badge} tone="warning">Prueba</${Badge}>` : html`<${Badge} tone="success">Producción</${Badge}>`}</td><td><${Badge} tone=${item.status === 'paid' ? 'success' : item.status === 'pending' ? 'warning' : 'neutral'}>${item.status === 'paid' ? 'Pagado' : item.status === 'pending' ? 'Pendiente' : 'Cancelado'}</${Badge}></td><td>${item.paymentUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(item.paymentUrl)}>Abrir enlace <${Icon} name="external" size=${14}/></button>` : '—'}</td></tr>`) : html`<tr><td colSpan="7">Todavía no hay facturas.</td></tr>`}</tbody></table></div></${Card}>
       </div>

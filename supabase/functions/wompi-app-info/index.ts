@@ -16,7 +16,7 @@ function getPublishableKey() {
 async function verifySession(request: Request, requireAuth: boolean) {
   if (!requireAuth) return;
   const authorization = request.headers.get('Authorization') || '';
-  if (!authorization) throw new Error('Debe iniciar sesión para verificar Wompi.');
+  if (!authorization) throw new Error('Debe iniciar sesión con una cuenta real para verificar Wompi.');
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const publishableKey = getPublishableKey();
   if (!publishableKey) throw new Error('Supabase no expuso una llave pública para validar la sesión.');
@@ -35,9 +35,8 @@ Deno.serve(async (request: Request) => {
     const app = await wompiRequest('/Aplicativo', { method: 'GET' }, config);
     return jsonResponse(request, { ok: true, app });
   } catch (error) {
-    return jsonResponse(request, {
-      ok: false,
-      message: error instanceof Error ? error.message : 'No se pudo consultar el aplicativo Wompi.',
-    }, 500);
+    const message = error instanceof Error ? error.message : 'No se pudo consultar el aplicativo Wompi.';
+    const status = /sesión|iniciar sesión/i.test(message) ? 401 : 502;
+    return jsonResponse(request, { ok: false, message }, status);
   }
 });

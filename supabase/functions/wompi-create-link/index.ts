@@ -24,9 +24,7 @@ function getPublishableKey() {
   try {
     const keys = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '{}');
     return String(keys.default || '').trim();
-  } catch (_) {
-    return '';
-  }
+  } catch (_) { return ''; }
 }
 
 function getSecretKey() {
@@ -35,9 +33,7 @@ function getSecretKey() {
   try {
     const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}');
     return String(keys.default || '').trim();
-  } catch (_) {
-    return '';
-  }
+  } catch (_) { return ''; }
 }
 
 async function getUser(request: Request, requireAuth: boolean) {
@@ -45,7 +41,7 @@ async function getUser(request: Request, requireAuth: boolean) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const publishableKey = getPublishableKey();
   const authorization = request.headers.get('Authorization') || '';
-  if (!authorization) throw new Error('Debe iniciar sesión para generar un enlace.');
+  if (!authorization) throw new Error('Debe iniciar sesión para generar un enlace de Wompi.');
   if (!publishableKey) throw new Error('Supabase no expuso una llave pública para validar la sesión.');
   const client = createClient(supabaseUrl, publishableKey, { global: { headers: { Authorization: authorization } } });
   const { data, error } = await client.auth.getUser();
@@ -87,8 +83,8 @@ Deno.serve(async (request: Request) => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (memberError) throw new Error(`No se pudo validar el permiso: ${memberError.message}`);
-      if (!member?.active || member.role !== 'owner') {
-        throw new Error('Solo administración Linkare puede generar un enlace nuevo.');
+      if (!member?.active || !['owner', 'doctor'].includes(String(member.role))) {
+        throw new Error('Solo el médico responsable puede generar el enlace de pago de su licencia.');
       }
 
       const { data: billing, error: billingError } = await db
@@ -112,14 +108,11 @@ Deno.serve(async (request: Request) => {
 
     const webhookUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/wompi-webhook`;
     const redirectUrl = `${config.appPublicUrl.replace(/\/$/, '')}/?payment=return`;
-
     const requestBody = {
       identificadorEnlaceComercio: reference,
       monto: amount,
       nombreProducto: description,
-      infoProducto: {
-        descripcionProducto: `${planName} · Periodo ${billingPeriod}`,
-      },
+      infoProducto: { descripcionProducto: `${planName} · Periodo ${billingPeriod}` },
       configuracion: {
         urlRedirect: redirectUrl,
         urlRetorno: config.appPublicUrl,
@@ -130,17 +123,10 @@ Deno.serve(async (request: Request) => {
         esCantidadEditable: false,
         cantidadPorDefecto: 1,
       },
-      limitesDeUso: {
-        cantidadMaximaPagosExitosos: 1,
-        cantidadMaximaPagosFallidos: 5,
-      },
+      limitesDeUso: { cantidadMaximaPagosExitosos: 1, cantidadMaximaPagosFallidos: 5 },
     };
 
-    const wompi = await wompiRequest('/EnlacePago', {
-      method: 'POST',
-      body: JSON.stringify(requestBody),
-    }, config);
-
+    const wompi = await wompiRequest('/EnlacePago', { method: 'POST', body: JSON.stringify(requestBody) }, config);
     const { error: insertError } = await db.from('linkare_subscription_invoices').insert({
       organization_id: organizationId,
       payer_user_id: user?.id || null,
@@ -159,9 +145,8 @@ Deno.serve(async (request: Request) => {
       qr_url: wompi.urlQrCodeEnlace || null,
       is_test: wompi.estaProductivo === false,
       provider_payload: wompi,
-      metadata: { purpose: input.purpose || 'linkare_subscription', requestedBy: user?.email || 'demo' },
+      metadata: { purpose: input.purpose || 'linkare_subscription', requestedBy: user?.email || 'unknown' },
     });
-
     if (insertError) throw new Error(`Wompi creó el enlace, pero Supabase no pudo guardar la factura: ${insertError.message}`);
 
     return jsonResponse(request, {
