@@ -2,11 +2,35 @@ import { assertSupabaseConfigured, supabaseConfigured } from '../lib/supabase.js
 
 export { supabaseConfigured };
 
-function unwrapFunctionResponse(data, error) {
-  if (error) {
-    const contextMessage = error?.context?.body?.message || error?.message;
-    throw new Error(contextMessage || 'No se pudo completar la operación con Wompi.');
+async function extractFunctionError(error) {
+  if (!error) return '';
+  let message = error?.message || '';
+  const context = error?.context;
+  try {
+    if (context instanceof Response) {
+      const clone = context.clone();
+      const payload = await clone.json().catch(async () => ({ message: await clone.text().catch(() => '') }));
+      message = payload?.message || payload?.error || payload?.msg || message;
+    } else if (context?.body) {
+      if (typeof context.body === 'string') {
+        try {
+          const parsed = JSON.parse(context.body);
+          message = parsed?.message || parsed?.error || context.body || message;
+        } catch (_) {
+          message = context.body || message;
+        }
+      } else {
+        message = context.body?.message || context.body?.error || message;
+      }
+    }
+  } catch (_) {
+    // Keep the original Supabase error message.
   }
+  return message || 'No se pudo completar la operación con Wompi.';
+}
+
+async function unwrapFunctionResponse(data, error) {
+  if (error) throw new Error(await extractFunctionError(error));
   if (!data?.ok) throw new Error(data?.message || 'Wompi devolvió una respuesta incompleta.');
   return data;
 }
@@ -14,15 +38,13 @@ function unwrapFunctionResponse(data, error) {
 export async function fetchWompiAppInfo() {
   const client = assertSupabaseConfigured();
   const { data, error } = await client.functions.invoke('wompi-app-info', { body: {} });
-  return unwrapFunctionResponse(data, error).app;
+  return (await unwrapFunctionResponse(data, error)).app;
 }
 
 export async function createWompiPaymentLink(payload) {
   const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('wompi-create-link', {
-    body: payload,
-  });
-  return unwrapFunctionResponse(data, error);
+  const { data, error } = await client.functions.invoke('wompi-create-link', { body: payload });
+  return await unwrapFunctionResponse(data, error);
 }
 
 export async function fetchSubscriptionInvoices(organizationId) {

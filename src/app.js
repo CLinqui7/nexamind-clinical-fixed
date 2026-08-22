@@ -2236,8 +2236,8 @@ class App extends React.Component {
       <div className="login-divider"><span>Accesos de demostración · Médico y Secretaría</span></div>
       <div className="demo-login-warning"><${Icon} name="help" size=${16}/><span>Estos accesos usan datos ficticios y no guardan información clínica en Supabase.</span></div>
       <div className="login-demo-accounts">
-      ${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Cuenta médica</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
-      ${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Cuenta de secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
+      ${doctor ? html`<button type="button" onClick=${() => this.fillDemoCredentials('doctor')}><${UserAvatar} user=${doctor} organization=${organization} size="md"/><div><b>Entrar como Médico</b><span>${doctor.email}</span><small>Contraseña: ${doctor.password || 'NexaMind2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
+      ${secretary ? html`<button type="button" onClick=${() => this.fillDemoCredentials('secretary')}><${UserAvatar} user=${secretary} organization=${organization} size="md"/><div><b>Entrar como Secretaría</b><span>${secretary.email}</span><small>Contraseña: ${secretary.password || 'Agenda2026!'}</small></div><${Icon} name="chevronRight" size=${17}/></button>` : null}
     </div></div>`;
   }
 
@@ -2261,7 +2261,7 @@ class App extends React.Component {
     const users = Array.isArray(this.state.data.users) ? this.state.data.users : [];
     const owner = users.find(user => user.role === 'owner' && user.active !== false);
     const doctor = users.find(user => user.role === 'doctor' && user.active !== false);
-    const secretary = users.find(user => user.role === 'secretary' && user.active !== false);
+    const secretary = users.find(user => user.role === 'secretary' && user.active !== false) || { id: 'user_secretary_fallback', name: 'María Torres', email: 'secretaria@nexamind.demo', password: 'Agenda2026!', title: 'Secretaría clínica', role: 'secretary', active: true, permissions: { patientsView: true, patientsCreate: true, patientsEdit: true, appointmentsManage: true, remindersManage: true, clinicalView: false, clinicalEdit: false, medicationsManage: false, prescriptionsCreate: false, alertsView: false, analyticsView: false, exportsManage: false, settingsManage: false, usersManage: false } };
     const registering = productionMode && this.state.authView === 'register';
     const authContent = registering
       ? this.renderRegistrationForm()
