@@ -1,4 +1,5 @@
 import { COMMON_ADVERSE_EFFECTS, SCALE_CATALOG, normalizePatient } from './data.js';
+import { normalizeDeathRecord, normalizeNotificationPreferences, patientExtensionDefaults } from './v2features.js';
 import {
   addMinutes,
   calculateBMI,
@@ -87,6 +88,12 @@ export function patientFormDefaults() {
     scaleCode: 'PHQ-9', initialScore: '', nextVisit: '', notes: '',
     hasInsurance: false, insuranceProvider: '', insurancePlan: '', insuranceMemberId: '',
     insurancePolicyNumber: '', insuranceAuthorizationRequired: false, insuranceCopay: '', insuranceNotes: '',
+    preferredName: '', pronouns: '', sexAssignedAtBirth: 'No registrado', genderIdentity: 'No registrada',
+    sexualOrientation: 'No registrada', relationshipStatus: 'No registrado', significantPeople: '',
+    ideationHistory: 'No registrada', suicideAttemptsCount: 0, lastAttemptDate: '', selfHarmHistory: 'No registrada',
+    safetyPlan: '', emergencyContact: '', safetyHistoryNotes: '',
+    vitalStatus: 'active', reminderEnabled: true, reminderChannels: ['whatsapp'], reminderHours: [24, 8],
+    reminderEmail: '', reminderPhone: '', reminderConsentStatus: 'pending', reminderLanguage: 'Español',
   };
 }
 
@@ -101,6 +108,7 @@ export function patientEditFormDefaults(patient) {
     insuranceMemberId: patient?.insurance?.memberId || '', insurancePolicyNumber: patient?.insurance?.policyNumber || '',
     insuranceAuthorizationRequired: Boolean(patient?.insurance?.authorizationRequired),
     insuranceCopay: patient?.insurance?.copay || '', insuranceNotes: patient?.insurance?.notes || '',
+    ...patientExtensionDefaults(patient),
   };
 }
 
@@ -207,6 +215,36 @@ export function createPatient(data, draft) {
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
     photo: draft.photo || '',
+    preferredName: cleanText(draft.preferredName),
+    pronouns: cleanText(draft.pronouns),
+    sexAssignedAtBirth: draft.sexAssignedAtBirth || 'No registrado',
+    genderIdentity: draft.genderIdentity || 'No registrada',
+    sexualOrientation: draft.sexualOrientation || 'No registrada',
+    relationshipStatus: draft.relationshipStatus || 'No registrado',
+    significantPeople: cleanText(draft.significantPeople),
+    safetyHistory: {
+      ideationHistory: draft.ideationHistory || 'No registrada',
+      suicideAttemptsCount: Number(draft.suicideAttemptsCount) || 0,
+      lastAttemptDate: draft.lastAttemptDate || '',
+      selfHarmHistory: draft.selfHarmHistory || 'No registrada',
+      safetyPlan: cleanText(draft.safetyPlan),
+      emergencyContact: cleanText(draft.emergencyContact),
+      notes: cleanText(draft.safetyHistoryNotes),
+    },
+    vitalStatus: draft.vitalStatus || 'active',
+    deathRecord: normalizeDeathRecord({}),
+    notificationPreferences: normalizeNotificationPreferences({
+      enabled: draft.reminderEnabled !== false,
+      channels: Array.isArray(draft.reminderChannels) ? draft.reminderChannels : ['whatsapp'],
+      reminderHours: Array.isArray(draft.reminderHours) ? draft.reminderHours : [24, 8],
+      email: draft.reminderEmail || draft.email,
+      phone: draft.reminderPhone || draft.phone,
+      consentStatus: draft.reminderConsentStatus || 'pending',
+      language: draft.reminderLanguage || 'Español',
+      consentRecordedAt: draft.reminderConsentStatus === 'granted' ? timestamp : null,
+    }, { email: draft.email, phone: draft.phone }),
+    documents: [],
+    consultations: [],
     insurance: {
       hasInsurance: Boolean(draft.hasInsurance),
       provider: cleanText(draft.insuranceProvider),
@@ -273,7 +311,41 @@ export function updatePatientProfile(data, patientId, draft) {
   if (!diagnosis) throw new Error('Escribe el diagnóstico principal.');
   const age = numberOrNull(draft.age);
   if (age === null || age < 0 || age > 120) throw new Error('Escribe una edad válida.');
-  const next = updatePatient(data, patientId, patient => ({
+  const timestamp = nowIso();
+  const previous = data.patients.find(item => item.id === patientId);
+  if (!previous) throw new Error('El paciente ya no está disponible.');
+  const vitalStatus = draft.vitalStatus || previous.vitalStatus || 'active';
+  const becameDeceased = previous.vitalStatus !== 'deceased' && vitalStatus === 'deceased';
+  const deathRecord = vitalStatus === 'deceased'
+    ? normalizeDeathRecord({
+        ...previous.deathRecord,
+        dateOfDeath: draft.deathDate,
+        informedAt: draft.deathInformedAt || timestamp,
+        confirmedBy: draft.deathConfirmedBy,
+        sourceType: draft.deathSourceType,
+        sourceDocument: draft.deathSourceDocument,
+        place: draft.deathPlace,
+        manner: draft.deathManner,
+        notes: draft.deathNotes,
+        recordedAt: previous.deathRecord?.recordedAt || timestamp,
+        recordedBy: data.settings?.activeUserId || null,
+      })
+    : normalizeDeathRecord(previous.deathRecord);
+  const notificationPreferences = normalizeNotificationPreferences({
+    ...previous.notificationPreferences,
+    enabled: vitalStatus === 'deceased' ? false : draft.reminderEnabled !== false,
+    channels: Array.isArray(draft.reminderChannels) ? draft.reminderChannels : previous.notificationPreferences?.channels,
+    reminderHours: Array.isArray(draft.reminderHours) ? draft.reminderHours : previous.notificationPreferences?.reminderHours,
+    email: draft.reminderEmail || draft.email,
+    phone: draft.reminderPhone || draft.phone,
+    consentStatus: draft.reminderConsentStatus || previous.notificationPreferences?.consentStatus,
+    language: draft.reminderLanguage || previous.notificationPreferences?.language,
+    consentRecordedAt: draft.reminderConsentStatus === 'granted' && previous.notificationPreferences?.consentStatus !== 'granted'
+      ? timestamp
+      : previous.notificationPreferences?.consentRecordedAt,
+  }, { email: draft.email, phone: draft.phone });
+
+  const patients = data.patients.map(patient => patient.id === patientId ? {
     ...patient,
     name,
     initials: initialsFromName(name),
@@ -282,6 +354,26 @@ export function updatePatientProfile(data, patientId, draft) {
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
     photo: draft.photo ?? patient.photo,
+    preferredName: cleanText(draft.preferredName),
+    pronouns: cleanText(draft.pronouns),
+    sexAssignedAtBirth: draft.sexAssignedAtBirth || 'No registrado',
+    genderIdentity: draft.genderIdentity || 'No registrada',
+    sexualOrientation: draft.sexualOrientation || 'No registrada',
+    relationshipStatus: draft.relationshipStatus || 'No registrado',
+    significantPeople: cleanText(draft.significantPeople),
+    safetyHistory: {
+      ...(patient.safetyHistory || {}),
+      ideationHistory: draft.ideationHistory || 'No registrada',
+      suicideAttemptsCount: Number(draft.suicideAttemptsCount) || 0,
+      lastAttemptDate: draft.lastAttemptDate || '',
+      selfHarmHistory: draft.selfHarmHistory || 'No registrada',
+      safetyPlan: cleanText(draft.safetyPlan),
+      emergencyContact: cleanText(draft.emergencyContact),
+      notes: cleanText(draft.safetyHistoryNotes),
+    },
+    vitalStatus,
+    deathRecord,
+    notificationPreferences,
     insurance: draft.hasInsurance === undefined ? patient.insurance : {
       hasInsurance: Boolean(draft.hasInsurance),
       provider: cleanText(draft.insuranceProvider),
@@ -297,10 +389,21 @@ export function updatePatientProfile(data, patientId, draft) {
     risk: draft.risk || patient.risk,
     status: draft.status || patient.status,
     notes: cleanText(draft.notes)
-      ? [...(Array.isArray(patient.notes) ? patient.notes : []), { id: uid('note'), date: nowIso(), text: cleanText(draft.notes) }]
+      ? [...(Array.isArray(patient.notes) ? patient.notes : []), { id: uid('note'), date: timestamp, text: cleanText(draft.notes) }]
       : patient.notes,
-  }));
-  return { data: next };
+    timeline: becameDeceased
+      ? [{ date: timestamp, type: 'status', title: 'Estado vital actualizado a fallecido', detail: `Fuente: ${deathRecord.sourceType}. Manera documentada: ${deathRecord.manner}.` }, ...(patient.timeline || [])]
+      : patient.timeline,
+    updatedAt: timestamp,
+  } : patient);
+
+  const appointments = vitalStatus === 'deceased'
+    ? data.appointments.map(appointment => appointment.patientId === patientId && new Date(appointment.start) >= new Date() && !['completed', 'cancelled', 'no_show'].includes(appointment.status)
+      ? { ...appointment, status: 'cancelled', notes: `${appointment.notes || ''}${appointment.notes ? '\n' : ''}Cancelada automáticamente al registrar el estado vital del paciente.`, updatedAt: timestamp }
+      : appointment)
+    : data.appointments;
+
+  return { data: { ...data, patients, appointments } };
 }
 
 export function addMedication(data, patientId, draft) {

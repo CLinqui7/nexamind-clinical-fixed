@@ -1,0 +1,19 @@
+LINKARE v2.0.0 - VALIDACIONES REALIZADAS
+
+OK - Sintaxis JavaScript de app, datos, clínica, práctica, servicios y Vite.
+OK - Sintaxis TypeScript de 16 módulos de Supabase Edge Functions.
+OK - Estructura de release.
+OK - Datos sintéticos y dominio clínico.
+OK - Contrato Wompi existente.
+OK - Plan anual US$400 y periodos de renovación.
+OK - Wompi toma el precio desde Supabase y activa 12 meses por webhook.
+OK - Documentos privados, URL firmada y auditoría.
+OK - Secretaría restringida en interfaz y Storage.
+OK - Libreta de consulta, aviso por cita, guardado automático y firma.
+OK - Identidad personal, antecedentes de seguridad, estado vital y post mortem.
+OK - Recordatorios multicanal y proveedores opcionales.
+OK - Google Calendar y Apple Calendar/feed privado.
+OK - No hay secretos de proveedores en variables VITE_.
+
+El instalador ejecuta npm run check y Vite build en la computadora del usuario.
+Los proveedores externos se validan en vivo únicamente cuando se agregan sus credenciales reales.

@@ -46,6 +46,11 @@ Deno.serve(async (request: Request) => {
       if (previousEvent?.id) return new Response('ok', { status: 200 });
     }
 
+    const { data: invoice } = await db.from('linkare_subscription_invoices')
+      .select('organization_id, period_start, period_end, next_renewal_at, amount, currency')
+      .eq('external_reference', reference)
+      .maybeSingle();
+
     const { error: updateError } = await db.from('linkare_subscription_invoices')
       .update({
         status: approved ? 'paid' : 'cancelled',
@@ -58,6 +63,20 @@ Deno.serve(async (request: Request) => {
       .eq('external_reference', reference);
 
     if (updateError) return new Response(`No se pudo actualizar la factura: ${updateError.message}`, { status: 500 });
+
+    if (approved && invoice?.organization_id) {
+      const periodStart = invoice.period_start || new Date().toISOString();
+      const periodEnd = invoice.period_end || (() => { const date = new Date(periodStart); date.setFullYear(date.getFullYear() + 1); return date.toISOString(); })();
+      const grace = new Date(periodEnd); grace.setDate(grace.getDate() + 7);
+      await db.from('linkare_platform_billing_settings').update({
+        subscription_status: 'active',
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        next_renewal_at: invoice.next_renewal_at || periodEnd,
+        grace_until: grace.toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('organization_id', invoice.organization_id);
+    }
 
     await db.from('linkare_wompi_events').insert({
       external_reference: reference,

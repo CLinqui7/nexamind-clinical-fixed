@@ -68,7 +68,11 @@ Deno.serve(async (request: Request) => {
     let payerName = String(input.payerName || '').trim();
     let payerEmail = String(input.customerEmail || config.notificationEmail || '').trim();
     let currency = 'USD';
-    const billingPeriod = String(input.billingPeriod || new Date().toISOString().slice(0, 7)).trim();
+    let billingCycle = 'anual';
+    let periodStart: string | null = null;
+    let periodEnd: string | null = null;
+    const defaultYear = new Date().getFullYear();
+    const billingPeriod = String(input.billingPeriod || `${defaultYear}-${defaultYear + 1}`).trim();
     const reference = String(input.reference || '').trim() || createReference();
     const organizationId = String(input.organizationId || '').trim() || null;
 
@@ -83,7 +87,7 @@ Deno.serve(async (request: Request) => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (memberError) throw new Error(`No se pudo validar el permiso: ${memberError.message}`);
-      if (!member?.active || !['owner', 'doctor'].includes(String(member.role))) {
+      if (!member?.active || !['owner', 'psychiatrist', 'doctor'].includes(String(member.role))) {
         throw new Error('Solo el médico responsable puede generar el enlace de pago de su licencia.');
       }
 
@@ -100,6 +104,22 @@ Deno.serve(async (request: Request) => {
       payerName = String(billing.payer_name || payerName).trim();
       payerEmail = String(billing.payer_email || payerEmail || config.notificationEmail).trim();
       currency = String(billing.currency || 'USD').trim().toUpperCase();
+      billingCycle = String(billing.billing_cycle || 'anual').trim().toLowerCase();
+      const base = billing.current_period_end && new Date(billing.current_period_end) > new Date()
+        ? new Date(billing.current_period_end)
+        : new Date();
+      periodStart = base.toISOString();
+      const end = new Date(base);
+      if (billingCycle === 'anual') end.setFullYear(end.getFullYear() + 1);
+      else if (billingCycle === 'semestral') end.setMonth(end.getMonth() + 6);
+      else if (billingCycle === 'trimestral') end.setMonth(end.getMonth() + 3);
+      else end.setMonth(end.getMonth() + 1);
+      periodEnd = end.toISOString();
+    }
+
+    if (!periodStart) {
+      periodStart = new Date().toISOString();
+      const end = new Date(periodStart); end.setFullYear(end.getFullYear() + 1); periodEnd = end.toISOString();
     }
 
     if (!Number.isFinite(amount) || amount < 0.01) throw new Error('El precio guardado debe ser mayor o igual a US$0.01.');
@@ -133,6 +153,10 @@ Deno.serve(async (request: Request) => {
       plan_name: planName,
       description,
       billing_period: billingPeriod,
+      period_start: periodStart,
+      period_end: periodEnd,
+      next_renewal_at: periodEnd,
+      plan_tier: 'professional',
       payer_name: payerName || null,
       payer_email: payerEmail,
       amount,
@@ -159,6 +183,9 @@ Deno.serve(async (request: Request) => {
         productive: wompi.estaProductivo,
         amount,
         currency,
+        periodStart,
+        periodEnd,
+        nextRenewalAt: periodEnd,
       },
     });
   } catch (error) {

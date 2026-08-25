@@ -3,13 +3,7 @@ project_id = "linkare-wompi"
 [functions.wompi-app-info]
 verify_jwt = false
 
-[functions.linkare-billing-summary]
-verify_jwt = false
-
-[functions.linkare-billing-admin]
-verify_jwt = false
-
-[functions.linkare-create-payment-link]
+[functions.wompi-create-link]
 verify_jwt = false
 
 [functions.wompi-webhook]

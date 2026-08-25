@@ -1,25 +1,33 @@
-# Linkare v1.6.0
+# Linkare 2.0
 
-Plataforma de gestión psiquiátrica con agenda, pacientes, recetas, tutorial visible y cobro de la suscripción Linkare mediante Wompi El Salvador.
+Plataforma React/Vite para gestión psiquiátrica: expedientes, tratamientos, agenda, recetas, libreta de consulta, documentos privados, recordatorios, calendarios y suscripción anual por Wompi.
 
-## Flujo de cobro
-1. Administración Linkare inicia sesión con la cuenta propietaria.
-2. Modifica precio, plan, correo y fecha límite.
-3. Supabase guarda la factura.
-4. El psiquiatra abre `Mi plan` y presiona `Pagar con Wompi`.
-5. La Edge Function crea el enlace con el monto de la base de datos.
-6. El webhook actualiza el estado a pagado.
+## Funciones principales
 
-## Wompi
-Use únicamente App ID y API Secret en Supabase Edge Function Secrets. Nunca ponga el API Secret en Vercel, React o GitHub.
+- Plan Profesional Linkare: **US$400 por año**.
+- Registro real con Supabase Auth y organización aislada.
+- Accesos demo separados para Médico y Secretaría.
+- Expediente longitudinal, medicamentos, escalas, efectos, laboratorios y recetas.
+- Documentos privados en Supabase Storage.
+- Libreta virtual al llegar la hora de la cita.
+- Identidad personal opcional y antecedentes de seguridad documentados.
+- Estado vital, cierre post mortem y resumen para revisión médico-legal.
+- Recordatorios por correo, SMS y WhatsApp, manuales o mediante proveedores.
+- Google Calendar y Apple Calendar.
 
-## SQL
-Ejecute `supabase/SQL-EDITOR-PRODUCCION.sql`.
-No ejecute `supabase/seed.sql` en producción.
+## Validación
 
-## Demo
-- Administración Linkare: `admin@linkare.app` / `LinkareAdmin2026!`
-- Médico: `doctora@nexamind.demo` / `NexaMind2026!`
-- Secretaría: `secretaria@nexamind.demo` / `Agenda2026!`
+```powershell
+npm run check
+```
 
-Estas credenciales locales son solo para demostración. Antes de usar datos clínicos reales debe conectarse Supabase Auth y RLS para la capa clínica.
+## Producción
+
+1. Ejecute `supabase/SQL-EDITOR-LINKARE-v2.0.0.sql` en SQL Editor.
+2. Ejecute `supabase/DEPLOY-LINKARE-v2.0.0.ps1`.
+3. Configure las cuatro variables públicas de Vercel indicadas en `.env.example`.
+4. Haga `git push origin main`.
+
+Lea `docs/LINKARE-V2-GUIA-PRODUCCION.md` para la configuración completa.
+
+> No use datos reales hasta validar seguridad, privacidad, consentimiento, auditoría, respaldos, políticas internas y requisitos legales aplicables. El resumen post mortem no sustituye un dictamen forense.

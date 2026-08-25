@@ -1,42 +1,41 @@
-# Linkare + Supabase + Wompi v1.6.0
+# Supabase para Linkare v1.7.0
 
-## En SQL Editor
-Para esta fase de cobro de la suscripción, ejecute solamente:
+## Producción nueva
 
-`supabase/SQL-EDITOR-PRODUCCION.sql`
+En SQL Editor ejecute una sola vez:
 
-No ejecute `seed.sql` en producción. Ese archivo contiene datos clínicos ficticios para demo.
+`LINKARE-PRODUCTION-SETUP-FRESH.sql`
 
-La migración crea:
-- `linkare_billing_accounts`
-- `linkare_billing_invoices`
+No ejecute `seed.sql` en producción.
 
-El precio y la factura se guardan en Supabase. El psiquiatra no puede cambiar el monto al pagar.
+## Demo
 
-## En Vercel
-Agregue solo:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+Use otro proyecto Supabase separado y allí puede ejecutar:
 
-No agregue el App ID o API Secret de Wompi en Vercel.
+1. `LINKARE-PRODUCTION-SETUP-FRESH.sql`
+2. `seed.sql`
 
-## En Supabase Edge Function Secrets
-Agregue:
-- `WOMPI_CLIENT_ID` = App ID de Wompi
-- `WOMPI_CLIENT_SECRET` = API Secret de Wompi
-- `WOMPI_AUTH_URL` = `https://id.wompi.sv/connect/token`
-- `WOMPI_API_URL` = `https://api.wompi.sv`
-- `WOMPI_AUDIENCE` = `wompi_api`
-- `APP_PUBLIC_URL` = URL pública de Linkare/Vercel
-- `WOMPI_NOTIFICATION_EMAIL` = correo de la plataforma
-- `LINKARE_ADMIN_KEY` = clave privada larga para modificar precios
-- `LINKARE_BILLING_ACCOUNT_SLUG` = `consultorio-demo`
+## Después del SQL
 
-## Funciones a desplegar
-- `wompi-app-info`
-- `linkare-billing-summary`
-- `linkare-billing-admin`
-- `linkare-create-payment-link`
-- `wompi-webhook`
+1. Cree el primer usuario en Authentication > Users.
+2. Configure Vercel con `VITE_APP_MODE=production`, URL y publishable key.
+3. Inicie sesión. Linkare creará la organización y guardará el estado remoto.
+4. Configure App ID y API Secret como Supabase Edge Function secrets.
+5. Despliegue las funciones Wompi.
 
-Puede usar `supabase/DEPLOY-WOMPI.ps1` para guardar secretos y desplegar todas las funciones.
+Consulte:
+- `SQL-EDITOR-PRODUCCION.md`
+- `ACTIVAR-WOMPI-Y-CONNECTAR.md`
+- `DEPLOY-WOMPI.ps1`
+
+## v1.8.0: registro de usuarios
+
+Para permitir que un psiquiatra cree su propia cuenta:
+
+1. En Supabase > Authentication > Providers > Email, deje habilitado Email.
+2. En Supabase > Authentication > URL Configuration:
+   - Site URL: su URL de producción de Vercel.
+   - Redirect URLs: agregue la misma URL y, si usa previews, las que necesite.
+3. Ejecute `migrations/20260821_v1_8_self_signup_and_price.sql`.
+4. La primera sesión autenticada de cada usuario ejecuta `linkare_bootstrap_organization` y crea su organización aislada.
+5. El precio inicial del plan se crea en US$40 mensuales.

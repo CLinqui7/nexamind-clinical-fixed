@@ -1,3 +1,4 @@
+import { defaultAnnualDates, normalizePatientV2 } from './v2features.js';
 const defaultClinicLogo = '/assets/linkare-logo.jpg';
 const runtimeEnv = import.meta.env ?? {};
 const DAY = 24 * 60 * 60 * 1000;
@@ -259,22 +260,32 @@ export function createSeedData() {
     patients,
     appointments,
     alerts,
-    billing: {
-      planName: 'Plan Profesional Linkare',
-      planDescription: 'Licencia mensual de la plataforma Linkare para gestión clínica.',
-      subscriptionPrice: 40,
-      billingCycle: 'mensual',
-      currency: 'USD',
-      payerName: 'Dra. Adriana Salazar',
-      payerEmail: 'doctora@nexamind.demo',
-      wompiEnabled: Boolean(runtimeEnv.VITE_SUPABASE_URL && runtimeEnv.VITE_SUPABASE_ANON_KEY),
-      manualCheckoutUrl: '',
-      note: 'El precio lo administra Linkare. El psiquiatra recibe un enlace único de Wompi para pagar la licencia.',
-    },
-    payments: [
-      { id: 'sub_1', description: 'Licencia mensual Linkare', amount: 40, method: 'wompi', status: 'pending', payerName: 'Dra. Adriana Salazar', payerEmail: 'doctora@nexamind.demo', billingPeriod: '2026-08', isTest: true, createdAt: isoDate(-1, 9, 0) },
-      { id: 'sub_2', description: 'Licencia mensual Linkare', amount: 40, method: 'wompi', status: 'paid', payerName: 'Dra. Adriana Salazar', payerEmail: 'doctora@nexamind.demo', billingPeriod: '2026-07', isTest: true, createdAt: isoDate(-31, 9, 0), paidAt: isoDate(-30, 9, 10) },
-    ],
+    billing: (() => {
+      const annual = defaultAnnualDates(new Date(Date.now() - 45 * DAY));
+      return {
+        planName: 'Plan Profesional Linkare',
+        planDescription: 'Licencia anual de la plataforma Linkare para gestión clínica.',
+        subscriptionPrice: 400,
+        billingCycle: 'anual',
+        currency: 'USD',
+        payerName: 'Dra. Adriana Salazar',
+        payerEmail: 'doctora@nexamind.demo',
+        wompiEnabled: Boolean(runtimeEnv.VITE_SUPABASE_URL && runtimeEnv.VITE_SUPABASE_ANON_KEY),
+        manualCheckoutUrl: '',
+        note: 'La licencia se renueva una vez al año mediante un enlace único de Wompi.',
+        planTier: 'professional',
+        subscriptionStatus: 'active',
+        ...annual,
+        autoRenew: false,
+      };
+    })(),
+    payments: (() => {
+      const paidAt = isoDate(-45, 9, 10);
+      const periodEnd = new Date(paidAt); periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      return [
+        { id: 'sub_annual_1', description: 'Licencia anual Linkare', amount: 400, method: 'wompi', status: 'paid', payerName: 'Dra. Adriana Salazar', payerEmail: 'doctora@nexamind.demo', billingPeriod: `${new Date(paidAt).getFullYear()}-${periodEnd.getFullYear()}`, periodStart: paidAt, periodEnd: periodEnd.toISOString(), isTest: true, createdAt: paidAt, paidAt },
+      ];
+    })(),
     settings: { theme: 'light', googleConnected: false, demoMode: true, activeUserId: 'user_doctor_1', reminderHours: [24, 8], reminderChannels: ['whatsapp'], palette: { milk: '#FCFDF6', ceil: '#8FACCB', midnight: '#05316E' } },
   });
 }
@@ -399,6 +410,7 @@ export function normalizePatient(patient = {}) {
     archived: Boolean(patient.archived),
     notes: Array.isArray(patient.notes) ? patient.notes : [],
     prescriptions: Array.isArray(patient.prescriptions) ? patient.prescriptions.map((item, index) => ({ ...item, id: item.id || `rx_${patient.id}_${index}`, items: Array.isArray(item.items) ? item.items : [] })) : [],
+    ...normalizePatientV2(patient),
     createdAt: patient.createdAt || patient.lastVisit || new Date().toISOString(),
     updatedAt: patient.updatedAt || new Date().toISOString(),
   };
@@ -443,15 +455,22 @@ export function normalizeData(input = {}) {
     alerts: Array.isArray(input.alerts) ? input.alerts.map(item => ({ ...item })) : [],
     billing: {
       planName: input.billing?.planName || 'Plan Profesional Linkare',
-      planDescription: input.billing?.planDescription || 'Licencia mensual de la plataforma Linkare para gestión clínica.',
-      subscriptionPrice: Number(input.billing?.subscriptionPrice ?? input.billing?.consultationFee) || 40,
-      billingCycle: input.billing?.billingCycle || 'mensual',
+      planDescription: input.billing?.planDescription || 'Licencia anual de la plataforma Linkare para gestión clínica.',
+      subscriptionPrice: Number(input.billing?.subscriptionPrice ?? input.billing?.consultationFee) || 400,
+      billingCycle: input.billing?.billingCycle || 'anual',
       currency: input.billing?.currency || 'USD',
       payerName: input.billing?.payerName || input.organization?.clinician || doctor.name || '',
       payerEmail: input.billing?.payerEmail || input.organization?.email || doctor.email || '',
       wompiEnabled: Boolean(input.billing?.wompiEnabled || (runtimeEnv.VITE_SUPABASE_URL && runtimeEnv.VITE_SUPABASE_ANON_KEY)),
       manualCheckoutUrl: input.billing?.manualCheckoutUrl || input.billing?.wompiCheckoutUrl || '',
-      note: input.billing?.note || 'El precio lo administra Linkare. El psiquiatra recibe un enlace único de Wompi para pagar la licencia.',
+      note: input.billing?.note || 'La licencia se renueva una vez al año mediante un enlace único de Wompi.',
+      planTier: input.billing?.planTier || 'professional',
+      subscriptionStatus: input.billing?.subscriptionStatus || 'inactive',
+      currentPeriodStart: input.billing?.currentPeriodStart || null,
+      currentPeriodEnd: input.billing?.currentPeriodEnd || null,
+      nextRenewalAt: input.billing?.nextRenewalAt || input.billing?.currentPeriodEnd || null,
+      graceUntil: input.billing?.graceUntil || null,
+      autoRenew: Boolean(input.billing?.autoRenew),
     },
     payments: Array.isArray(input.payments) ? input.payments.map(item => ({ ...item })) : [],
     settings: {

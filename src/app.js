@@ -11,6 +11,7 @@ import {
   normalizeData,
 } from './data.js';
 import {
+  addDays,
   addMinutes,
   daysBetween,
   downloadAllICS,
@@ -67,6 +68,7 @@ import {
   authenticateLocalUser,
   buildPrescriptionPrintHtml,
   buildReminderMessage,
+  emailReminderUrl,
   clinicProfileDefaults,
   createSecretaryUser,
   getActiveUser,
@@ -84,6 +86,7 @@ import {
   toggleUserActive,
   updateLocalPassword,
   updateUserPermissions,
+  smsReminderUrl,
   whatsappReminderUrl,
 } from './practice.js';
 import {
@@ -102,6 +105,38 @@ import {
   saveProductionState,
   savePlatformBillingSettings,
 } from './services/appState.js';
+import {
+  CONFIDENTIALITY_LEVELS,
+  DEATH_MANNER_OPTIONS,
+  DOCUMENT_CATEGORIES,
+  GENDER_IDENTITY_OPTIONS,
+  RELATIONSHIP_STATUS_OPTIONS,
+  REMINDER_CHANNELS,
+  SEX_ASSIGNED_AT_BIRTH_OPTIONS,
+  SEXUAL_ORIENTATION_OPTIONS,
+  VITAL_STATUS_OPTIONS,
+  annualPlanSnapshot,
+  appointmentReadyForConsultation,
+  buildPostmortemReportHtml,
+  createEncounterDraft,
+  documentIconName,
+  humanFileSize,
+  reminderChannelLabel,
+  upsertEncounter,
+} from './v2features.js';
+import {
+  createPatientDocument,
+  deletePatientDocumentFile,
+  downloadPatientDocument,
+  openPatientDocument,
+} from './services/documents.js';
+import { fetchReminderProviderStatus, sendReminderThroughProvider } from './services/reminders.js';
+import {
+  createAppleCalendarFeed,
+  fetchCalendarIntegrationStatus,
+  requestGoogleCalendarConnection,
+  syncAppointmentToGoogle,
+} from './services/calendar.js';
 
 const html = htm.bind(React.createElement);
 const STORAGE_KEY = 'nexamind-clinical-demo-v3';
@@ -153,6 +188,12 @@ const iconPaths = {
   eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff: '<path d="m3 3 18 18"/><path d="M10.6 10.6A2 2 0 0 0 13.4 13.4"/><path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c6.5 0 10 8 10 8a18 18 0 0 1-3.2 4.5M6.2 6.2C3.6 8 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.1-.8"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  notebook: '<path d="M4 3h13a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V3Z"/><path d="M8 7h7M8 11h7M8 15h5M4 6H2M4 10H2M4 14H2M4 18H2"/>',
+  folder: '<path d="M3 5h6l2 2h10v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Z"/>',
+  paperclip: '<path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 1 1-2.8-2.8l8.9-8.9"/>',
+  play: '<path d="m7 4 13 8-13 8V4Z"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>',
 };
 
 function Icon({ name, size = 18, className = '' }) {
@@ -378,6 +419,14 @@ class App extends React.Component {
       modal: null,
       modalError: '',
       appointmentDetails: null,
+      appointmentPrompt: null,
+      promptDismissedFor: null,
+      activeEncounter: null,
+      encounterAutosaveStatus: 'saved',
+      documentBusy: false,
+      reminderProviders: { email: false, sms: false, whatsapp: false },
+      calendarStatus: { google: { connected: false }, apple: { connected: false, feedUrl: '' } },
+      integrationBusy: false,
       calendarDate: new Date(),
       calendarView: 'month',
       chartMode: 'scales',
@@ -450,6 +499,8 @@ class App extends React.Component {
       this.scheduleTutorialIntro();
       this.loadWompiStatus();
       this.loadSubscriptionInvoices();
+      this.loadIntegrationStatus();
+      this.checkConsultationPrompt();
     });
   };
 
@@ -475,12 +526,22 @@ class App extends React.Component {
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('resize', this.handleTourViewportChange, { passive: true });
     window.addEventListener('scroll', this.handleTourViewportChange, true);
+    this.consultationPromptTimer = window.setInterval(this.checkConsultationPrompt, 30_000);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('calendar') === 'connected') {
+      window.setTimeout(() => this.notify('Google Calendar quedó conectado.'), 400);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('calendar') === 'error') {
+      window.setTimeout(() => this.notify(params.get('message') || 'No se completó la conexión con Google Calendar.', 'danger'), 400);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
     if (productionMode) {
       this.restoreProductionSession();
     } else {
       this.schedulePersist();
       this.scheduleTutorialIntro();
       if (supabaseConfigured) this.loadWompiStatus();
+      this.checkConsultationPrompt();
     }
   }
 
@@ -495,6 +556,9 @@ class App extends React.Component {
     clearTimeout(this.tourTargetTimer);
     clearTimeout(this.tourTargetRetryTimer);
     clearTimeout(this.tourCardFitTimer);
+    clearInterval(this.consultationPromptTimer);
+    clearInterval(this.encounterTimer);
+    clearTimeout(this.encounterSaveIndicatorTimer);
     cancelAnimationFrame(this.tourViewportFrame);
     this.endTourCardDrag();
     this.disconnectTourObservers();
@@ -1706,10 +1770,10 @@ class App extends React.Component {
     const billing = this.state.data.billing || {};
     this.setState({ modal: { type: 'billingSettings', draft: {
       planName: billing.planName || 'Plan Profesional Linkare',
-      planDescription: billing.planDescription || 'Licencia mensual de la plataforma Linkare para gestión clínica.',
-      subscriptionPrice: Number(billing.subscriptionPrice) || 40,
-      billingCycle: billing.billingCycle || 'mensual',
-      currency: billing.currency || 'USD',
+      planDescription: billing.planDescription || 'Licencia anual de la plataforma Linkare para gestión clínica.',
+      subscriptionPrice: 400,
+      billingCycle: 'anual',
+      currency: 'USD',
       payerName: billing.payerName || this.state.data.organization?.clinician || '',
       payerEmail: billing.payerEmail || this.state.data.organization?.email || '',
       wompiEnabled: Boolean(billing.wompiEnabled),
@@ -1722,14 +1786,14 @@ class App extends React.Component {
     event.preventDefault();
     if (!['owner', 'doctor'].includes(this.activeUser()?.role)) return this.permissionDenied();
     const draft = this.state.modal?.draft || {};
-    const price = Number(draft.subscriptionPrice);
-    if (!Number.isFinite(price) || price < 0.01) return this.setState({ modalError: 'Ingrese un precio mayor o igual a US$0.01.' });
     const billing = {
+      ...(this.state.data.billing || {}),
       planName: String(draft.planName || '').trim() || 'Plan Profesional Linkare',
-      planDescription: String(draft.planDescription || '').trim() || 'Licencia de la plataforma Linkare.',
-      subscriptionPrice: price,
-      billingCycle: String(draft.billingCycle || 'mensual').trim(),
-      currency: String(draft.currency || 'USD').trim().toUpperCase() || 'USD',
+      planDescription: String(draft.planDescription || '').trim() || 'Licencia anual de la plataforma Linkare.',
+      planTier: 'professional',
+      subscriptionPrice: 400,
+      billingCycle: 'anual',
+      currency: 'USD',
       payerName: String(draft.payerName || '').trim(),
       payerEmail: String(draft.payerEmail || '').trim(),
       wompiEnabled: Boolean(draft.wompiEnabled),
@@ -1742,11 +1806,302 @@ class App extends React.Component {
         await savePlatformBillingSettings(this.state.remoteOrganizationId, billing);
       }
       const data = { ...this.state.data, billing };
-      this.setState({ data, modal: null, modalError: '' }, () => this.notify('Precio y plan de Linkare actualizados.'));
+      this.setState({ data, modal: null, modalError: '' }, () => this.notify('Plan anual de Linkare actualizado.'));
     } catch (error) {
-      this.setState({ modalError: error instanceof Error ? error.message : 'No se pudo guardar el precio en Supabase.' });
+      this.setState({ modalError: error instanceof Error ? error.message : 'No se pudo guardar el plan anual en Supabase.' });
     }
   };
+
+  checkConsultationPrompt = () => {
+    const user = this.activeUser();
+    if (!this.state.authenticatedUserId || !user || !['doctor', 'owner'].includes(user.role) || this.state.activeEncounter) return;
+    const appointment = appointmentReadyForConsultation(this.state.data, new Date());
+    if (!appointment || appointment.id === this.state.promptDismissedFor) {
+      if (!appointment && this.state.appointmentPrompt) this.setState({ appointmentPrompt: null });
+      return;
+    }
+    if (this.state.appointmentPrompt?.id !== appointment.id) this.setState({ appointmentPrompt: appointment });
+  };
+
+  dismissConsultationPrompt = () => {
+    this.setState(prev => ({ promptDismissedFor: prev.appointmentPrompt?.id || null, appointmentPrompt: null }));
+  };
+
+  startConsultation = appointment => {
+    if (!this.can('consultationsManage')) return this.permissionDenied();
+    const patient = this.state.data.patients.find(item => item.id === appointment?.patientId) || this.selectedPatient();
+    if (!patient) return this.notify('No se encontró el paciente de esta consulta.', 'danger');
+    if (patient.vitalStatus === 'deceased') return this.notify('El expediente está en modo post mortem y no admite nuevas consultas.', 'danger');
+    const encounter = createEncounterDraft(patient, appointment, this.activeUser());
+    const result = upsertEncounter(this.state.data, patient.id, encounter);
+    clearInterval(this.encounterTimer);
+    this.encounterTimer = window.setInterval(() => this.forceUpdate(), 1000);
+    this.setState({
+      data: result.data,
+      activeEncounter: { ...result.encounter, patientId: patient.id },
+      appointmentPrompt: null,
+      appointmentDetails: null,
+      selectedPatientId: patient.id,
+      view: 'notebook',
+      encounterAutosaveStatus: 'saved',
+      mobileNav: false,
+    });
+  };
+
+  startConsultationForSelectedPatient = () => {
+    const patient = this.selectedPatient();
+    if (!patient) return;
+    const next = (this.state.data.appointments || [])
+      .filter(item => item.patientId === patient.id && !['cancelled', 'completed', 'no_show'].includes(item.status))
+      .sort((a, b) => Math.abs(new Date(a.start) - new Date()) - Math.abs(new Date(b.start) - new Date()))[0] || null;
+    this.startConsultation(next || { patientId: patient.id, type: 'Consulta clínica', notes: '' });
+  };
+
+  updateEncounterField = (key, value) => {
+    if (!this.state.activeEncounter) return;
+    const encounter = { ...this.state.activeEncounter, [key]: value };
+    const result = upsertEncounter(this.state.data, encounter.patientId, encounter);
+    this.setState({ data: result.data, activeEncounter: { ...result.encounter, patientId: encounter.patientId }, encounterAutosaveStatus: 'saving' });
+    clearTimeout(this.encounterSaveIndicatorTimer);
+    this.encounterSaveIndicatorTimer = setTimeout(() => this.setState({ encounterAutosaveStatus: 'saved' }), 500);
+  };
+
+  finishConsultation = () => {
+    const encounter = this.state.activeEncounter;
+    if (!encounter) return;
+    if (![encounter.freeNotes, encounter.evolution, encounter.mentalStatus, encounter.clinicalImpression, encounter.plan].some(value => String(value || '').trim())) {
+      this.notify('Escriba al menos una nota clínica antes de finalizar.', 'danger');
+      return;
+    }
+    const result = upsertEncounter(this.state.data, encounter.patientId, encounter, { finalize: true, user: this.activeUser() });
+    clearInterval(this.encounterTimer);
+    this.setState({
+      data: result.data,
+      activeEncounter: null,
+      view: 'patient',
+      selectedPatientId: encounter.patientId,
+      patientTab: 'consultations',
+      encounterAutosaveStatus: 'saved',
+    }, () => this.notify('Consulta finalizada, firmada y guardada en el expediente.'));
+  };
+
+  closeConsultationNotebook = () => {
+    const encounter = this.state.activeEncounter;
+    if (!encounter) return this.setView('dashboard');
+    clearInterval(this.encounterTimer);
+    this.setState({ activeEncounter: null, view: 'patient', selectedPatientId: encounter.patientId, patientTab: 'consultations' }, () => this.notify('La nota quedó guardada como borrador.'));
+  };
+
+  openDocumentUpload = patient => {
+    if (!this.can('documentsManage')) return this.permissionDenied();
+    this.setState({
+      modal: {
+        type: 'documentUpload',
+        patientId: patient.id,
+        draft: {
+          file: null,
+          category: 'Otro',
+          description: '',
+          clinicalDate: new Date().toISOString().slice(0, 10),
+          confidentiality: 'Clínico',
+        },
+      },
+      modalError: '',
+    });
+  };
+
+  savePatientDocumentForm = async event => {
+    event.preventDefault();
+    if (this.state.documentBusy) return;
+    const modal = this.state.modal;
+    const patient = this.state.data.patients.find(item => item.id === modal?.patientId);
+    if (!patient) return this.setState({ modalError: 'El paciente ya no está disponible.' });
+    if (!modal?.draft?.file) return this.setState({ modalError: 'Seleccione un archivo.' });
+    this.setState({ documentBusy: true, modalError: '' });
+    try {
+      const document = await createPatientDocument({
+        file: modal.draft.file,
+        organizationId: this.state.remoteOrganizationId,
+        patientId: patient.id,
+        uploadedBy: this.activeUser()?.id,
+        category: modal.draft.category,
+        description: modal.draft.description,
+        clinicalDate: modal.draft.clinicalDate,
+        confidentiality: modal.draft.confidentiality,
+      });
+      const timestamp = new Date().toISOString();
+      const data = {
+        ...this.state.data,
+        patients: this.state.data.patients.map(item => item.id === patient.id ? {
+          ...item,
+          documents: [document, ...(item.documents || [])],
+          timeline: [{ date: timestamp, type: 'document', title: `${document.category}: ${document.name}`, detail: document.description || 'Documento agregado al expediente.' }, ...(item.timeline || [])],
+          updatedAt: timestamp,
+        } : item),
+      };
+      this.setState({ data, documentBusy: false, modal: null, modalError: '', patientTab: 'documents' }, () => this.notify('Documento agregado al expediente.'));
+    } catch (error) {
+      this.setState({ documentBusy: false, modalError: error instanceof Error ? error.message : 'No se pudo subir el documento.' });
+    }
+  };
+
+  openStoredDocument = async document => {
+    try { await openPatientDocument(document); }
+    catch (error) { this.notify(error instanceof Error ? error.message : 'No se pudo abrir el documento.', 'danger'); }
+  };
+
+  downloadStoredDocument = async document => {
+    try { await downloadPatientDocument(document); }
+    catch (error) { this.notify(error instanceof Error ? error.message : 'No se pudo descargar el documento.', 'danger'); }
+  };
+
+  deleteStoredDocument = async (patientId, document) => {
+    if (!this.can('documentsManage')) return this.permissionDenied();
+    try {
+      await deletePatientDocumentFile(document);
+      const data = {
+        ...this.state.data,
+        patients: this.state.data.patients.map(patient => patient.id === patientId ? {
+          ...patient,
+          documents: (patient.documents || []).filter(item => item.id !== document.id),
+          updatedAt: new Date().toISOString(),
+        } : patient),
+      };
+      this.setState({ data }, () => this.notify('Documento eliminado del expediente.'));
+    } catch (error) {
+      this.notify(error instanceof Error ? error.message : 'No se pudo eliminar el documento.', 'danger');
+    }
+  };
+
+  printPostmortemReport = patient => {
+    if (!this.can('postmortemExport')) return this.permissionDenied();
+    const popup = window.open('', '_blank', 'noopener,noreferrer');
+    if (!popup) return this.notify('El navegador bloqueó la ventana del informe.', 'danger');
+    popup.document.open();
+    popup.document.write(buildPostmortemReportHtml(this.state.data, patient));
+    popup.document.close();
+  };
+
+  openPlanComparison = () => this.setState({ modal: { type: 'planCompare', draft: {} }, modalError: '' });
+
+  loadIntegrationStatus = async () => {
+    if (!productionMode || !this.state.remoteOrganizationId || !supabaseConfigured) return;
+    try {
+      const [calendarStatus, reminderProviders] = await Promise.all([
+        fetchCalendarIntegrationStatus(this.state.remoteOrganizationId).catch(() => this.state.calendarStatus),
+        fetchReminderProviderStatus().catch(() => this.state.reminderProviders),
+      ]);
+      this.setState({ calendarStatus: calendarStatus || this.state.calendarStatus, reminderProviders: reminderProviders || this.state.reminderProviders });
+    } catch (_) { /* Integrations remain optional. */ }
+  };
+
+  connectGoogleCalendar = async () => {
+    if (!this.state.remoteOrganizationId) return this.notify('Inicie sesión con una cuenta real para conectar Google Calendar.', 'danger');
+    this.setState({ integrationBusy: true });
+    try { await requestGoogleCalendarConnection(this.state.remoteOrganizationId); }
+    catch (error) { this.setState({ integrationBusy: false }); this.notify(error instanceof Error ? error.message : 'No se pudo conectar Google Calendar.', 'danger'); }
+  };
+
+  createAppleFeed = async () => {
+    if (!this.state.remoteOrganizationId) return this.notify('Inicie sesión con una cuenta real para crear el calendario privado.', 'danger');
+    this.setState({ integrationBusy: true });
+    try {
+      const result = await createAppleCalendarFeed(this.state.remoteOrganizationId);
+      await navigator.clipboard.writeText(result.feedUrl);
+      this.setState(prev => ({ integrationBusy: false, calendarStatus: { ...prev.calendarStatus, apple: { connected: true, feedUrl: result.feedUrl } } }));
+      this.notify('Enlace privado copiado. Péguelo en Apple Calendar como calendario suscrito.');
+    } catch (error) {
+      this.setState({ integrationBusy: false });
+      this.notify(error instanceof Error ? error.message : 'No se pudo crear el calendario para Apple.', 'danger');
+    }
+  };
+
+  syncGoogleAppointment = async appointment => {
+    if (!this.state.remoteOrganizationId) return window.open(googleCalendarUrl(appointment), '_blank', 'noopener,noreferrer');
+    this.setState({ integrationBusy: true });
+    try {
+      const result = await syncAppointmentToGoogle(this.state.remoteOrganizationId, appointment);
+      const data = {
+        ...this.state.data,
+        appointments: this.state.data.appointments.map(item => item.id === appointment.id ? { ...item, googleEventId: result.event?.id || item.googleEventId, googleEventUrl: result.event?.htmlLink || item.googleEventUrl, updatedAt: new Date().toISOString() } : item),
+      };
+      this.setState({ data, integrationBusy: false }, () => this.notify('Cita sincronizada con Google Calendar.'));
+      if (result.event?.htmlLink) window.open(result.event.htmlLink, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      this.setState({ integrationBusy: false });
+      this.notify(error instanceof Error ? error.message : 'No se pudo sincronizar Google Calendar.', 'danger');
+    }
+  };
+
+  sendReminderChannel = async (reminder, channel) => {
+    const patient = reminder.patient;
+    const message = buildReminderMessage(this.state.data, patient, reminder.appointment);
+    const destination = channel === 'email'
+      ? patient?.notificationPreferences?.email || patient?.email
+      : patient?.notificationPreferences?.phone || patient?.phone;
+    if (!destination) return this.notify(`El paciente no tiene ${channel === 'email' ? 'correo' : 'teléfono'} registrado.`, 'danger');
+    const providerReady = Boolean(this.state.reminderProviders?.[channel]);
+    if (productionMode && this.state.remoteOrganizationId && providerReady) {
+      try {
+        await sendReminderThroughProvider({
+          organizationId: this.state.remoteOrganizationId,
+          patientId: patient.id,
+          appointmentId: reminder.appointment.id,
+          channel,
+          destination,
+          message,
+          subject: `Recordatorio de cita · ${this.state.data.organization?.name || 'Linkare'}`,
+        });
+        this.completeReminder(reminder, channel);
+        this.notify(`Recordatorio enviado por ${reminderChannelLabel(channel)}.`);
+        return;
+      } catch (error) {
+        this.notify(error instanceof Error ? error.message : 'No se pudo enviar automáticamente.', 'danger');
+        return;
+      }
+    }
+    const url = channel === 'email'
+      ? emailReminderUrl(this.state.data, patient, reminder.appointment)
+      : channel === 'sms'
+        ? smsReminderUrl(this.state.data, patient, reminder.appointment)
+        : whatsappReminderUrl(this.state.data, patient, reminder.appointment);
+    if (!url) return this.notify('No se pudo preparar el mensaje manual.', 'danger');
+    window.open(url, '_blank', 'noopener,noreferrer');
+    this.completeReminder(reminder, `${channel}_manual`);
+  };
+
+  renderConsultationPrompt() {
+    const appointment = this.state.appointmentPrompt;
+    if (!appointment) return null;
+    const patient = this.state.data.patients.find(item => item.id === appointment.patientId);
+    return html`<aside className="consultation-prompt" role="alert"><div className="consultation-prompt-icon"><${Icon} name="notebook" size=${23}/></div><div><span>Consulta programada</span><b>${patient?.name || appointment.title}</b><small>${formatTime(appointment.start)} · ${appointment.type} · ${appointment.modality}</small></div><${Button} icon="play" onClick=${() => this.startConsultation(appointment)}>¿Ya está con el paciente?</${Button}><button className="prompt-later" onClick=${this.dismissConsultationPrompt}>Recordarme después</button></aside>`;
+  }
+
+  renderConsultationNotebook() {
+    const encounter = this.state.activeEncounter;
+    if (!encounter) return html`<${EmptyState} icon="notebook" title="No hay una consulta abierta" text="Inicie una consulta desde una cita o desde el expediente del paciente." action=${html`<${Button} onClick=${() => this.setView('agenda')}>Ir a agenda</${Button}>`}/>`;
+    const patient = this.state.data.patients.find(item => item.id === encounter.patientId);
+    if (!patient) return html`<${EmptyState} icon="alert" title="Paciente no disponible" text="Cierre esta libreta y vuelva al expediente."/>`;
+    const minutes = Math.max(0, Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 60000));
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 1000) % 60);
+    const field = (key, label, placeholder, rows = 4) => html`<label className="notebook-field"><span>${label}</span><textarea rows=${rows} value=${encounter[key] || ''} onChange=${event => this.updateEncounterField(key, event.target.value)} placeholder=${placeholder}></textarea></label>`;
+    return html`<div className="consultation-notebook-view view-enter">
+      <header className="notebook-toolbar"><div><button className="back-button" onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/></button><span className="notebook-badge"><${Icon} name="notebook" size=${18}/> Libreta de consulta</span><div><h1>${patient.preferredName || patient.name}</h1><p>${encounter.title}</p></div></div><div className="notebook-toolbar-actions"><span className="notebook-timer">${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}</span><span className=${`autosave-state ${this.state.encounterAutosaveStatus}`}><${Icon} name="check" size=${15}/>${this.state.encounterAutosaveStatus === 'saving' ? 'Guardando…' : 'Guardado automático'}</span><${Button} tone="secondary" icon="paperclip" onClick=${() => this.openDocumentUpload(patient)}>Adjuntar</${Button}><${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}></div></header>
+      <div className="notebook-layout"><aside className="notebook-patient-panel"><${Avatar} patient=${patient} size="xl"/><h2>${patient.name}</h2><p>${patient.age} años · ${patient.diagnosisCode}</p><div className="notebook-facts"><div><span>Diagnóstico</span><b>${patient.diagnosis}</b></div><div><span>Riesgo actual</span><b>${riskLabel(patient.risk)}</b></div><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || ''}</small></div><div><span>Última consulta</span><b>${formatDate(patient.lastVisit)}</b></div></div><div className="notebook-alert-box"><${Icon} name="shield" size=${18}/><span>${patient.adverseEvents?.filter(item => item.status === 'active').length || 0} efecto(s) activo(s) · ${this.state.data.alerts.filter(item => item.patientId === patient.id && item.status === 'open').length} alerta(s)</span></div></aside>
+      <main className="notebook-paper"><div className="paper-heading"><div><span>${formatLongDate(encounter.startedAt)}</span><h2>Notas de la consulta</h2></div><span>Borrador clínico</span></div>${field('freeNotes', 'Notas libres', 'Escriba libremente durante la conversación…', 10)}<div className="notebook-two-columns">${field('reason', 'Motivo y temas principales', 'Motivo de consulta y temas abordados…', 5)}${field('evolution', 'Evolución desde la última visita', 'Cambios, contexto, adherencia y funcionamiento…', 5)}</div><div className="notebook-two-columns">${field('mentalStatus', 'Estado mental', 'Apariencia, conducta, habla, afecto, pensamiento, cognición, juicio…', 6)}${field('riskAssessment', 'Riesgo y seguridad', 'Ideación, intención, plan, medios, factores protectores y plan de seguridad…', 6)}</div><div className="notebook-two-columns">${field('medicationNotes', 'Medicamentos y tolerabilidad', 'Adherencia, efectos, cambios considerados…', 5)}${field('intervention', 'Intervención realizada', 'Psicoeducación, apoyo, decisiones compartidas, coordinación…', 5)}</div>${field('clinicalImpression', 'Impresión clínica', 'Síntesis profesional de la consulta…', 5)}${field('plan', 'Plan', 'Tratamiento, estudios, derivaciones, indicaciones y tareas…', 5)}${field('followUp', 'Seguimiento', 'Próxima cita, señales de alarma y acuerdos…', 3)}<footer className="notebook-paper-footer"><span>La nota se guarda automáticamente. Al finalizar quedará firmada y cualquier cambio posterior deberá registrarse como una nueva versión.</span></footer></main>
+      <aside className="notebook-tools-panel"><h3>Acciones rápidas</h3><button onClick=${() => this.openAssessment(patient)}><${Icon} name="analytics"/><span>Registrar escala</span></button><button onClick=${() => this.openVitals(patient)}><${Icon} name="activity"/><span>Control físico</span></button><button onClick=${() => this.openMedication(patient)}><${Icon} name="medication"/><span>Medicamento</span></button><button onClick=${() => this.openPrescription(patient)}><${Icon} name="prescription"/><span>Nueva receta</span></button><button onClick=${() => this.openDocumentUpload(patient)}><${Icon} name="folder"/><span>Subir documento</span></button><div className="notebook-side-note"><b>Privacidad</b><p>Evite incluir información innecesaria. Diferencie lo referido por el paciente, lo observado y la información de terceros.</p></div></aside></div>
+    </div>`;
+  }
+
+  renderDocumentsTab(patient) {
+    const documents = patient.documents || [];
+    return html`<div className="dashboard-grid documents-view"><${Card} className="span-12" title="Documentos y archivos" subtitle="Recetas externas, cartas, resultados, consentimientos e informes vinculados al expediente." action=${this.can('documentsManage') ? html`<${Button} icon="upload" onClick=${() => this.openDocumentUpload(patient)}>Subir archivo</${Button}>` : null}>${documents.length ? html`<div className="document-grid">${documents.map(document => html`<article key=${document.id} className="document-card"><span className="document-icon"><${Icon} name=${documentIconName(document)} size=${23}/></span><div className="document-card-main"><span>${document.category}</span><h4>${document.name}</h4><p>${document.description || 'Sin descripción.'}</p><small>${formatDate(document.clinicalDate || document.createdAt)} · ${humanFileSize(document.size)} · ${document.confidentiality}</small></div><div className="document-actions"><${Button} tone="secondary" icon="external" onClick=${() => this.openStoredDocument(document)}>Abrir</${Button}><${Button} tone="soft" icon="download" onClick=${() => this.downloadStoredDocument(document)}>Descargar</${Button}>${this.can('documentsManage') ? html`<button className="document-delete" onClick=${() => this.deleteStoredDocument(patient.id, document)} title="Eliminar"><${Icon} name="trash" size=${17}/></button>` : null}</div></article>`)}</div>` : html`<${EmptyState} icon="folder" title="Sin documentos adjuntos" text="Suba el primer documento para mantener recetas externas, cartas e informes junto al expediente." action=${this.can('documentsManage') ? html`<${Button} icon="upload" onClick=${() => this.openDocumentUpload(patient)}>Subir documento</${Button}>` : null}/>`}</${Card}></div>`;
+  }
+
+  renderConsultationsTab(patient) {
+    const consultations = patient.consultations || [];
+    return html`<div className="dashboard-grid consultations-view"><${Card} className="span-12" title="Notas de consulta" subtitle="Borradores y notas firmadas creadas desde la libreta virtual." action=${this.can('consultationsManage') && patient.vitalStatus !== 'deceased' ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Iniciar consulta</${Button}>` : null}>${consultations.length ? html`<div className="consultation-list">${consultations.map(note => html`<article key=${note.id} className=${`consultation-note-card ${note.status}`}><div className="consultation-note-date"><b>${formatDate(note.startedAt)}</b><span>${formatTime(note.startedAt)}</span></div><div><span>${note.status === 'completed' ? 'Firmada' : 'Borrador'}</span><h4>${note.title}</h4><p>${note.clinicalImpression || note.plan || note.freeNotes || 'Nota sin resumen.'}</p><small>${note.durationMinutes ? `${note.durationMinutes} minutos · ` : ''}${note.status === 'completed' ? `Finalizada ${formatDateTime(note.endedAt)}` : `Actualizada ${formatDateTime(note.updatedAt)}`}</small></div>${note.status === 'draft' && this.can('consultationsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => { clearInterval(this.encounterTimer); this.encounterTimer = window.setInterval(() => this.forceUpdate(), 1000); this.setState({ activeEncounter: { ...note, patientId: patient.id }, view: 'notebook' }); }}>Continuar</${Button}>` : html`<${Badge} tone="success"><${Icon} name="lock" size=${13}/> Firmada</${Badge}>`}</article>`)}</div>` : html`<${EmptyState} icon="notebook" title="Sin notas de consulta" text="Inicie una consulta para abrir la libreta virtual y guardar la primera nota." action=${this.can('consultationsManage') ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Abrir libreta</${Button}>` : null}/>`}</${Card}></div>`;
+  }
 
   openPaymentLink = url => {
     if (!url) return this.notify('Primero genere o configure un enlace de Wompi.', 'danger');
@@ -1789,14 +2144,17 @@ class App extends React.Component {
       return;
     }
     const billing = this.state.data.billing || {};
-    const period = new Date().toISOString().slice(0, 7);
+    const start = new Date();
+    const end = new Date(start);
+    end.setFullYear(end.getFullYear() + 1);
+    const period = `${start.getFullYear()}–${end.getFullYear()}`;
     this.setState({
       modal: {
         type: 'paymentRequest',
         draft: {
           planName: billing.planName || 'Plan Profesional Linkare',
-          description: `${billing.planName || 'Plan Profesional Linkare'} · ${period}`,
-          amount: Number(billing.subscriptionPrice) || 40,
+          description: `${billing.planName || 'Plan Profesional Linkare'} · licencia anual ${period}`,
+          amount: 400,
           payerName: billing.payerName || this.state.data.organization?.clinician || '',
           customerEmail: billing.payerEmail || this.state.data.organization?.email || '',
           billingPeriod: period,
@@ -1838,6 +2196,9 @@ class App extends React.Component {
         payerName: String(draft.payerName || '').trim(),
         payerEmail: String(draft.customerEmail || '').trim(),
         billingPeriod: String(draft.billingPeriod || '').trim(),
+        periodStart: result.payment?.periodStart || new Date().toISOString(),
+        periodEnd: result.payment?.periodEnd || addDays(new Date(), 365),
+        nextRenewalAt: result.payment?.periodEnd || addDays(new Date(), 365),
         externalReference: result.reference,
         paymentUrl: result.payment?.url || '',
         qrUrl: result.payment?.qrUrl || '',
@@ -2515,6 +2876,8 @@ class App extends React.Component {
       ['medications', 'Medicamentos'],
       ['followup', 'Seguimiento'],
       ['safety', 'Efectos y controles'],
+      ['consultations', 'Consultas'],
+      ['documents', 'Documentos'],
       ['prescriptions', 'Recetas'],
       ['timeline', 'Historial'],
     ];
@@ -2530,9 +2893,11 @@ class App extends React.Component {
       <div className="patient-hero" data-tour="patient-summary">
         <button className="back-button" aria-label="Volver a pacientes" onClick=${() => this.setView('patients')}><${Icon} name="chevronLeft"/></button>
         <div className="patient-photo-control" data-tour="patient-photo"><${Avatar} patient=${patient} size="xl"/>${this.can('patientsEdit') ? html`<label className="photo-fab" title="Cambiar fotografía"><${Icon} name="camera" size=${16}/><input type="file" accept="image/png,image/jpeg,image/webp" onChange=${event => this.handlePatientPhotoUpload(patient.id, event)}/></label>` : null}</div>
-        <div className="patient-hero-main" data-tour="patient-badges"><span className="eyebrow">Expediente del paciente · Datos sintéticos</span><h1>${patient.name}</h1><p>${patient.age} años · ${patient.diagnosis} · ${patient.diagnosisCode}</p><div className="hero-badges"><${Badge} tone=${priority.tone} dot=${true}>${priority.label}</${Badge}><${Badge} tone="neutral">Riesgo ${riskLabel(patient.risk).toLowerCase()}</${Badge}><${Badge} tone=${patient.insurance?.hasInsurance ? 'blue' : 'neutral'}>${patient.insurance?.hasInsurance ? patient.insurance.provider || 'Con seguro' : 'Particular'}</${Badge}>${primaryMedication?.name && primaryMedication.name !== 'Sin medicamento' ? html`<${Badge} tone="purple">${primaryMedication.name} ${primaryMedication.dose}</${Badge}>` : html`<${Badge} tone="warning">Sin medicamento principal</${Badge}>`}</div></div>
+        <div className="patient-hero-main" data-tour="patient-badges"><span className="eyebrow">Expediente del paciente · Datos sintéticos</span><h1>${patient.preferredName || patient.name}</h1><p>${patient.preferredName ? `${patient.name} · ` : ''}${patient.age} años · ${patient.diagnosis} · ${patient.diagnosisCode}</p><div className="hero-badges"><${Badge} tone=${priority.tone} dot=${true}>${priority.label}</${Badge}><${Badge} tone="neutral">Riesgo ${riskLabel(patient.risk).toLowerCase()}</${Badge}><${Badge} tone=${patient.insurance?.hasInsurance ? 'blue' : 'neutral'}>${patient.insurance?.hasInsurance ? patient.insurance.provider || 'Con seguro' : 'Particular'}</${Badge}>${patient.vitalStatus === 'deceased' ? html`<${Badge} tone="danger"><${Icon} name="heart" size=${13}/> Expediente post mortem</${Badge}>` : null}${primaryMedication?.name && primaryMedication.name !== 'Sin medicamento' ? html`<${Badge} tone="purple">${primaryMedication.name} ${primaryMedication.dose}</${Badge}>` : html`<${Badge} tone="warning">Sin medicamento principal</${Badge}>`}</div></div>
         <div className="patient-hero-actions" data-tour="patient-next-visit"><div><span>Próxima cita</span><b>${patient.nextVisit ? relativeDate(patient.nextVisit) : 'Sin agendar'}</b><small>${patient.nextVisit ? formatDateTime(patient.nextVisit) : 'Cree una cita desde el botón'}</small></div><${Button} icon="calendar" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}>Agendar</${Button}></div>
       </div>
+
+      ${patient.vitalStatus === 'deceased' ? html`<section className="postmortem-banner"><span><${Icon} name="shield" size=${24}/></span><div><span className="eyebrow">Expediente en modo post mortem</span><h3>Paciente registrado como fallecido</h3><p>No se enviarán recordatorios ni se permitirán nuevas consultas. La manera de muerte se muestra únicamente como dato documentado, sin inferencias automáticas.</p><small>${patient.deathRecord?.dateOfDeath ? `Fecha registrada: ${formatDate(patient.deathRecord.dateOfDeath)} · ` : ''}${patient.deathRecord?.manner || 'Pendiente de confirmación'}</small></div>${this.can('postmortemExport') ? html`<${Button} tone="secondary" icon="print" onClick=${() => this.printPostmortemReport(patient)}>Generar paquete médico-legal</${Button}>` : null}</section>` : null}
 
       <div className="patient-action-bar" data-tour="patient-actions" aria-label="Acciones rápidas del paciente">
         <div><b>Acciones frecuentes</b><small>Registre lo ocurrido durante o después de la consulta.</small></div>
@@ -2540,6 +2905,8 @@ class App extends React.Component {
         ${this.can('medicationsManage') ? html`<${Button} tour="action-medication" tone="secondary" icon="medication" onClick=${() => this.openMedication(patient)}>Agregar medicamento</${Button}>` : null}
         ${this.can('medicationsManage') ? html`<${Button} tour="action-dose" tone="secondary" icon="edit" disabled=${!patient.medications.some(item => item.status === 'active')} onClick=${() => this.openDose(patient)}>Cambiar dosis</${Button}>` : null}
         ${this.can('prescriptionsCreate') ? html`<${Button} tour="action-prescription" tone="secondary" icon="prescription" onClick=${() => this.openPrescription(patient)}>Nueva receta</${Button}>` : null}
+        ${this.can('consultationsManage') && patient.vitalStatus !== 'deceased' ? html`<${Button} tone="secondary" icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Iniciar consulta</${Button}>` : null}
+        ${this.can('documentsManage') ? html`<${Button} tone="secondary" icon="folder" onClick=${() => this.openDocumentUpload(patient)}>Subir archivo</${Button}>` : null}
         ${this.can('patientsEdit') ? html`<${Button} tour="action-patient-data" tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Datos y seguro</${Button}>` : null}
       </div>
 
@@ -2575,6 +2942,11 @@ class App extends React.Component {
           <${Card} tour="patient-next-review" className="span-5" title="Qué revisar después" action=${html`<${Badge} tone=${patientAlerts.length ? 'warning' : 'success'}>${patientAlerts.length ? `${patientAlerts.length} pendiente(s)` : 'Al día'}</${Badge}>`}>
             <div className="task-list">${patientAlerts.slice(0, 3).map(alert => html`<div key=${alert.id} className="task-row"><span className=${`task-icon task-${alert.severity}`}><${Icon} name="alert" size=${17}/></span><div><b>${alert.title}</b><small>${alert.detail}</small></div><button aria-label="Marcar alerta revisada" onClick=${() => this.acknowledgeAlert(alert.id)}><${Icon} name="check" size=${17}/></button></div>`)}<div className="task-row"><span className="task-icon task-low"><${Icon} name="calendar" size=${17}/></span><div><b>Próxima consulta</b><small>${patient.nextVisit ? formatDateTime(patient.nextVisit) : 'No programada'}</small></div><button aria-label="Agendar cita" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}><${Icon} name="chevronRight" size=${17}/></button></div></div>
           </${Card}>
+        </div>
+        <div className="dashboard-grid identity-context-grid">
+          <${Card} className="span-7" title="Identidad y contexto personal" subtitle="Información opcional, autoidentificada y visible únicamente para el equipo clínico."><div className="identity-facts"><div><span>Nombre preferido</span><b>${patient.preferredName || 'No registrado'}</b></div><div><span>Pronombres</span><b>${patient.pronouns || 'No registrados'}</b></div><div><span>Identidad de género</span><b>${patient.genderIdentity || 'No registrada'}</b></div><div><span>Orientación sexual</span><b>${patient.sexualOrientation || 'No registrada'}</b></div><div><span>Sexo asignado al nacer</span><b>${patient.sexAssignedAtBirth || 'No registrado'}</b></div><div><span>Estado de relación</span><b>${patient.relationshipStatus || 'No registrado'}</b></div></div>${patient.significantPeople ? html`<div className="identity-context-note"><span>Personas significativas y red de apoyo</span><p>${patient.significantPeople}</p></div>` : null}</${Card}>
+          <${Card} className="span-5" title="Preferencias de recordatorio" subtitle="Se respetan el consentimiento y el canal elegido."><div className="reminder-preference-summary"><div><span>Estado</span><b>${patient.notificationPreferences?.enabled ? 'Activos' : 'Desactivados'}</b></div><div><span>Canales</span><b>${(patient.notificationPreferences?.channels || []).map(reminderChannelLabel).join(', ') || 'No definidos'}</b></div><div><span>Anticipación</span><b>${(patient.notificationPreferences?.reminderHours || []).map(reminderLabel).join(', ')}</b></div><div><span>Consentimiento</span><b>${patient.notificationPreferences?.consentStatus === 'granted' ? 'Otorgado' : patient.notificationPreferences?.consentStatus === 'declined' ? 'Rechazado' : 'Pendiente'}</b></div></div></${Card}>
+          <${Card} className="span-12" title="Antecedentes de seguridad" subtitle="Diferencie antecedentes, riesgo actual y fuentes documentadas."><div className="safety-history-grid"><div><span>Ideación previa</span><b>${patient.safetyHistory?.ideationHistory || 'No registrada'}</b></div><div><span>Intentos documentados</span><b>${patient.safetyHistory?.suicideAttemptsCount ?? 0}</b><small>${patient.safetyHistory?.lastAttemptDate ? `Último: ${formatDate(patient.safetyHistory.lastAttemptDate)}` : 'Sin fecha registrada'}</small></div><div><span>Autolesión sin intención suicida</span><b>${patient.safetyHistory?.selfHarmHistory || 'No registrada'}</b></div><div><span>Contacto de emergencia</span><b>${patient.safetyHistory?.emergencyContact || 'No registrado'}</b></div></div>${patient.safetyHistory?.safetyPlan ? html`<div className="safety-plan-summary"><${Icon} name="shield" size=${18}/><div><b>Plan de seguridad</b><p>${patient.safetyHistory.safetyPlan}</p></div></div>` : null}<div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Los antecedentes no determinan por sí solos el riesgo actual. La valoración profesional debe registrarse en cada consulta cuando corresponda.</div></${Card}>
         </div>
       </div>` : null}
 
@@ -2613,6 +2985,10 @@ class App extends React.Component {
         <${Card} tour="patient-alerts" className="span-4" title="Alertas del paciente" action=${html`<${Badge} tone=${patientAlerts.length ? 'danger' : 'success'}>${patientAlerts.length} abiertas</${Badge}>`}><div className="alert-list">${patientAlerts.length ? patientAlerts.map(alert => html`<div className="alert-detail compact-detail" key=${alert.id}><span className=${`alert-indicator alert-${alert.severity}`}></span><div><span>${alert.category}</span><h4>${alert.title}</h4><p>${alert.detail}</p><small>${formatDateTime(alert.createdAt)}</small></div><${Button} tone="secondary" icon="check" onClick=${() => this.acknowledgeAlert(alert.id)}>Revisada</${Button}></div>`) : html`<${EmptyState} icon="shield" title="Sin alertas abiertas" text="No hay señales pendientes en este momento."/>`}</div></${Card}>
       </div>` : null}
 
+      ${this.state.patientTab === 'consultations' ? this.renderConsultationsTab(patient) : null}
+
+      ${this.state.patientTab === 'documents' ? this.renderDocumentsTab(patient) : null}
+
       ${this.state.patientTab === 'prescriptions' ? html`<div className="dashboard-grid prescriptions-view">
         <${Card} tour="prescriptions-section" className="span-12" title="Recetas del paciente" subtitle="Genere una receta membretada, guárdela en el expediente y ábrala para imprimir o guardar como PDF." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="prescription" onClick=${() => this.openPrescription(patient)}>Nueva receta</${Button}>` : null}>
           ${(patient.prescriptions || []).length ? html`<div className="prescription-list">${patient.prescriptions.map(prescription => html`<article key=${prescription.id} className="prescription-card"><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small></div><div className="prescription-card-items">${prescription.items.slice(0, 3).map(item => html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div><${Button} tone="secondary" icon="print" onClick=${() => this.printPrescription(prescription, patient.id)}>Imprimir</${Button}></article>`)}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
@@ -2628,9 +3004,9 @@ class App extends React.Component {
       ...(patient.timeline || []),
       ...patientAppointments.map(appointment => ({ date: appointment.start, type: 'appointment', title: `Consulta ${statusLabel(appointment.status).toLowerCase()}`, detail: `${appointment.type} · ${appointment.modality}. ${appointment.notes || ''}` })),
     ].sort((left, right) => new Date(right.date) - new Date(left.date));
-    const filterMap = { medications: 'medication', assessments: 'assessment', effects: 'alert', vitals: 'vital', labs: 'lab', documents: 'document', appointments: 'appointment' };
+    const filterMap = { medications: 'medication', assessments: 'assessment', effects: 'alert', vitals: 'vital', labs: 'lab', documents: 'document', consultations: 'consultation', appointments: 'appointment' };
     const filtered = this.state.timelineFilter === 'all' ? allEvents : allEvents.filter(item => item.type === filterMap[this.state.timelineFilter]);
-    const filters = [['all', 'Todo'], ['medications', 'Medicamentos'], ['assessments', 'Escalas'], ['effects', 'Efectos'], ['vitals', 'Controles'], ['labs', 'Laboratorios'], ['documents', 'Recetas'], ['appointments', 'Citas']];
+    const filters = [['all', 'Todo'], ['medications', 'Medicamentos'], ['assessments', 'Escalas'], ['effects', 'Efectos'], ['vitals', 'Controles'], ['labs', 'Laboratorios'], ['documents', 'Documentos'], ['consultations', 'Consultas'], ['appointments', 'Citas']];
     return html`<${Card} tour="timeline-section" className="timeline-full" title="Historial completo" subtitle="Una sola secuencia con medicamentos, mediciones, laboratorios, efectos y citas." action=${html`<div className="segmented small timeline-filter">${filters.map(([key, label]) => html`<button key=${key} className=${this.state.timelineFilter === key ? 'active' : ''} onClick=${() => this.setState({ timelineFilter: key })}>${label}</button>`)}</div>`}><div className="timeline-list large">${filtered.length ? filtered.map((item, index) => html`<div key=${`${item.date}_${index}`} className="timeline-row"><time>${formatDate(item.date)}<small>${formatTime(item.date)}</small></time><span className=${`timeline-icon timeline-${item.type}`}><${Icon} name=${item.type === 'medication' ? 'medication' : item.type === 'assessment' ? 'analytics' : item.type === 'lab' ? 'file' : item.type === 'appointment' ? 'calendar' : item.type === 'document' ? 'prescription' : item.type === 'vital' ? 'activity' : 'alert'} size=${18}/></span><div><b>${item.title}</b><p>${item.detail}</p></div></div>`) : html`<${EmptyState} icon="file" title="Sin eventos en este filtro" text="Seleccione “Todo” para ver el historial completo."/>`}</div></${Card}>`;
   }
 
@@ -2716,11 +3092,11 @@ class App extends React.Component {
               <div><span>Cita</span><b>${formatDateTime(reminder.appointment.start)}</b><small>${reminder.appointment.type} · ${reminder.appointment.modality}</small></div>
               <div><span>Recordatorio</span><b>${reminderLabel(reminder.hours)}</b><small>${reminder.status === 'sent' ? `Enviado ${formatDateTime(reminder.sentAt)}` : `Disponible ${formatDateTime(reminder.dueAt)}`}</small></div>
               <${Badge} tone=${tone}>${statusText}</${Badge}>
-              <div className="reminder-actions">${reminder.status !== 'sent' && this.can('remindersManage') ? html`<${Button} tone="soft" icon="message" onClick=${() => this.sendReminderWhatsApp(reminder)}>WhatsApp</${Button}><${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}><button className="reminder-done" title="Marcar como enviado" onClick=${() => this.completeReminder(reminder, 'manual')}><${Icon} name="check" size=${17}/></button>` : html`<span className="reminder-complete"><${Icon} name="check" size=${16}/> Registrado</span>`}</div>
+              <div className="reminder-actions">${reminder.status !== 'sent' && this.can('remindersManage') ? html`${(reminder.channels || reminder.patient?.notificationPreferences?.channels || ['whatsapp']).map(channel => html`<${Button} key=${channel} tone=${channel === 'whatsapp' ? 'soft' : 'secondary'} icon=${channel === 'email' ? 'mail' : 'message'} onClick=${() => this.sendReminderChannel(reminder, channel)}>${reminderChannelLabel(channel)}</${Button}>`)}<${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}><button className="reminder-done" title="Marcar como enviado" onClick=${() => this.completeReminder(reminder, 'manual')}><${Icon} name="check" size=${17}/></button>` : html`<span className="reminder-complete"><${Icon} name="check" size=${16}/> Registrado</span>`}</div>
             </article>`;
           }) : html`<${EmptyState} icon="message" title="Sin recordatorios en cola" text="Los recordatorios aparecerán cuando se acerquen las próximas citas."/>`}
         </div>
-        <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> En esta versión, WhatsApp abre un mensaje preparado y el usuario confirma el envío. El sistema no envía mensajes automáticamente sin autorización.</div>
+        <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Linkare usa el canal autorizado por el paciente. Cuando un proveedor no está conectado, abre el mensaje preparado para que el personal confirme el envío.</div>
       </${Card}>
     </div>`;
   }
@@ -2805,7 +3181,7 @@ class App extends React.Component {
     const user = this.activeUser();
     const isOwner = user?.role === 'owner';
     const isDoctor = user?.role === 'doctor';
-    if (!isOwner && !isDoctor) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="La suscripción Linkare solo está disponible para administración y el médico titular."/>`;
+    if (!isOwner && !isDoctor) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="La suscripción Linkare solo está disponible para el médico titular."/>`;
 
     const billing = this.state.data.billing || {};
     const payments = Array.isArray(this.state.data.payments) ? this.state.data.payments : [];
@@ -2814,32 +3190,52 @@ class App extends React.Component {
     const pending = payments.filter(item => item.status === 'pending');
     const paid = payments.filter(item => item.status === 'paid');
     const latestPending = pending[0] || null;
-    const latestPaid = paid[0] || null;
+    const plan = annualPlanSnapshot({ ...billing, subscriptionPrice: 400, billingCycle: 'anual' }, payments);
     const wompiStatus = this.state.wompiStatus || { state: 'idle', app: null, error: '' };
     const appInfo = wompiStatus.app || {};
     const wompiStatusText = wompiStatus.state === 'ready'
       ? (appInfo.estaProductivo ? 'Conectado · Producción' : 'Conectado · Prueba')
       : wompiStatus.state === 'loading' ? 'Verificando…'
-        : wompiStatus.state === 'not-configured' ? 'Falta Supabase'
-          : wompiStatus.state === 'error' ? 'Error de conexión' : 'Sin verificar';
+        : wompiStatus.state === 'demo' ? 'Disponible en cuenta real'
+          : wompiStatus.state === 'not-configured' ? 'Falta Supabase'
+            : wompiStatus.state === 'error' ? 'Error de conexión' : 'Sin verificar';
+    const statusTone = plan.status === 'active' ? 'success' : plan.status === 'renewing' ? 'warning' : plan.status === 'grace' ? 'warning' : plan.status === 'expired' ? 'danger' : 'neutral';
+    const renewalText = plan.nextRenewalAt ? formatLongDate(plan.nextRenewalAt) : 'Se definirá después del primer pago';
+    const progress = plan.currentPeriodStart && plan.currentPeriodEnd
+      ? Math.max(0, Math.min(100, 100 - ((new Date(plan.currentPeriodEnd) - new Date()) / Math.max(1, new Date(plan.currentPeriodEnd) - new Date(plan.currentPeriodStart))) * 100))
+      : 0;
 
-    return html`<div className="view-enter"><${PageHeader}
-      eyebrow="Suscripción de la plataforma"
+    return html`<div className="view-enter plan-page"><${PageHeader}
+      eyebrow="Suscripción anual de la plataforma"
       title="Mi plan Linkare"
-      subtitle=${isOwner ? 'Administre el precio que pagará el psiquiatra y genere un enlace único de Wompi.' : 'Revise el precio de su licencia y pague mediante el enlace seguro de Wompi.'}
-      actions=${html`<div className="tour-actions-group">${isOwner ? html`<${Button} tone="secondary" icon="settings" onClick=${this.openBillingSettings}>Editar precio</${Button}><${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Pagar con Wompi</${Button}>` : isDoctor ? html`<${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured}>Generar enlace Wompi</${Button}>` : null}<${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus} disabled=${wompiStatus.state === 'loading'}>Verificar Wompi</${Button}></div>`}
+      subtitle="Revise su licencia, la próxima renovación y el historial de pagos procesados por Wompi."
+      actions=${html`<div className="tour-actions-group">${latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Continuar pago</${Button}>` : html`<${Button} icon="plus" onClick=${this.openWompiPaymentRequest} disabled=${!supabaseConfigured || !this.state.remoteOrganizationId}>${plan.status === 'active' && plan.daysLeft > 30 ? 'Renovar anticipadamente' : 'Renovar por US$400'}</${Button}>`}<${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus} disabled=${wompiStatus.state === 'loading'}>Verificar Wompi</${Button}></div>`}
     />
 
-      <div className="subscription-hero">
-        <div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>${billing.planName || 'Plan Profesional Linkare'}</h2><p>${billing.planDescription || 'Licencia de la plataforma Linkare.'}</p><div className="subscription-price"><strong>${money(billing.subscriptionPrice)}</strong><span>/ ${billing.billingCycle || 'mes'}</span></div></div>
-        <div className="subscription-status-card"><span>Estado de la licencia</span><b>${latestPaid ? 'Pago registrado' : latestPending ? 'Pago pendiente' : 'Sin factura generada'}</b><small>${latestPaid ? `Último pago: ${formatDateTime(latestPaid.paidAt || latestPaid.createdAt)}` : latestPending ? `Periodo: ${latestPending.billingPeriod || 'actual'}` : 'Presione “Generar enlace Wompi” para crear su checkout seguro de US$40.'}</small>${isDoctor && latestPending?.paymentUrl ? html`<${Button} icon="external" onClick=${() => this.openPaymentLink(latestPending.paymentUrl)}>Abrir pago seguro</${Button}>` : null}</div>
+      <section className="current-plan-card">
+        <div className="current-plan-main"><div className="plan-logo"><${Icon} name="shield" size=${27}/></div><div><span className="eyebrow">Plan actual</span><h2>${billing.planName || 'Plan Profesional Linkare'}</h2><p>${billing.planDescription || 'Licencia anual de la plataforma Linkare para gestión clínica.'}</p><div className="plan-price-line"><strong>${money(400)}</strong><span>por año</span></div></div></div>
+        <div className="current-plan-status"><${Badge} tone=${statusTone} dot=${true}>${plan.statusLabel}</${Badge}><div><span>Próxima renovación</span><b>${renewalText}</b><small>${plan.daysLeft === null ? 'Aún no existe un periodo pagado' : plan.daysLeft >= 0 ? `${plan.daysLeft} día(s) restantes` : `${Math.abs(plan.daysLeft)} día(s) vencido`}</small></div>${plan.latestPaid?.providerPayload?.receiptUrl || plan.latestPaid?.receiptUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(plan.latestPaid.receiptUrl || plan.latestPaid.providerPayload.receiptUrl)}>Ver comprobante <${Icon} name="external" size=${14}/></button>` : null}</div>
+        <div className="plan-progress"><div><span>Periodo de la licencia</span><small>${plan.currentPeriodStart ? `${formatDate(plan.currentPeriodStart)} – ${formatDate(plan.currentPeriodEnd)}` : 'Se activará al confirmar el primer pago'}</small></div><span><i style=${{ width: `${progress}%` }}></i></span></div>
+      </section>
+
+      <div className="plan-summary-grid">
+        <article><span>Estado</span><strong>${plan.statusLabel}</strong><small>${plan.status === 'active' ? 'Todas las funciones están disponibles' : plan.status === 'renewing' ? 'Puede renovar desde ahora' : plan.status === 'expired' ? 'Renueve para reactivar la licencia' : 'Pendiente de activación'}</small></article>
+        <article><span>Precio de renovación</span><strong>${money(400)}</strong><small>Un pago cada 12 meses</small></article>
+        <article><span>Renovación</span><strong>Manual</strong><small>Linkare no realiza cargos automáticos</small></article>
+        <article><span>Wompi</span><strong>${wompiStatusText}</strong><small>${wompiStatus.state === 'ready' ? (appInfo.nombre || 'Aplicativo conectado') : (wompiStatus.error || 'Use Verificar Wompi')}</small></article>
       </div>
 
-      <div className="kpi-grid"><${KpiCard} label="Precio actual" value=${money(billing.subscriptionPrice)} hint=${billing.billingCycle || 'mensual'} icon="file" tone="blue"/><${KpiCard} label="Facturas pendientes" value=${pending.length} hint="por pagar" icon="clock" tone=${pending.length ? 'coral' : 'teal'}/><${KpiCard} label="Pagos registrados" value=${paid.length} hint="historial" icon="check" tone="teal"/><${KpiCard} label="Wompi" value=${wompiStatusText} hint=${wompiStatus.state === 'ready' ? (appInfo.nombre || 'Aplicativo conectado') : (wompiStatus.error || 'Use Verificar Wompi')} icon="insurance" tone="purple"/></div>
+      <div className="dashboard-grid plan-grid"><${Card} className="span-7" title="Incluido en su plan" subtitle="Herramientas para la gestión clínica y administrativa del consultorio."><div className="plan-feature-grid">${[
+        ['Expedientes y evolución longitudinal', 'patients'],
+        ['Agenda y libreta virtual de consulta', 'notebook'],
+        ['Recetas y documentos privados', 'folder'],
+        ['Recordatorios multicanal', 'message'],
+        ['Google y Apple Calendar', 'calendar'],
+        ['Resúmenes clínicos y médico-legales', 'file'],
+      ].map(([label, icon]) => html`<div key=${label}><span><${Icon} name=${icon} size=${18}/></span><b>${label}</b></div>`)}</div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Los datos de tarjeta se introducen únicamente en Wompi. Linkare no los ve ni los almacena.</div></${Card}>
+      <${Card} className="span-5" title="¿Desea mejorar su plan?" subtitle="La estructura queda preparada para futuros niveles de servicio."><div className="upgrade-card"><span className="upgrade-orb"><${Icon} name="trend" size=${23}/></span><div><span className="eyebrow">Linkare Premium</span><h3>Próximamente</h3><p>Automatizaciones avanzadas, mayor almacenamiento e integraciones adicionales.</p></div><${Button} tone="secondary" onClick=${this.openPlanComparison}>Comparar planes</${Button}></div></${Card}>
 
-      <div className="dashboard-grid"><${Card} className="span-7" title="Cómo funciona el cobro" subtitle="Este módulo es para que el psiquiatra pague la licencia de Linkare, no para cobrarle a pacientes."><div className="subscription-flow"><div><b>1</b><span>Linkare define el precio</span></div><i></i><div><b>2</b><span>Linkare crea un enlace único</span></div><i></i><div><b>3</b><span>El psiquiatra paga en Wompi</span></div><i></i><div><b>4</b><span>Webhook confirma en Supabase</span></div></div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> App ID y API Secret se guardan únicamente en Supabase Secrets. La tarjeta nunca se captura dentro de Linkare.</div></${Card}><${Card} className="span-5" title="Datos del pagador"><div className="billing-summary-grid"><div className="billing-summary-card"><span>Nombre</span><strong>${billing.payerName || this.state.data.organization?.clinician || 'Psiquiatra'}</strong><small>Cliente de Linkare</small></div><div className="billing-summary-card"><span>Correo</span><strong>${billing.payerEmail || 'Sin correo'}</strong><small>Recibe confirmación de Wompi</small></div><div className="billing-summary-card"><span>Modo Wompi</span><strong>${appInfo.estaProductivo ? 'Producción' : 'Prueba'}</strong><small>${wompiStatus.state === 'ready' ? 'Determinado por el aplicativo Wompi' : 'Pendiente de verificar'}</small></div></div>${isOwner ? html`<${Button} tone="secondary" icon="edit" onClick=${this.openBillingSettings}>Modificar plan y precio</${Button}>` : null}</${Card}>
-
-        <${Card} className="span-12" title="Historial de facturación" subtitle="Los enlaces generados se guardan en Supabase y se actualizan por webhook."><div className="table-wrap"><table className="data-table"><thead><tr><th>Periodo</th><th>Concepto</th><th>Pagador</th><th>Monto</th><th>Modo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${payments.length ? payments.map(item => html`<tr key=${item.id}><td><b>${item.billingPeriod || '—'}</b><small>${formatDate(item.createdAt)}</small></td><td>${item.description || billing.planName}</td><td>${item.payerName || billing.payerName || 'Psiquiatra'}<small>${item.payerEmail || billing.payerEmail || ''}</small></td><td>${money(item.amount)}</td><td>${item.isTest ? html`<${Badge} tone="warning">Prueba</${Badge}>` : html`<${Badge} tone="success">Producción</${Badge}>`}</td><td><${Badge} tone=${item.status === 'paid' ? 'success' : item.status === 'pending' ? 'warning' : 'neutral'}>${item.status === 'paid' ? 'Pagado' : item.status === 'pending' ? 'Pendiente' : 'Cancelado'}</${Badge}></td><td>${item.paymentUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(item.paymentUrl)}>Abrir enlace <${Icon} name="external" size=${14}/></button>` : '—'}</td></tr>`) : html`<tr><td colSpan="7">Todavía no hay facturas.</td></tr>`}</tbody></table></div></${Card}>
+        <${Card} className="span-12" title="Historial de facturación" subtitle="Cada renovación anual genera un enlace único y queda registrada en Supabase."><div className="table-wrap"><table className="data-table"><thead><tr><th>Periodo</th><th>Concepto</th><th>Pagador</th><th>Monto</th><th>Modo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${payments.length ? payments.map(item => html`<tr key=${item.id}><td><b>${item.billingPeriod || '—'}</b><small>${item.periodStart && item.periodEnd ? `${formatDate(item.periodStart)} – ${formatDate(item.periodEnd)}` : formatDate(item.createdAt)}</small></td><td>${item.description || billing.planName}</td><td><span className="wrap-anywhere">${item.payerName || billing.payerName || 'Psiquiatra'}</span><small className="wrap-anywhere">${item.payerEmail || billing.payerEmail || ''}</small></td><td>${money(item.amount)}</td><td>${item.isTest ? html`<${Badge} tone="warning">Prueba</${Badge}>` : html`<${Badge} tone="success">Producción</${Badge}>`}</td><td><${Badge} tone=${item.status === 'paid' ? 'success' : item.status === 'pending' ? 'warning' : item.status === 'expired' ? 'danger' : 'neutral'}>${item.status === 'paid' ? 'Pagado' : item.status === 'pending' ? 'Pendiente' : item.status === 'expired' ? 'Vencido' : 'Cancelado'}</${Badge}></td><td>${item.paymentUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(item.paymentUrl)}>Abrir enlace <${Icon} name="external" size=${14}/></button>` : item.receiptUrl ? html`<button className="text-button" onClick=${() => this.openPaymentLink(item.receiptUrl)}>Comprobante <${Icon} name="external" size=${14}/></button>` : '—'}</td></tr>`) : html`<tr><td colSpan="7">Todavía no hay facturas. Genere la primera renovación anual cuando esté listo.</td></tr>`}</tbody></table></div></${Card}>
       </div>
     </div>`;
   }
@@ -2869,7 +3265,7 @@ class App extends React.Component {
               return html`<button key=${hours} type="button" className=${`reminder-option ${active ? 'active' : ''}`} disabled=${!canSettings} onClick=${() => this.toggleReminderHour(hours)}><span className="reminder-check"><${Icon} name=${active ? 'check' : 'clock'} size=${17}/></span><b>${reminderLabel(hours)}</b><small>${hours >= 24 ? 'Aviso anticipado' : 'Confirmación cercana'}</small></button>`;
             })}
           </div>
-          <div className="reminder-explanation"><${Icon} name="message" size=${19}/><div><b>¿Cómo funciona en esta versión?</b><p>La agenda prepara la cola de recordatorios. El personal abre WhatsApp con el mensaje listo, confirma el envío y lo marca como enviado. El envío automático por WhatsApp, SMS o correo se conecta después mediante un proveedor autorizado.</p></div></div>
+          <div className="reminder-explanation"><${Icon} name="message" size=${19}/><div><b>Correo, SMS y WhatsApp</b><p>Cada paciente puede elegir canales y anticipación. Cuando el proveedor está conectado, Linkare envía desde Supabase; si no, abre el mensaje preparado para envío manual.</p></div></div>
         </${Card}>
 
         ${canUsers ? html`<${Card} tour="team-permissions" className="settings-wide team-card" title="Usuarios y permisos" subtitle="La vista de secretaría oculta información clínica salvo que el médico conceda acceso." action=${html`<${Button} icon="userPlus" onClick=${this.openSecretary}>Crear secretaria</${Button}>`}>
@@ -2884,11 +3280,15 @@ class App extends React.Component {
 
         ${canSettings ? html`<${Card} tour="settings-backup" title="Respaldo local"><div className="setting-row"><span className="setting-icon green"><${Icon} name="download"/></span><div><h4>Guardar una copia</h4><p>Descarga pacientes, citas, recetas y configuración en JSON.</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="download" onClick=${this.exportBackup}>Descargar respaldo</${Button}><label className="button button-secondary file-button"><${Icon} name="upload" size=${18}/><span>Importar respaldo</span><input type="file" accept="application/json" onChange=${this.importBackup}/></label></div></${Card}>` : null}
 
+        <${Card} className="settings-wide integrations-card" title="Calendarios" subtitle="Sincronice citas sin exponer diagnósticos ni notas clínicas en el título externo."><div className="integration-list"><article><span className="integration-icon google"><${Icon} name="calendar" size=${22}/></span><div><b>Google Calendar</b><p>${this.state.calendarStatus?.google?.connected ? `Conectado${this.state.calendarStatus.google.email ? ` como ${this.state.calendarStatus.google.email}` : ''}` : 'Conecte su cuenta para crear y actualizar eventos desde Linkare.'}</p></div><${Badge} tone=${this.state.calendarStatus?.google?.connected ? 'success' : 'neutral'}>${this.state.calendarStatus?.google?.connected ? 'Conectado' : 'Pendiente'}</${Badge}><${Button} tone="secondary" icon="link" onClick=${this.connectGoogleCalendar} disabled=${this.state.integrationBusy}>${this.state.calendarStatus?.google?.connected ? 'Reconectar' : 'Conectar'}</${Button}></article><article><span className="integration-icon apple"><${Icon} name="calendar" size=${22}/></span><div><b>Apple Calendar</b><p>${this.state.calendarStatus?.apple?.connected ? 'Enlace privado generado. Puede suscribirse desde iPhone, iPad o Mac.' : 'Genere un calendario privado por suscripción o use el archivo ICS de cada cita.'}</p></div><${Badge} tone=${this.state.calendarStatus?.apple?.connected ? 'success' : 'neutral'}>${this.state.calendarStatus?.apple?.connected ? 'Listo' : 'Pendiente'}</${Badge}><${Button} tone="secondary" icon="link" onClick=${this.createAppleFeed} disabled=${this.state.integrationBusy}>${this.state.calendarStatus?.apple?.connected ? 'Copiar enlace' : 'Crear enlace privado'}</${Button}></article></div></${Card}>
+
+        <${Card} className="settings-wide integrations-card" title="Proveedores de recordatorios" subtitle="Estado de las conexiones del backend. Los secretos permanecen en Supabase."><div className="provider-status-grid">${REMINDER_CHANNELS.map(channel => { const ready = Boolean(this.state.reminderProviders?.[channel.value]); return html`<article key=${channel.value}><span><${Icon} name=${channel.value === 'email' ? 'mail' : 'message'} size=${20}/></span><div><b>${channel.label}</b><small>${ready ? 'Proveedor configurado' : 'Modo manual disponible'}</small></div><${Badge} tone=${ready ? 'success' : 'neutral'}>${ready ? 'Automático' : 'Manual'}</${Badge}></article>`; })}</div><div className="settings-actions"><${Button} tone="secondary" icon="refresh" onClick=${this.loadIntegrationStatus}>Actualizar estado</${Button}></div></${Card}>
+
         <${Card} tour="settings-tutorial" title="Tutorial guiado"><div className="setting-row"><span className="setting-icon blue"><${Icon} name="help"/></span><div><h4>Repasar el sistema paso a paso</h4><p>El recorrido completo explica cada pantalla, formulario, campo, receta, seguro, recordatorio y permiso.</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="activity" onClick=${() => this.startTour('quick')}>Recorrido esencial</${Button}><${Button} icon="overview" onClick=${() => this.startTour('full')}>Recorrido completo</${Button}></div></${Card}>
 
         ${canSettings ? html`<${Card} title="Datos de demostración"><div className="setting-row"><span className="setting-icon coral"><${Icon} name="refresh"/></span><div><h4>Restaurar información inicial</h4><p>Reemplaza cambios locales por los pacientes sintéticos originales.</p></div></div><${Button} tone="secondary" icon="refresh" onClick=${this.resetDemo}>Restaurar demo</${Button}></${Card}>` : null}
 
-        <${Card} tour="settings-storage" title="Estado de almacenamiento"><div className="setting-row"><span className="setting-icon blue"><${Icon} name="file"/></span><div><h4>Modo local activo</h4><p>La demostración guarda datos e imágenes optimizadas en este navegador.</p></div><${Badge} tone="success" dot=${true}>Funcionando</${Badge}></div></${Card}>
+        <${Card} tour="settings-storage" title="Estado de almacenamiento"><div className="setting-row"><span className="setting-icon blue"><${Icon} name="file"/></span><div><h4>${productionMode ? 'Supabase conectado' : 'Modo local activo'}</h4><p>${productionMode ? 'Los expedientes y metadatos se sincronizan con Supabase; los archivos usan Storage privado.' : 'La demostración guarda datos e imágenes optimizadas en este navegador.'}</p></div><${Badge} tone="success" dot=${true}>Funcionando</${Badge}></div></${Card}>
       </div>
       <${Card} className="terms-card" title="Términos técnicos en palabras sencillas"><div className="term-grid"><div><b>Usuario y permisos</b><p>Definen qué pantallas y acciones puede utilizar cada persona.</p></div><div><b>Recordatorio local</b><p>La aplicación avisa cuándo corresponde enviar el mensaje, pero no lo envía sola.</p></div><div><b>Imagen optimizada</b><p>La fotografía se reduce para que cargue más rápido y ocupe menos espacio.</p></div><div><b>Receta PDF</b><p>Se abre una hoja lista para imprimir o guardar como PDF desde el navegador.</p></div><div><b>Supabase Auth</b><p>Será el inicio de sesión real y seguro cuando conectemos la base de datos.</p></div><div><b>RLS</b><p>Reglas que impiden que un usuario consulte datos que no tiene autorizados.</p></div></div></${Card}>
     </div>`;
@@ -2910,6 +3310,8 @@ class App extends React.Component {
     if (modal.type === 'userSwitcher') return this.renderUserSwitcherModal();
     if (modal.type === 'billingSettings') return this.renderBillingSettingsModal();
     if (modal.type === 'paymentRequest') return this.renderPaymentRequestModal();
+    if (modal.type === 'documentUpload') return this.renderDocumentUploadModal();
+    if (modal.type === 'planCompare') return this.renderPlanCompareModal();
     if (modal.type === 'prescription') return this.renderPrescriptionModal();
     if (modal.type === 'medication') return this.renderMedicationFormModal();
     if (modal.type === 'dose') return this.renderDoseFormModal();
@@ -2926,37 +3328,64 @@ class App extends React.Component {
 
   renderPaymentRequestModal() {
     const draft = this.state.modal?.draft || {};
-    return html`<${Modal} title="Generar enlace de pago Linkare" subtitle="Linkare usará el precio que administración guardó en Mi plan y generará un enlace único de Wompi para el psiquiatra." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.submitWompiPaymentRequest}>${this.renderModalError()}<fieldset><legend>Factura de la licencia</legend><div className="form-grid"><${FormField} label="Plan"><input value=${draft.planName} readOnly/></${FormField}><${FormField} label="Periodo"><input type="month" value=${draft.billingPeriod} onChange=${event => this.updateDraft('billingPeriod', event.target.value)}/></${FormField}></div><${FormField} label="Concepto" required=${true}><input value=${draft.description} onChange=${event => this.updateDraft('description', event.target.value)} placeholder="Licencia mensual Linkare" required/></${FormField}><div className="form-grid"><${FormField} label="Monto a cobrar (USD)" required=${true} hint="Este monto viene del precio guardado por administración. Para cambiarlo, cierre y use Editar precio."><input autoFocus type="number" min="0.01" step="0.01" value=${draft.amount} readOnly required/></${FormField}><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)} placeholder="Dra. / Dr."/></${FormField}></div><${FormField} label="Correo del psiquiatra" required=${true}><input type="email" value=${draft.customerEmail} onChange=${event => this.updateDraft('customerEmail', event.target.value)} placeholder="doctor@clinica.com" required/></${FormField}></fieldset><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Pago seguro administrado por Wompi</b><p>Linkare no recibe datos de tarjeta. El API Secret vive en Supabase, Wompi genera el checkout y el webhook confirma el pago. El servidor vuelve a leer el precio guardado para evitar modificaciones desde el navegador.</p></div></div><${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.wompiBusy ? 'Generando enlace…' : 'Generar enlace Wompi'}/></form></${Modal}>`;
+    return html`<${Modal} title="Generar renovación anual" subtitle="Wompi creará un enlace único por US$400. El monto se vuelve a leer desde Supabase antes de generar el checkout." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.submitWompiPaymentRequest}>${this.renderModalError()}<fieldset><legend>Licencia anual</legend><div className="form-grid"><${FormField} label="Plan"><input value=${draft.planName} readOnly/></${FormField}><${FormField} label="Periodo"><input value=${draft.billingPeriod} readOnly/></${FormField}></div><${FormField} label="Concepto" required=${true}><input value=${draft.description} onChange=${event => this.updateDraft('description', event.target.value)} placeholder="Licencia anual Linkare" required/></${FormField}><div className="form-grid"><${FormField} label="Monto anual (USD)" required=${true} hint="Precio fijo del Plan Profesional Linkare."><input autoFocus type="number" value="400" readOnly required/></${FormField}><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)} placeholder="Dra. / Dr."/></${FormField}></div><${FormField} label="Correo del psiquiatra" required=${true}><input type="email" value=${draft.customerEmail} onChange=${event => this.updateDraft('customerEmail', event.target.value)} placeholder="doctor@clinica.com" required/></${FormField}></fieldset><div className="annual-payment-preview"><span><${Icon} name="shield" size=${21}/></span><div><b>US$400 por 12 meses</b><p>La renovación es manual. Linkare no guarda datos de tarjeta ni realiza cargos automáticos.</p></div></div><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Checkout seguro de Wompi</b><p>El API Secret permanece en Supabase. Wompi procesa el pago y el webhook activa el nuevo periodo anual.</p></div></div><${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.wompiBusy ? 'Generando enlace…' : 'Generar enlace anual de US$400'}/></form></${Modal}>`;
   }
 
   renderBillingSettingsModal() {
     const draft = this.state.modal?.draft || {};
     const status = this.state.wompiStatus || { state: 'idle', app: null, error: '' };
-    return html`<${Modal} title="Precio y plan de Linkare" subtitle="Solo administración puede cambiar el precio que pagará el psiquiatra." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveBillingSettingsForm}>${this.renderModalError()}<fieldset><legend>Plan comercial</legend><div className="form-grid"><${FormField} label="Nombre del plan" required=${true}><input autoFocus value=${draft.planName} onChange=${event => this.updateDraft('planName', event.target.value)} required/></${FormField}><${FormField} label="Ciclo"><select value=${draft.billingCycle} onChange=${event => this.updateDraft('billingCycle', event.target.value)}><option value="mensual">Mensual</option><option value="trimestral">Trimestral</option><option value="semestral">Semestral</option><option value="anual">Anual</option><option value="único">Pago único</option></select></${FormField}></div><${FormField} label="Descripción"><textarea rows="3" value=${draft.planDescription} onChange=${event => this.updateDraft('planDescription', event.target.value)}></textarea></${FormField}><div className="form-grid"><${FormField} label="Precio" required=${true}><input type="number" step="0.01" min="0.01" value=${draft.subscriptionPrice} onChange=${event => this.updateDraft('subscriptionPrice', event.target.value)} required/></${FormField}><${FormField} label="Moneda"><input value=${draft.currency} onChange=${event => this.updateDraft('currency', event.target.value)} placeholder="USD"/></${FormField}></div></fieldset><fieldset><legend>Quién pagará</legend><div className="form-grid"><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)}/></${FormField}><${FormField} label="Correo"><input type="email" value=${draft.payerEmail} onChange=${event => this.updateDraft('payerEmail', event.target.value)}/></${FormField}></div></fieldset><fieldset><legend>Conexión Wompi</legend><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>${status.state === 'ready' ? (status.app?.estaProductivo ? 'Wompi en producción' : 'Wompi en modo de prueba') : 'Wompi pendiente de verificar'}</b><p>${status.state === 'ready' ? `${status.app?.nombre || 'Aplicativo'} · ${status.app?.numeroCuenta || 'Cuenta pendiente'}` : (status.error || 'App ID y API Secret se guardan en Supabase Secrets.')}</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus}>Verificar API</${Button}></div><${FormField} label="Enlace manual de respaldo" hint="Opcional. Puede pegar el enlace genérico que ya creó en Wompi."><input value=${draft.manualCheckoutUrl} onChange=${event => this.updateDraft('manualCheckoutUrl', event.target.value)} placeholder="https://s.wompi.sv/..."/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.wompiEnabled)} onChange=${event => this.updateDraft('wompiEnabled', event.target.checked)}/><span><b>Habilitar Wompi</b><small>Permite generar enlaces únicos desde la API.</small></span></label></fieldset><${FormField} label="Nota interna"><textarea rows="2" value=${draft.note} onChange=${event => this.updateDraft('note', event.target.value)}></textarea></${FormField}><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> No existe VITE_WOMPI_PUBLIC_KEY en esta integración de Wompi El Salvador. App ID y API Secret son credenciales del backend.</div><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar plan y precio"/></form></${Modal}>`;
+    return html`<${Modal} title="Plan anual de Linkare" subtitle="La licencia profesional tiene un precio fijo de US$400 por 12 meses." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveBillingSettingsForm}>${this.renderModalError()}<fieldset><legend>Plan comercial</legend><div className="form-grid"><${FormField} label="Nombre del plan" required=${true}><input autoFocus value=${draft.planName} onChange=${event => this.updateDraft('planName', event.target.value)} required/></${FormField}><${FormField} label="Ciclo"><input value="Anual · 12 meses" readOnly/></${FormField}></div><${FormField} label="Descripción"><textarea rows="3" value=${draft.planDescription} onChange=${event => this.updateDraft('planDescription', event.target.value)}></textarea></${FormField}><div className="form-grid"><${FormField} label="Precio anual"><input value="US$400.00" readOnly/></${FormField}><${FormField} label="Renovación"><input value="Manual una vez al año" readOnly/></${FormField}></div></fieldset><fieldset><legend>Quién pagará</legend><div className="form-grid"><${FormField} label="Nombre del psiquiatra"><input value=${draft.payerName} onChange=${event => this.updateDraft('payerName', event.target.value)}/></${FormField}><${FormField} label="Correo"><input type="email" value=${draft.payerEmail} onChange=${event => this.updateDraft('payerEmail', event.target.value)}/></${FormField}></div></fieldset><fieldset><legend>Conexión Wompi</legend><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>${status.state === 'ready' ? (status.app?.estaProductivo ? 'Wompi en producción' : 'Wompi en modo de prueba') : 'Wompi pendiente de verificar'}</b><p>${status.state === 'ready' ? `${status.app?.nombre || 'Aplicativo'} · ${status.app?.numeroCuenta || 'Cuenta pendiente'}` : (status.error || 'App ID y API Secret se guardan en Supabase Secrets.')}</p></div></div><div className="settings-actions"><${Button} tone="secondary" icon="refresh" onClick=${this.loadWompiStatus}>Verificar API</${Button}></div><${FormField} label="Enlace manual de respaldo" hint="Opcional. Puede pegar el enlace genérico de Wompi como contingencia."><input value=${draft.manualCheckoutUrl} onChange=${event => this.updateDraft('manualCheckoutUrl', event.target.value)} placeholder="https://s.wompi.sv/..."/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.wompiEnabled)} onChange=${event => this.updateDraft('wompiEnabled', event.target.checked)}/><span><b>Habilitar Wompi</b><small>Permite generar una renovación anual única.</small></span></label></fieldset><${FormField} label="Nota interna"><textarea rows="2" value=${draft.note} onChange=${event => this.updateDraft('note', event.target.value)}></textarea></${FormField}><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar configuración anual"/></form></${Modal}>`;
+  }
+
+  renderDocumentUploadModal() {
+    const draft = this.state.modal?.draft || {};
+    const patient = this.state.data.patients.find(item => item.id === this.state.modal?.patientId);
+    return html`<${Modal} title="Agregar documento al expediente" subtitle=${`Paciente: ${patient?.name || 'No disponible'}`} onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.savePatientDocumentForm}>${this.renderModalError()}<div className="document-upload-drop"><span><${Icon} name="upload" size=${28}/></span><div><b>${draft.file?.name || 'Seleccione un archivo'}</b><p>PDF, imagen, texto, Word o Excel. Máximo 20 MB en producción.</p></div><label className="button button-secondary"><${Icon} name="folder" size=${18}/><span>Elegir archivo</span><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.doc,.docx,.xls,.xlsx" onChange=${event => this.updateDraft('file', event.target.files?.[0] || null)}/></label></div><div className="form-grid"><${FormField} label="Categoría" required=${true}><select value=${draft.category} onChange=${event => this.updateDraft('category', event.target.value)}>${DOCUMENT_CATEGORIES.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Fecha clínica"><input type="date" value=${draft.clinicalDate} onChange=${event => this.updateDraft('clinicalDate', event.target.value)}/></${FormField}></div><${FormField} label="Descripción"><textarea rows="3" value=${draft.description} onChange=${event => this.updateDraft('description', event.target.value)} placeholder="Origen, contexto o por qué se incorpora al expediente"></textarea></${FormField}><${FormField} label="Nivel de confidencialidad"><select value=${draft.confidentiality} onChange=${event => this.updateDraft('confidentiality', event.target.value)}>${CONFIDENTIALITY_LEVELS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Almacenamiento privado</b><p>En producción, el archivo se guarda en un bucket privado de Supabase Storage y se abre mediante enlaces firmados temporales.</p></div></div><${FormActions} onCancel=${this.closeModal} submitLabel=${this.state.documentBusy ? 'Subiendo…' : 'Agregar al expediente'}/></form></${Modal}>`;
+  }
+
+  renderPlanCompareModal() {
+    return html`<${Modal} title="Comparar planes" subtitle="Su plan actual ya incluye todas las funciones clínicas disponibles en esta versión." onClose=${this.closeModal} size="lg"><div className="plan-compare-grid"><article className="current"><span className="eyebrow">Plan actual</span><h3>Profesional</h3><strong>US$400 <small>/ año</small></strong><ul><li><${Icon} name="check" size=${15}/> Expedientes y agenda</li><li><${Icon} name="check" size=${15}/> Libreta virtual y documentos</li><li><${Icon} name="check" size=${15}/> Recordatorios e integraciones</li><li><${Icon} name="check" size=${15}/> Reportes clínicos y post mortem</li></ul><${Badge} tone="success">Activo</${Badge}></article><article className="future"><span className="eyebrow">Próximamente</span><h3>Premium</h3><strong>Por definir</strong><ul><li><${Icon} name="trend" size=${15}/> Automatizaciones avanzadas</li><li><${Icon} name="folder" size=${15}/> Mayor almacenamiento</li><li><${Icon} name="link" size=${15}/> Integraciones adicionales</li><li><${Icon} name="analytics" size=${15}/> Analítica ampliada</li></ul><${Badge} tone="neutral">Lista de espera</${Badge}></article></div><div className="clinical-footnote"><${Icon} name="shield" size=${17}/> No se realizará ningún cargo ni cambio de plan desde esta ventana.</div><div className="modal-actions"><${Button} onClick=${this.closeModal}>Entendido</${Button}></div></${Modal}>`;
   }
 
   renderPatientFormModal() {
     const draft = this.state.modal.draft;
     const scale = SCALE_CATALOG.find(item => item.code === draft.scaleCode) || SCALE_CATALOG[0];
     const clinicalFields = this.can('clinicalView');
-    return html`<${Modal} title="Nuevo paciente" subtitle=${clinicalFields ? 'Registre lo esencial, la cobertura y una medición inicial.' : 'Registre datos administrativos. El médico completará la información clínica.'} onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.savePatientForm}>${this.renderModalError()}
-      <fieldset data-tour="patient-form-identification"><legend>Identificación</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="PNG, JPG o WEBP. Se optimiza para cargar rápidamente." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Ana Martínez" required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)} placeholder="Ej. +503 7000 0000"/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)} placeholder="paciente@correo.com"/></${FormField}></fieldset>
+    return html`<${Modal} title="Nuevo paciente" subtitle=${clinicalFields ? 'Registre identificación, contexto, preferencias y una medición inicial.' : 'Registre datos administrativos. El médico completará la información clínica.'} onClose=${this.closeModal} size="xl"><form className="clinical-form" onSubmit=${this.savePatientForm}>${this.renderModalError()}
+      <fieldset data-tour="patient-form-identification"><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="PNG, JPG o WEBP. Se optimiza para cargar rápidamente." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Ana Martínez" required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => { this.updateDraft('phone', event.target.value); this.updateDraft('reminderPhone', event.target.value); }} placeholder="Ej. +503 7000 0000"/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => { this.updateDraft('email', event.target.value); this.updateDraft('reminderEmail', event.target.value); }} placeholder="paciente@correo.com"/></${FormField}></fieldset>
 
-      <fieldset data-tour="patient-form-insurance-section"><legend>Seguro médico</legend><label data-tour="patient-form-insurance-toggle" className=${`insurance-toggle-card ${draft.hasInsurance ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.hasInsurance)} onChange=${event => this.updateDraft('hasInsurance', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="insurance" size=${22}/></span><span><b>${draft.hasInsurance ? 'Paciente con seguro médico' : 'Atención particular'}</b><small>Active esta opción para guardar aseguradora, plan y datos de autorización.</small></span><i><${Icon} name=${draft.hasInsurance ? 'check' : 'plus'} size=${17}/></i></label>${draft.hasInsurance ? html`<div className="insurance-form-panel" data-tour="patient-form-insurance-details"><div className="form-grid"><${FormField} label="Aseguradora" required=${true}><input value=${draft.insuranceProvider} onChange=${event => this.updateDraft('insuranceProvider', event.target.value)} placeholder="Ej. Aseguradora Médica" required/></${FormField}><${FormField} label="Plan"><input value=${draft.insurancePlan} onChange=${event => this.updateDraft('insurancePlan', event.target.value)} placeholder="Ej. Ejecutivo Plus"/></${FormField}></div><div className="form-grid"><${FormField} label="N.º de afiliado"><input value=${draft.insuranceMemberId} onChange=${event => this.updateDraft('insuranceMemberId', event.target.value)}/></${FormField}><${FormField} label="N.º de póliza"><input value=${draft.insurancePolicyNumber} onChange=${event => this.updateDraft('insurancePolicyNumber', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Copago"><input value=${draft.insuranceCopay} onChange=${event => this.updateDraft('insuranceCopay', event.target.value)} placeholder="Ej. $20 o 20%"/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.insuranceAuthorizationRequired)} onChange=${event => this.updateDraft('insuranceAuthorizationRequired', event.target.checked)}/><span><b>Requiere autorización</b><small>La secretaria podrá verlo antes de confirmar la cita.</small></span></label></div><${FormField} label="Notas del seguro"><textarea rows="2" value=${draft.insuranceNotes} onChange=${event => this.updateDraft('insuranceNotes', event.target.value)} placeholder="Cobertura, vigencia o requisitos importantes"></textarea></${FormField}></div>` : null}</fieldset>
+      ${clinicalFields ? html`<fieldset><legend>Identidad y contexto personal <small>Opcional y autoidentificado</small></legend><div className="form-grid"><${FormField} label="Nombre preferido"><input value=${draft.preferredName} onChange=${event => this.updateDraft('preferredName', event.target.value)}/></${FormField}><${FormField} label="Pronombres"><input value=${draft.pronouns} onChange=${event => this.updateDraft('pronouns', event.target.value)} placeholder="Ej. ella, él, elle"/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Sexo asignado al nacer"><select value=${draft.sexAssignedAtBirth} onChange=${event => this.updateDraft('sexAssignedAtBirth', event.target.value)}>${SEX_ASSIGNED_AT_BIRTH_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Identidad de género"><select value=${draft.genderIdentity} onChange=${event => this.updateDraft('genderIdentity', event.target.value)}>${GENDER_IDENTITY_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Orientación sexual"><select value=${draft.sexualOrientation} onChange=${event => this.updateDraft('sexualOrientation', event.target.value)}>${SEXUAL_ORIENTATION_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Estado de relación"><select value=${draft.relationshipStatus} onChange=${event => this.updateDraft('relationshipStatus', event.target.value)}>${RELATIONSHIP_STATUS_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Personas significativas y red de apoyo"><input value=${draft.significantPeople} onChange=${event => this.updateDraft('significantPeople', event.target.value)} placeholder="Familia, pareja, amistades o cuidadores"/></${FormField}></div><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Información sensible y opcional</b><p>Regístrela solo cuando sea clínicamente pertinente y a partir de lo expresado por el paciente. Secretaría no la verá.</p></div></div></fieldset>` : null}
+      ${clinicalFields ? html`<fieldset><legend>Antecedentes de seguridad <small>Información documentada, no inferida</small></legend><div className="form-grid form-grid-three"><${FormField} label="Antecedente de ideación suicida"><select value=${draft.ideationHistory} onChange=${event => this.updateDraft('ideationHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Previa, sin fecha precisa</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Intentos documentados"><input type="number" min="0" max="99" value=${draft.suicideAttemptsCount} onChange=${event => this.updateDraft('suicideAttemptsCount', event.target.value)}/></${FormField}><${FormField} label="Fecha del último intento"><input type="date" value=${draft.lastAttemptDate} onChange=${event => this.updateDraft('lastAttemptDate', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Autolesión sin intención suicida"><select value=${draft.selfHarmHistory} onChange=${event => this.updateDraft('selfHarmHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Antecedente previo</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Contacto de emergencia"><input value=${draft.emergencyContact} onChange=${event => this.updateDraft('emergencyContact', event.target.value)} placeholder="Nombre, relación y teléfono"/></${FormField}></div><${FormField} label="Plan de seguridad"><textarea rows="3" value=${draft.safetyPlan} onChange=${event => this.updateDraft('safetyPlan', event.target.value)} placeholder="Señales de alerta, estrategias, contactos y recursos acordados"></textarea></${FormField}><${FormField} label="Notas de antecedentes"><textarea rows="2" value=${draft.safetyHistoryNotes} onChange=${event => this.updateDraft('safetyHistoryNotes', event.target.value)} placeholder="Fuente, fecha aproximada y atención recibida"></textarea></${FormField}><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Diferencie riesgo actual de antecedentes</b><p>Un antecedente no equivale a riesgo actual. Registre fuente y contexto, y actualice la valoración clínica en cada consulta cuando corresponda.</p></div></div></fieldset>` : null}
 
-      ${clinicalFields ? html`<fieldset data-tour="patient-form-clinical"><legend>Información clínica inicial</legend><div className="form-grid"><${FormField} label="Diagnóstico principal" required=${true}><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)} placeholder="Ej. Trastorno depresivo mayor" required/></${FormField}><${FormField} label="Código diagnóstico"><input value=${draft.diagnosisCode} onChange=${event => this.updateDraft('diagnosisCode', event.target.value)} placeholder="Ej. F33.1"/></${FormField}></div><div className="form-grid"><${FormField} label="Riesgo actual"><select value=${draft.risk} onChange=${event => this.updateDraft('risk', event.target.value)}><option value="low">Bajo</option><option value="medium">Moderado</option><option value="high">Alto</option></select></${FormField}><${FormField} label="Estado clínico"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="stable">Estable</option><option value="responding">Mejorando</option><option value="partial">Mejoría parcial</option><option value="review">Requiere revisión</option></select></${FormField}></div><div className="form-grid"><${FormField} label="Escala"><select value=${draft.scaleCode} onChange=${event => this.updateDraft('scaleCode', event.target.value)}>${SCALE_CATALOG.map(item => html`<option key=${item.code} value=${item.code}>${item.code} · ${item.label}</option>`)}</select></${FormField}><${FormField} label="Puntaje inicial" hint=${`Rango permitido: ${scale.min} a ${scale.max}`}><input type="number" min=${scale.min} max=${scale.max} value=${draft.initialScore} onChange=${event => this.updateDraft('initialScore', event.target.value)}/></${FormField}></div></fieldset>` : html`<div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Información clínica pendiente</b><p>El expediente se creará con “Pendiente de valoración médica”. El diagnóstico, tratamiento y escalas solo serán visibles para usuarios autorizados.</p></div></div>`}
+      <fieldset data-tour="patient-form-insurance-section"><legend>Seguro médico</legend><label data-tour="patient-form-insurance-toggle" className=${`insurance-toggle-card ${draft.hasInsurance ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.hasInsurance)} onChange=${event => this.updateDraft('hasInsurance', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="insurance" size=${22}/></span><span><b>${draft.hasInsurance ? 'Paciente con seguro médico' : 'Atención particular'}</b><small>Active esta opción para guardar aseguradora, plan y datos de autorización.</small></span><i><${Icon} name=${draft.hasInsurance ? 'check' : 'plus'} size=${17}/></i></label>${draft.hasInsurance ? html`<div className="insurance-form-panel"><div className="form-grid"><${FormField} label="Aseguradora" required=${true}><input value=${draft.insuranceProvider} onChange=${event => this.updateDraft('insuranceProvider', event.target.value)} required/></${FormField}><${FormField} label="Plan"><input value=${draft.insurancePlan} onChange=${event => this.updateDraft('insurancePlan', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="N.º de afiliado"><input value=${draft.insuranceMemberId} onChange=${event => this.updateDraft('insuranceMemberId', event.target.value)}/></${FormField}><${FormField} label="N.º de póliza"><input value=${draft.insurancePolicyNumber} onChange=${event => this.updateDraft('insurancePolicyNumber', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Copago"><input value=${draft.insuranceCopay} onChange=${event => this.updateDraft('insuranceCopay', event.target.value)}/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.insuranceAuthorizationRequired)} onChange=${event => this.updateDraft('insuranceAuthorizationRequired', event.target.checked)}/><span><b>Requiere autorización</b><small>La secretaría lo verá antes de confirmar la cita.</small></span></label></div><${FormField} label="Notas del seguro"><textarea rows="2" value=${draft.insuranceNotes} onChange=${event => this.updateDraft('insuranceNotes', event.target.value)}></textarea></${FormField}></div>` : null}</fieldset>
 
-      <fieldset data-tour="patient-form-followup"><legend>Seguimiento</legend><div className="form-grid"><${FormField} label="Próxima cita"><input type="datetime-local" value=${draft.nextVisit} onChange=${event => this.updateDraft('nextVisit', event.target.value)}/></${FormField}><${FormField} label="Nota inicial"><textarea rows="2" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Contexto importante"></textarea></${FormField}></div></fieldset><div data-tour="patient-form-save"><${FormActions} onCancel=${this.closeModal} submitLabel="Crear paciente"/></div></form></${Modal}>`;
+      ${clinicalFields ? html`<fieldset data-tour="patient-form-clinical"><legend>Información clínica inicial</legend><div className="form-grid"><${FormField} label="Diagnóstico principal" required=${true}><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)} required/></${FormField}><${FormField} label="Código diagnóstico"><input value=${draft.diagnosisCode} onChange=${event => this.updateDraft('diagnosisCode', event.target.value)}/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Riesgo actual"><select value=${draft.risk} onChange=${event => this.updateDraft('risk', event.target.value)}><option value="low">Bajo</option><option value="medium">Moderado</option><option value="high">Alto</option></select></${FormField}><${FormField} label="Estado clínico"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="stable">Estable</option><option value="responding">Mejorando</option><option value="partial">Mejoría parcial</option><option value="review">Requiere revisión</option></select></${FormField}><${FormField} label="Escala"><select value=${draft.scaleCode} onChange=${event => this.updateDraft('scaleCode', event.target.value)}>${SCALE_CATALOG.map(item => html`<option key=${item.code} value=${item.code}>${item.code} · ${item.label}</option>`)}</select></${FormField}></div><${FormField} label="Puntaje inicial" hint=${`Rango permitido: ${scale.min} a ${scale.max}`}><input type="number" min=${scale.min} max=${scale.max} value=${draft.initialScore} onChange=${event => this.updateDraft('initialScore', event.target.value)}/></${FormField}></fieldset>` : html`<div className="form-information"><${Icon} name="shield" size=${19}/><div><b>Información clínica pendiente</b><p>El médico completará diagnóstico, tratamiento y escalas.</p></div></div>`}
+
+      <fieldset><legend>Recordatorios y consentimiento</legend><label className=${`insurance-toggle-card ${draft.reminderEnabled ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.reminderEnabled)} onChange=${event => this.updateDraft('reminderEnabled', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="message" size=${22}/></span><span><b>${draft.reminderEnabled ? 'Recordatorios activados' : 'Sin recordatorios'}</b><small>El paciente o el médico puede elegir canales y anticipación.</small></span></label>${draft.reminderEnabled ? html`<div className="reminder-preferences-form"><div className="channel-choice-grid">${REMINDER_CHANNELS.map(channel => { const active = (draft.reminderChannels || []).includes(channel.value); return html`<label key=${channel.value} className=${active ? 'active' : ''}><input type="checkbox" checked=${active} onChange=${event => this.updateDraft('reminderChannels', event.target.checked ? [...new Set([...(draft.reminderChannels || []), channel.value])] : (draft.reminderChannels || []).filter(item => item !== channel.value))}/><${Icon} name=${channel.value === 'email' ? 'mail' : 'message'} size=${17}/><span>${channel.label}</span></label>`; })}</div><div className="form-grid"><${FormField} label="Correo para recordatorios"><input type="email" value=${draft.reminderEmail} onChange=${event => this.updateDraft('reminderEmail', event.target.value)}/></${FormField}><${FormField} label="Teléfono para SMS/WhatsApp"><input value=${draft.reminderPhone} onChange=${event => this.updateDraft('reminderPhone', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Consentimiento"><select value=${draft.reminderConsentStatus} onChange=${event => this.updateDraft('reminderConsentStatus', event.target.value)}><option value="pending">Pendiente</option><option value="granted">Otorgado</option><option value="declined">Rechazado</option></select></${FormField}><${FormField} label="Idioma"><input value=${draft.reminderLanguage} onChange=${event => this.updateDraft('reminderLanguage', event.target.value)}/></${FormField}></div></div>` : null}</fieldset>
+
+      <fieldset data-tour="patient-form-followup"><legend>Seguimiento</legend><div className="form-grid"><${FormField} label="Próxima cita"><input type="datetime-local" value=${draft.nextVisit} onChange=${event => this.updateDraft('nextVisit', event.target.value)}/></${FormField}><${FormField} label="Nota inicial"><textarea rows="2" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Contexto importante"></textarea></${FormField}></div></fieldset><${FormActions} onCancel=${this.closeModal} submitLabel="Crear paciente"/></form></${Modal}>`;
   }
 
   renderPatientEditFormModal() {
     const { draft, patientId } = this.state.modal;
     const patient = this.state.data.patients.find(item => item.id === patientId);
     const clinicalFields = this.can('clinicalView');
-    return html`<${Modal} title="Editar paciente" subtitle=${`Actualice datos, fotografía y cobertura de ${patient?.name || 'este paciente'}.`} onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.savePatientEditForm}>${this.renderModalError()}
-      <fieldset><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="La imagen se guarda optimizada en este navegador." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)}/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)}/></${FormField}></fieldset>
-      <fieldset><legend>Seguro médico</legend><label data-tour="patient-edit-insurance-toggle" className=${`insurance-toggle-card ${draft.hasInsurance ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.hasInsurance)} onChange=${event => this.updateDraft('hasInsurance', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="insurance" size=${22}/></span><span><b>${draft.hasInsurance ? 'Paciente con seguro médico' : 'Atención particular'}</b><small>La cobertura se muestra en la ficha administrativa y en la agenda.</small></span><i><${Icon} name=${draft.hasInsurance ? 'check' : 'plus'} size=${17}/></i></label>${draft.hasInsurance ? html`<div className="insurance-form-panel" data-tour="patient-edit-insurance-details"><div className="form-grid"><${FormField} label="Aseguradora" required=${true}><input value=${draft.insuranceProvider} onChange=${event => this.updateDraft('insuranceProvider', event.target.value)} required/></${FormField}><${FormField} label="Plan"><input value=${draft.insurancePlan} onChange=${event => this.updateDraft('insurancePlan', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="N.º de afiliado"><input value=${draft.insuranceMemberId} onChange=${event => this.updateDraft('insuranceMemberId', event.target.value)}/></${FormField}><${FormField} label="N.º de póliza"><input value=${draft.insurancePolicyNumber} onChange=${event => this.updateDraft('insurancePolicyNumber', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Copago"><input value=${draft.insuranceCopay} onChange=${event => this.updateDraft('insuranceCopay', event.target.value)}/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.insuranceAuthorizationRequired)} onChange=${event => this.updateDraft('insuranceAuthorizationRequired', event.target.checked)}/><span><b>Requiere autorización</b><small>Mostrar advertencia administrativa.</small></span></label></div><${FormField} label="Notas del seguro"><textarea rows="2" value=${draft.insuranceNotes} onChange=${event => this.updateDraft('insuranceNotes', event.target.value)}></textarea></${FormField}></div>` : null}</fieldset>
-      ${clinicalFields ? html`<fieldset><legend>Datos clínicos básicos</legend><div className="form-grid"><${FormField} label="Diagnóstico principal" required=${true}><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)} required/></${FormField}><${FormField} label="Código"><input value=${draft.diagnosisCode} onChange=${event => this.updateDraft('diagnosisCode', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Riesgo"><select value=${draft.risk} onChange=${event => this.updateDraft('risk', event.target.value)}><option value="low">Bajo</option><option value="medium">Moderado</option><option value="high">Alto</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="stable">Estable</option><option value="responding">Mejorando</option><option value="partial">Mejoría parcial</option><option value="review">Requiere revisión</option></select></${FormField}></div></fieldset>` : null}<${FormField} label="Nota de actualización"><textarea rows="3" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Opcional. Se agregará al historial de notas."></textarea></${FormField}><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar cambios"/></form></${Modal}>`;
+    const deceased = draft.vitalStatus === 'deceased';
+    return html`<${Modal} title="Editar paciente" subtitle=${`Actualice datos, preferencias y estado vital de ${patient?.name || 'este paciente'}.`} onClose=${this.closeModal} size="xl"><form className="clinical-form" onSubmit=${this.savePatientEditForm}>${this.renderModalError()}
+      <fieldset><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="La imagen se guarda optimizada." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)}/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)}/></${FormField}></fieldset>
+
+      ${clinicalFields ? html`<fieldset><legend>Identidad y contexto personal <small>Opcional y autoidentificado</small></legend><div className="form-grid"><${FormField} label="Nombre preferido"><input value=${draft.preferredName} onChange=${event => this.updateDraft('preferredName', event.target.value)}/></${FormField}><${FormField} label="Pronombres"><input value=${draft.pronouns} onChange=${event => this.updateDraft('pronouns', event.target.value)}/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Sexo asignado al nacer"><select value=${draft.sexAssignedAtBirth} onChange=${event => this.updateDraft('sexAssignedAtBirth', event.target.value)}>${SEX_ASSIGNED_AT_BIRTH_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Identidad de género"><select value=${draft.genderIdentity} onChange=${event => this.updateDraft('genderIdentity', event.target.value)}>${GENDER_IDENTITY_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Orientación sexual"><select value=${draft.sexualOrientation} onChange=${event => this.updateDraft('sexualOrientation', event.target.value)}>${SEXUAL_ORIENTATION_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Estado de relación"><select value=${draft.relationshipStatus} onChange=${event => this.updateDraft('relationshipStatus', event.target.value)}>${RELATIONSHIP_STATUS_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Personas significativas y red de apoyo"><input value=${draft.significantPeople} onChange=${event => this.updateDraft('significantPeople', event.target.value)}/></${FormField}></div></fieldset>` : null}
+      ${clinicalFields ? html`<fieldset><legend>Antecedentes de seguridad <small>Información documentada, no inferida</small></legend><div className="form-grid form-grid-three"><${FormField} label="Antecedente de ideación suicida"><select value=${draft.ideationHistory} onChange=${event => this.updateDraft('ideationHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Previa, sin fecha precisa</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Intentos documentados"><input type="number" min="0" max="99" value=${draft.suicideAttemptsCount} onChange=${event => this.updateDraft('suicideAttemptsCount', event.target.value)}/></${FormField}><${FormField} label="Fecha del último intento"><input type="date" value=${draft.lastAttemptDate} onChange=${event => this.updateDraft('lastAttemptDate', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Autolesión sin intención suicida"><select value=${draft.selfHarmHistory} onChange=${event => this.updateDraft('selfHarmHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Antecedente previo</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Contacto de emergencia"><input value=${draft.emergencyContact} onChange=${event => this.updateDraft('emergencyContact', event.target.value)} placeholder="Nombre, relación y teléfono"/></${FormField}></div><${FormField} label="Plan de seguridad"><textarea rows="3" value=${draft.safetyPlan} onChange=${event => this.updateDraft('safetyPlan', event.target.value)} placeholder="Señales de alerta, estrategias, contactos y recursos acordados"></textarea></${FormField}><${FormField} label="Notas de antecedentes"><textarea rows="2" value=${draft.safetyHistoryNotes} onChange=${event => this.updateDraft('safetyHistoryNotes', event.target.value)} placeholder="Fuente, fecha aproximada y atención recibida"></textarea></${FormField}><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Diferencie riesgo actual de antecedentes</b><p>Un antecedente no equivale a riesgo actual. Registre fuente y contexto, y actualice la valoración clínica en cada consulta cuando corresponda.</p></div></div></fieldset>` : null}
+
+      <fieldset><legend>Seguro médico</legend><label className=${`insurance-toggle-card ${draft.hasInsurance ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.hasInsurance)} onChange=${event => this.updateDraft('hasInsurance', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="insurance" size=${22}/></span><span><b>${draft.hasInsurance ? 'Paciente con seguro médico' : 'Atención particular'}</b><small>La cobertura se muestra en la ficha administrativa.</small></span></label>${draft.hasInsurance ? html`<div className="insurance-form-panel"><div className="form-grid"><${FormField} label="Aseguradora" required=${true}><input value=${draft.insuranceProvider} onChange=${event => this.updateDraft('insuranceProvider', event.target.value)} required/></${FormField}><${FormField} label="Plan"><input value=${draft.insurancePlan} onChange=${event => this.updateDraft('insurancePlan', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="N.º de afiliado"><input value=${draft.insuranceMemberId} onChange=${event => this.updateDraft('insuranceMemberId', event.target.value)}/></${FormField}><${FormField} label="N.º de póliza"><input value=${draft.insurancePolicyNumber} onChange=${event => this.updateDraft('insurancePolicyNumber', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Copago"><input value=${draft.insuranceCopay} onChange=${event => this.updateDraft('insuranceCopay', event.target.value)}/></${FormField}><label className="form-checkbox-card"><input type="checkbox" checked=${Boolean(draft.insuranceAuthorizationRequired)} onChange=${event => this.updateDraft('insuranceAuthorizationRequired', event.target.checked)}/><span><b>Requiere autorización</b><small>Mostrar advertencia administrativa.</small></span></label></div><${FormField} label="Notas del seguro"><textarea rows="2" value=${draft.insuranceNotes} onChange=${event => this.updateDraft('insuranceNotes', event.target.value)}></textarea></${FormField}></div>` : null}</fieldset>
+
+      ${clinicalFields ? html`<fieldset><legend>Datos clínicos básicos</legend><div className="form-grid"><${FormField} label="Diagnóstico principal" required=${true}><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)} required/></${FormField}><${FormField} label="Código"><input value=${draft.diagnosisCode} onChange=${event => this.updateDraft('diagnosisCode', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Riesgo"><select value=${draft.risk} onChange=${event => this.updateDraft('risk', event.target.value)}><option value="low">Bajo</option><option value="medium">Moderado</option><option value="high">Alto</option></select></${FormField}><${FormField} label="Estado clínico"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="stable">Estable</option><option value="responding">Mejorando</option><option value="partial">Mejoría parcial</option><option value="review">Requiere revisión</option></select></${FormField}></div></fieldset>` : null}
+
+      <fieldset><legend>Recordatorios</legend><label className=${`insurance-toggle-card ${draft.reminderEnabled ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.reminderEnabled)} onChange=${event => this.updateDraft('reminderEnabled', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="message" size=${22}/></span><span><b>${draft.reminderEnabled ? 'Recordatorios activados' : 'Sin recordatorios'}</b><small>Elija correo, SMS o WhatsApp de acuerdo con el consentimiento.</small></span></label>${draft.reminderEnabled ? html`<div className="reminder-preferences-form"><div className="channel-choice-grid">${REMINDER_CHANNELS.map(channel => { const active = (draft.reminderChannels || []).includes(channel.value); return html`<label key=${channel.value} className=${active ? 'active' : ''}><input type="checkbox" checked=${active} onChange=${event => this.updateDraft('reminderChannels', event.target.checked ? [...new Set([...(draft.reminderChannels || []), channel.value])] : (draft.reminderChannels || []).filter(item => item !== channel.value))}/><${Icon} name=${channel.value === 'email' ? 'mail' : 'message'} size=${17}/><span>${channel.label}</span></label>`; })}</div><div className="form-grid"><${FormField} label="Correo"><input type="email" value=${draft.reminderEmail} onChange=${event => this.updateDraft('reminderEmail', event.target.value)}/></${FormField}><${FormField} label="Teléfono"><input value=${draft.reminderPhone} onChange=${event => this.updateDraft('reminderPhone', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Consentimiento"><select value=${draft.reminderConsentStatus} onChange=${event => this.updateDraft('reminderConsentStatus', event.target.value)}><option value="pending">Pendiente</option><option value="granted">Otorgado</option><option value="declined">Rechazado</option></select></${FormField}><${FormField} label="Idioma"><input value=${draft.reminderLanguage} onChange=${event => this.updateDraft('reminderLanguage', event.target.value)}/></${FormField}></div></div>` : null}</fieldset>
+
+      ${clinicalFields ? html`<fieldset className=${`vital-status-fieldset ${deceased ? 'deceased' : ''}`}><legend>Estado vital</legend><div className="form-grid"><${FormField} label="Estado"><select value=${draft.vitalStatus} onChange=${event => this.updateDraft('vitalStatus', event.target.value)}>${VITAL_STATUS_OPTIONS.map(item => html`<option key=${item.value} value=${item.value}>${item.label}</option>`)}</select></${FormField}><div className="form-information compact"><${Icon} name="shield" size=${18}/><div><b>Registro cuidadoso</b><p>“Fallecido” detiene recordatorios y activa el modo post mortem. No se infiere la manera de muerte.</p></div></div></div>${deceased ? html`<div className="death-record-panel"><div className="form-grid form-grid-three"><${FormField} label="Fecha de fallecimiento" required=${true}><input type="date" value=${draft.deathDate} onChange=${event => this.updateDraft('deathDate', event.target.value)} required/></${FormField}><${FormField} label="Fecha en que se informó"><input type="date" value=${draft.deathInformedAt} onChange=${event => this.updateDraft('deathInformedAt', event.target.value)}/></${FormField}><${FormField} label="Manera documentada"><select value=${draft.deathManner} onChange=${event => this.updateDraft('deathManner', event.target.value)}>${DEATH_MANNER_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Fuente de confirmación"><select value=${draft.deathSourceType} onChange=${event => this.updateDraft('deathSourceType', event.target.value)}><option>No registrada</option><option>Familiar o persona cercana</option><option>Documento oficial</option><option>Hospital o institución</option><option>Autoridad competente</option><option>Otra</option></select></${FormField}><${FormField} label="Quién confirmó"><input value=${draft.deathConfirmedBy} onChange=${event => this.updateDraft('deathConfirmedBy', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Documento de respaldo"><input value=${draft.deathSourceDocument} onChange=${event => this.updateDraft('deathSourceDocument', event.target.value)} placeholder="Nombre o referencia del documento"/></${FormField}><${FormField} label="Lugar"><input value=${draft.deathPlace} onChange=${event => this.updateDraft('deathPlace', event.target.value)}/></${FormField}></div><${FormField} label="Notas"><textarea rows="3" value=${draft.deathNotes} onChange=${event => this.updateDraft('deathNotes', event.target.value)} placeholder="Registre hechos y fuente; evite conclusiones no documentadas."></textarea></${FormField}><div className="form-warning"><${Icon} name="alert" size=${18}/><span>Solo seleccione “Suicidio” cuando exista confirmación documentada. El sistema no deduce causa ni intención.</span></div></div>` : null}</fieldset>` : null}
+
+      <${FormField} label="Nota de actualización"><textarea rows="3" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Opcional. Se agregará al historial de notas."></textarea></${FormField}><${FormActions} onCancel=${this.closeModal} submitLabel="Guardar cambios"/></form></${Modal}>`;
   }
 
   renderClinicProfileModal() {
@@ -3087,12 +3516,15 @@ class App extends React.Component {
     const patient = this.state.data.patients.find(item => item.id === appointment.patientId);
     const reminders = getReminderQueue(this.state.data).filter(item => item.appointment.id === appointment.id);
     const insurance = patient?.insurance || {};
-    return html`<${Modal} title="Detalle de la cita" subtitle="Revise datos administrativos, recordatorios y estado." onClose=${() => this.setState({ appointmentDetails: null })} size="lg"><div className="appointment-detail-hero" data-tour="appointment-detail-summary"><${Avatar} patient=${patient} size="lg"/><div><span className="eyebrow">${appointment.type}</span><h3>${appointment.title}</h3><p>${this.can('clinicalView') ? patient?.diagnosis || '' : patient?.phone || 'Sin teléfono registrado'}</p></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></div>
+    const canStart = this.can('consultationsManage') && patient?.vitalStatus !== 'deceased' && !['completed', 'cancelled', 'no_show'].includes(appointment.status);
+    return html`<${Modal} title="Detalle de la cita" subtitle="Revise datos, recordatorios, calendarios y notas de preparación." onClose=${() => this.setState({ appointmentDetails: null })} size="xl"><div className="appointment-detail-hero"><${Avatar} patient=${patient} size="lg"/><div><span className="eyebrow">${appointment.type}</span><h3>${appointment.title}</h3><p>${this.can('clinicalView') ? patient?.diagnosis || '' : patient?.phone || 'Sin teléfono registrado'}</p></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></div>
       <div className="appointment-info"><div><${Icon} name="calendar"/><span>Fecha</span><b>${formatLongDate(appointment.start)}</b></div><div><${Icon} name="clock"/><span>Hora</span><b>${formatTime(appointment.start)} – ${formatTime(appointment.end)}</b></div><div><${Icon} name="activity"/><span>Modalidad</span><b>${appointment.modality}</b></div><div><${Icon} name="insurance"/><span>Cobertura</span><b>${insurance.hasInsurance ? insurance.provider || 'Seguro médico' : 'Particular'}</b></div></div>
       ${insurance.hasInsurance && insurance.authorizationRequired ? html`<div className="appointment-insurance-warning"><${Icon} name="insurance" size=${18}/><div><b>Autorización de seguro requerida</b><p>${insurance.plan || 'Plan sin registrar'}${insurance.memberId ? ` · Afiliado ${insurance.memberId}` : ''}${insurance.copay ? ` · Copago ${insurance.copay}` : ''}</p></div></div>` : null}
       <div className="notes-box"><span>Notas de preparación</span><p>${appointment.notes || 'Sin notas.'}</p></div>
-      <section className="appointment-reminder-section"><header><div><span className="eyebrow">Confirmación de cita</span><h3>Recordatorios</h3></div><div>${reminders.map(reminder => html`<${Badge} key=${reminder.id} tone=${reminder.status === 'sent' ? 'success' : reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminderLabel(reminder.hours)} · ${reminder.status === 'sent' ? 'Enviado' : reminder.status === 'due' ? 'Listo' : reminder.status === 'overdue' ? 'Pendiente' : 'Programado'}</${Badge}>`)}</div></header>${this.can('remindersManage') ? html`<div className="appointment-reminder-actions">${reminders.filter(reminder => reminder.status !== 'sent').slice(0, 3).map(reminder => html`<div key=${reminder.id}><span>${reminderLabel(reminder.hours)}</span><${Button} tone="soft" icon="message" onClick=${() => this.sendReminderWhatsApp(reminder)}>WhatsApp</${Button}><${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}><button className="reminder-done" title="Marcar como enviado" onClick=${() => this.completeReminder(reminder)}><${Icon} name="check" size=${17}/></button></div>`)}</div>` : null}</section>
-      <div className="appointment-actions-grid" data-tour="appointment-detail-actions">${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditAppointment(appointment)}>Editar cita</${Button}>` : null}<a className="button button-secondary" href=${googleCalendarUrl(appointment)} target="_blank" rel="noreferrer"><${Icon} name="external" size=${18}/><span>Abrir en Google</span></a>${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadICS(appointment)}>Descargar ICS</${Button}>` : null}<${Button} tone="soft" onClick=${() => this.openPatient(appointment.patientId)}>Abrir paciente</${Button}></div>
+      ${canStart ? html`<section className="start-consultation-card"><span><${Icon} name="notebook" size=${24}/></span><div><b>¿Ya está con el paciente?</b><p>Abra la libreta virtual para tomar notas con guardado automático durante la consulta.</p></div><${Button} icon="play" onClick=${() => this.startConsultation(appointment)}>Iniciar consulta</${Button}></section>` : null}
+      <section className="appointment-reminder-section"><header><div><span className="eyebrow">Confirmación de cita</span><h3>Recordatorios</h3></div><div>${reminders.map(reminder => html`<${Badge} key=${reminder.id} tone=${reminder.status === 'sent' ? 'success' : reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminderLabel(reminder.hours)} · ${reminder.status === 'sent' ? 'Enviado' : reminder.status === 'due' ? 'Listo' : reminder.status === 'overdue' ? 'Pendiente' : 'Programado'}</${Badge}>`)}</div></header>${this.can('remindersManage') ? html`<div className="appointment-reminder-actions">${reminders.filter(reminder => reminder.status !== 'sent').slice(0, 3).map(reminder => html`<div key=${reminder.id}><span>${reminderLabel(reminder.hours)}</span>${(reminder.channels || patient?.notificationPreferences?.channels || ['whatsapp']).map(channel => html`<${Button} key=${channel} tone=${channel === 'whatsapp' ? 'soft' : 'secondary'} icon=${channel === 'email' ? 'mail' : 'message'} onClick=${() => this.sendReminderChannel(reminder, channel)}>${reminderChannelLabel(channel)}</${Button}>`)}<${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}></div>`)}</div>` : null}</section>
+      <section className="calendar-actions-card"><div><span className="eyebrow">Calendarios</span><h3>Conservar la cita en sus dispositivos</h3><p>Google Calendar puede sincronizarse. Apple Calendar puede importar esta cita o suscribirse al calendario privado de Linkare.</p></div><div>${this.state.calendarStatus?.google?.connected ? html`<${Button} tone="secondary" icon="calendar" onClick=${() => this.syncGoogleAppointment(appointment)}>Sincronizar con Google</${Button}>` : html`<a className="button button-secondary" href=${googleCalendarUrl(appointment)} target="_blank" rel="noreferrer"><${Icon} name="external" size=${18}/><span>Agregar a Google</span></a>`}${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadICS(appointment)}>Agregar a Apple / ICS</${Button}>` : null}</div></section>
+      <div className="appointment-actions-grid">${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditAppointment(appointment)}>Editar cita</${Button}>` : null}<${Button} tone="soft" onClick=${() => this.openPatient(appointment.patientId)}>Abrir paciente</${Button}></div>
       ${this.can('appointmentsManage') ? html`<div className="status-actions"><span>Cambiar estado:</span>${[['confirmed', 'Confirmada'], ['pending', 'Pendiente'], ['completed', 'Completada'], ['cancelled', 'Cancelada'], ['no_show', 'No asistió']].map(([key, label]) => html`<button key=${key} className=${appointment.status === key ? 'active' : ''} onClick=${() => this.updateAppointmentStatus(appointment.id, key)}>${label}</button>`)}</div><div className="danger-zone"><button onClick=${() => this.deleteAppointment(appointment.id)}><${Icon} name="trash" size=${17}/> Eliminar cita</button></div>` : null}
     </${Modal}>`;
   }
@@ -3102,6 +3534,7 @@ class App extends React.Component {
     if (!this.state.authenticatedUserId) return this.renderLogin();
     const view = this.state.view;
     const settings = this.state.data.settings || {};
+    if (view === 'notebook') return html`<div className="notebook-app-shell">${this.renderConsultationNotebook()}${this.renderModal()}${this.state.toast ? html`<div className=${`toast toast-${this.state.toastTone}`}><${Icon} name=${this.state.toastTone === 'danger' ? 'alert' : 'check'} size=${18}/>${this.state.toast}</div>` : null}</div>`;
     const body = view === 'dashboard' ? this.renderDashboard()
       : view === 'patients' ? this.renderPatients()
         : view === 'patient' ? this.renderPatient()
@@ -3110,7 +3543,7 @@ class App extends React.Component {
               : view === 'analytics' ? this.renderAnalytics()
                 : view === 'alerts' ? this.renderAlerts()
                   : this.renderSettings();
-    return html`<div className=${`app-shell ${settings.largeText ? 'large-text-mode' : ''} ${settings.reducedMotion ? 'reduced-motion-mode' : ''} ${this.state.tourActive ? 'tour-visible-layout' : ''}`}><div className="ambient ambient-one"></div><div className="ambient ambient-two"></div><div className="app-frame">${this.renderTopbar()}<main className="main-content">${body}</main><footer><span>Linkare · Apoyo al seguimiento</span><span>${productionMode ? (this.state.remoteSaveStatus === 'saving' ? 'Guardando en Supabase…' : this.state.remoteSaveStatus === 'error' ? 'Error de guardado' : 'Supabase conectado') : 'Modo demo · Datos sintéticos'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderTutorialIntro()}${this.renderGuidedTour()}${this.state.toast ? html`<div className=${`toast toast-${this.state.toastTone}`}><${Icon} name=${this.state.toastTone === 'danger' ? 'alert' : 'check'} size=${18}/>${this.state.toast}</div>` : null}</div>`;
+    return html`<div className=${`app-shell ${settings.largeText ? 'large-text-mode' : ''} ${settings.reducedMotion ? 'reduced-motion-mode' : ''} ${this.state.tourActive ? 'tour-visible-layout' : ''}`}><div className="ambient ambient-one"></div><div className="ambient ambient-two"></div><div className="app-frame">${this.renderTopbar()}<main className="main-content">${body}</main><footer><span>Linkare · Apoyo al seguimiento</span><span>${productionMode ? (this.state.remoteSaveStatus === 'saving' ? 'Guardando en Supabase…' : this.state.remoteSaveStatus === 'error' ? 'Error de guardado' : 'Supabase conectado') : 'Modo demo · Datos sintéticos'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderTutorialIntro()}${this.renderGuidedTour()}${this.renderConsultationPrompt()}${this.state.toast ? html`<div className=${`toast toast-${this.state.toastTone}`}><${Icon} name=${this.state.toastTone === 'danger' ? 'alert' : 'check'} size=${18}/>${this.state.toast}</div>` : null}</div>`;
   }
 }
 

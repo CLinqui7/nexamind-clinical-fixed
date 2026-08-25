@@ -155,12 +155,19 @@ export async function loadPlatformBillingSettings(organizationId) {
   return {
     planName: data.plan_name,
     planDescription: data.plan_description,
-    subscriptionPrice: Number(data.subscription_price) || 0,
+    subscriptionPrice: Number(data.subscription_price) || 400,
     currency: data.currency || 'USD',
-    billingCycle: data.billing_cycle || 'mensual',
+    billingCycle: data.billing_cycle || 'anual',
     payerName: data.payer_name || '',
     payerEmail: data.payer_email || '',
     active: data.active !== false,
+    planTier: data.plan_tier || 'professional',
+    subscriptionStatus: data.subscription_status || 'inactive',
+    currentPeriodStart: data.current_period_start || null,
+    currentPeriodEnd: data.current_period_end || null,
+    nextRenewalAt: data.next_renewal_at || data.current_period_end || null,
+    graceUntil: data.grace_until || null,
+    autoRenew: Boolean(data.auto_renew),
   };
 }
 
@@ -172,10 +179,17 @@ export async function savePlatformBillingSettings(organizationId, billing) {
     plan_description: billing.planDescription,
     subscription_price: Number(billing.subscriptionPrice),
     currency: billing.currency || 'USD',
-    billing_cycle: billing.billingCycle || 'mensual',
+    billing_cycle: billing.billingCycle || 'anual',
     payer_name: billing.payerName || null,
     payer_email: billing.payerEmail || null,
     active: billing.active !== false,
+    plan_tier: billing.planTier || 'professional',
+    subscription_status: billing.subscriptionStatus || 'inactive',
+    current_period_start: billing.currentPeriodStart || null,
+    current_period_end: billing.currentPeriodEnd || null,
+    next_renewal_at: billing.nextRenewalAt || billing.currentPeriodEnd || null,
+    grace_until: billing.graceUntil || null,
+    auto_renew: Boolean(billing.autoRenew),
   }, { onConflict: 'organization_id' });
   if (error) throw new Error(error.message || 'No se pudo guardar el precio de la licencia en Supabase.');
 }

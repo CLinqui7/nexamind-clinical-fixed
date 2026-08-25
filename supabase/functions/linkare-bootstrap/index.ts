@@ -67,6 +67,9 @@ Deno.serve(async (request: Request) => {
       user_id: user.id,
       role: 'owner',
       display_name: ownerName,
+      plan_tier: 'professional',
+      subscription_status: 'inactive',
+      auto_renew: false,
       active: true,
     });
     if (memberError) throw memberError;
@@ -74,10 +77,10 @@ Deno.serve(async (request: Request) => {
     const { error: billingError } = await db.from('linkare_platform_billing_settings').upsert({
       organization_id: organizationId,
       plan_name: 'Plan Profesional Linkare',
-      plan_description: 'Licencia mensual de Linkare para gestión psiquiátrica.',
-      subscription_price: 40,
+      plan_description: 'Licencia anual de Linkare para gestión psiquiátrica.',
+      subscription_price: 400,
       currency: 'USD',
-      billing_cycle: 'mensual',
+      billing_cycle: 'anual',
       payer_name: ownerName,
       payer_email: user.email || null,
       active: true,

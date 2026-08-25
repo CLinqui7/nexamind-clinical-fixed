@@ -5,9 +5,8 @@ const clean = value => String(value ?? '').trim();
 
 export const DEMO_DOCTOR_PASSWORD = 'NexaMind2026!';
 export const DEMO_SECRETARY_PASSWORD = 'Agenda2026!';
-export const DEMO_OWNER_PASSWORD = 'LinkareAdmin2026!';
 
-const defaultPasswordForRole = role => role === 'owner' ? DEMO_OWNER_PASSWORD : role === 'doctor' ? DEMO_DOCTOR_PASSWORD : DEMO_SECRETARY_PASSWORD;
+const defaultPasswordForRole = role => role === 'doctor' || role === 'owner' ? DEMO_DOCTOR_PASSWORD : DEMO_SECRETARY_PASSWORD;
 
 export const PERMISSION_CATALOG = [
   { key: 'patientsView', group: 'Pacientes', label: 'Ver pacientes', description: 'Consultar la lista y la ficha administrativa.' },
@@ -19,6 +18,10 @@ export const PERMISSION_CATALOG = [
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },
   { key: 'medicationsManage', group: 'Información clínica', label: 'Gestionar medicamentos', description: 'Agregar, pausar, finalizar y cambiar dosis.' },
   { key: 'prescriptionsCreate', group: 'Documentos', label: 'Generar recetas', description: 'Crear e imprimir recetas membretadas.' },
+  { key: 'documentsView', group: 'Documentos', label: 'Ver archivos clínicos', description: 'Consultar documentos adjuntos al expediente.' },
+  { key: 'documentsManage', group: 'Documentos', label: 'Subir y eliminar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
+  { key: 'consultationsManage', group: 'Información clínica', label: 'Usar libreta de consulta', description: 'Iniciar, guardar y firmar notas de consulta.' },
+  { key: 'postmortemExport', group: 'Supervisión', label: 'Exportar resumen post mortem', description: 'Generar el paquete documental para revisión médico-legal.' },
   { key: 'alertsView', group: 'Supervisión', label: 'Ver alertas', description: 'Consultar y marcar señales clínicas revisadas.' },
   { key: 'analyticsView', group: 'Supervisión', label: 'Ver resultados generales', description: 'Consultar analíticas agregadas.' },
   { key: 'exportsManage', group: 'Supervisión', label: 'Exportar información', description: 'Descargar CSV, ICS y respaldos.' },
@@ -38,6 +41,10 @@ export const DEFAULT_SECRETARY_PERMISSIONS = {
   clinicalEdit: false,
   medicationsManage: false,
   prescriptionsCreate: false,
+  documentsView: false,
+  documentsManage: false,
+  consultationsManage: false,
+  postmortemExport: false,
   alertsView: false,
   analyticsView: false,
   exportsManage: false,
@@ -314,13 +321,17 @@ export function savePrescription(data, patientId, draft) {
 }
 
 export function getReminderQueue(data, now = new Date()) {
-  const hours = [...new Set((data.settings?.reminderHours || [24, 8]).map(Number).filter(value => value > 0))].sort((a, b) => b - a);
+  const fallbackHours = [...new Set((data.settings?.reminderHours || [24, 8]).map(Number).filter(value => value > 0))].sort((a, b) => b - a);
   const queue = [];
   (data.appointments || []).forEach(appointment => {
     if (['cancelled', 'completed', 'no_show'].includes(appointment.status)) return;
     const start = new Date(appointment.start);
     if (!Number.isFinite(start.getTime())) return;
     const patient = data.patients.find(item => item.id === appointment.patientId);
+    if (!patient || patient.vitalStatus === 'deceased' || patient.notificationPreferences?.enabled === false) return;
+    const preferences = patient.notificationPreferences || {};
+    const hours = [...new Set((preferences.reminderHours?.length ? preferences.reminderHours : fallbackHours).map(Number).filter(value => value > 0))].sort((a, b) => b - a);
+    const channels = Array.isArray(preferences.channels) && preferences.channels.length ? preferences.channels : (data.settings?.reminderChannels || ['whatsapp']);
     hours.forEach(reminderHours => {
       const dueAt = new Date(start.getTime() - reminderHours * 60 * 60 * 1000);
       const log = (appointment.reminderLog || []).find(item => Number(item.hours) === reminderHours);
@@ -337,6 +348,8 @@ export function getReminderQueue(data, now = new Date()) {
         status,
         sentAt: log?.sentAt || null,
         channel: log?.channel || null,
+        channels,
+        consentStatus: preferences.consentStatus || 'pending',
       });
     });
   });
@@ -366,16 +379,28 @@ export function reminderLabel(hours) {
 }
 
 export function buildReminderMessage(data, patient, appointment) {
-  const clinic = data.organization?.name || 'la clínica';
-  const professional = data.organization?.clinician || 'su médico';
+  const clinic = data.organization?.name || 'su clínica';
   const date = new Intl.DateTimeFormat('es-SV', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(appointment.start));
-  return `Hola ${patient?.name || ''}. Le recordamos su cita con ${professional} en ${clinic}, programada para ${date}. Modalidad: ${appointment.modality || 'Presencial'}. Por favor confirme su asistencia.`;
+  return `Hola ${patient?.preferredName || patient?.name || ''}. Le recordamos una cita privada en ${clinic}, programada para ${date}. Responda 1 para confirmar, 2 para reprogramar o 3 para cancelar.`;
 }
 
 export function whatsappReminderUrl(data, patient, appointment) {
-  const digits = String(patient?.phone || '').replace(/\D/g, '');
+  const digits = String(patient?.notificationPreferences?.phone || patient?.phone || '').replace(/\D/g, '');
   if (!digits) return '';
   return `https://wa.me/${digits}?text=${encodeURIComponent(buildReminderMessage(data, patient, appointment))}`;
+}
+
+export function emailReminderUrl(data, patient, appointment) {
+  const email = String(patient?.notificationPreferences?.email || patient?.email || '').trim();
+  if (!email) return '';
+  const subject = `Recordatorio de cita · ${data.organization?.name || 'su clínica'}`;
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildReminderMessage(data, patient, appointment))}`;
+}
+
+export function smsReminderUrl(data, patient, appointment) {
+  const phone = String(patient?.notificationPreferences?.phone || patient?.phone || '').trim();
+  if (!phone) return '';
+  return `sms:${encodeURIComponent(phone)}?body=${encodeURIComponent(buildReminderMessage(data, patient, appointment))}`;
 }
 
 function escapeHtml(value) {
