@@ -4490,3 +4490,174 @@ body.tour-panel-dragging {
 .safety-plan-summary p { margin:3px 0 0; color:var(--muted); line-height:1.45; }
 @media (max-width:820px){.safety-history-grid{grid-template-columns:1fr 1fr}}
 @media (max-width:520px){.safety-history-grid{grid-template-columns:1fr}}
+
+/* ==========================================================
+   Linkare v2.0.1: consulta completa de notas firmadas
+   ========================================================== */
+.consultation-note-card.completed {
+  border-color: #cfe3da;
+  background: linear-gradient(135deg, #ffffff, #f7fcf9);
+}
+
+.consultation-note-actions {
+  min-width: 138px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+
+.consultation-note-actions .badge {
+  align-self: flex-end;
+}
+
+.consultation-note-actions .button {
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.notebook-readonly .notebook-toolbar {
+  background: linear-gradient(135deg, #163f69, #52799a);
+}
+
+.notebook-badge.signed {
+  background: rgba(220, 244, 232, .15);
+  border-color: rgba(220, 244, 232, .42);
+}
+
+.autosave-state.signed {
+  padding: 8px 10px;
+  border: 1px solid rgba(218, 244, 229, .26);
+  border-radius: 11px;
+  color: #e2f7ea;
+  background: rgba(42, 117, 78, .18);
+}
+
+.notebook-readonly .paper-heading > span {
+  color: #216543;
+  background: #e1f4e8;
+}
+
+.notebook-signed-banner {
+  margin: 0 0 18px 20px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #bfe0cc;
+  border-radius: 14px;
+  color: #245b3f;
+  background: rgba(235, 248, 240, .92);
+}
+
+.notebook-signed-banner b,
+.notebook-signed-banner p {
+  display: block;
+  margin: 0;
+}
+
+.notebook-signed-banner p {
+  margin-top: 3px;
+  color: #557264;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.notebook-readonly-field {
+  display: block;
+  position: relative;
+  padding-left: 20px;
+  margin: 17px 0;
+}
+
+.notebook-readonly-field > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #174169;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.notebook-readonly-value {
+  min-height: 58px;
+  padding: 11px 13px;
+  border: 1px solid rgba(151, 177, 197, .34);
+  border-radius: 10px;
+  color: #17324e;
+  background: rgba(255, 255, 255, .64);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notebook-readonly-value.is-empty {
+  color: #8798a7;
+  font-style: italic;
+}
+
+.notebook-meta-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+
+.notebook-meta-list > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e0e8ee;
+  border-radius: 12px;
+  background: #f7fafb;
+}
+
+.notebook-meta-list span,
+.notebook-meta-list b {
+  display: block;
+}
+
+.notebook-meta-list span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.notebook-meta-list b {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 820px) {
+  .consultation-note-actions {
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .consultation-note-actions .badge {
+    align-self: center;
+  }
+  .notebook-signed-banner {
+    margin-left: 10px;
+  }
+  .notebook-readonly-field {
+    padding-left: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .consultation-note-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .consultation-note-actions .badge {
+    align-self: flex-start;
+  }
+  .consultation-note-actions .button {
+    width: 100%;
+  }
+}

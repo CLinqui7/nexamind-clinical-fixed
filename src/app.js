@@ -1857,9 +1857,27 @@ class App extends React.Component {
     this.startConsultation(next || { patientId: patient.id, type: 'Consulta clínica', notes: '' });
   };
 
+  openConsultationNote = (patient, note) => {
+    if (!patient || !note) return;
+    clearInterval(this.encounterTimer);
+    const signed = ['completed', 'signed'].includes(String(note.status || '').toLowerCase()) || Boolean(note.signedAt);
+    const readOnly = signed || !this.can('consultationsManage');
+    if (!readOnly) this.encounterTimer = window.setInterval(() => this.forceUpdate(), 1000);
+    this.setState({
+      selectedPatientId: patient.id,
+      activeEncounter: { ...note, patientId: patient.id, __readOnly: readOnly },
+      view: 'notebook',
+      encounterAutosaveStatus: signed ? 'signed' : 'saved',
+      mobileNav: false,
+    });
+  };
+
   updateEncounterField = (key, value) => {
-    if (!this.state.activeEncounter) return;
-    const encounter = { ...this.state.activeEncounter, [key]: value };
+    const current = this.state.activeEncounter;
+    if (!current) return;
+    const signed = ['completed', 'signed'].includes(String(current.status || '').toLowerCase()) || Boolean(current.signedAt);
+    if (signed || current.__readOnly) return;
+    const encounter = { ...current, [key]: value };
     const result = upsertEncounter(this.state.data, encounter.patientId, encounter);
     this.setState({ data: result.data, activeEncounter: { ...result.encounter, patientId: encounter.patientId }, encounterAutosaveStatus: 'saving' });
     clearTimeout(this.encounterSaveIndicatorTimer);
@@ -1869,6 +1887,11 @@ class App extends React.Component {
   finishConsultation = () => {
     const encounter = this.state.activeEncounter;
     if (!encounter) return;
+    const signed = ['completed', 'signed'].includes(String(encounter.status || '').toLowerCase()) || Boolean(encounter.signedAt);
+    if (signed || encounter.__readOnly) {
+      this.notify('Esta nota está firmada y se muestra en modo solo lectura.', 'danger');
+      return;
+    }
     if (![encounter.freeNotes, encounter.evolution, encounter.mentalStatus, encounter.clinicalImpression, encounter.plan].some(value => String(value || '').trim())) {
       this.notify('Escriba al menos una nota clínica antes de finalizar.', 'danger');
       return;
@@ -1888,8 +1911,17 @@ class App extends React.Component {
   closeConsultationNotebook = () => {
     const encounter = this.state.activeEncounter;
     if (!encounter) return this.setView('dashboard');
+    const signed = ['completed', 'signed'].includes(String(encounter.status || '').toLowerCase()) || Boolean(encounter.signedAt);
     clearInterval(this.encounterTimer);
-    this.setState({ activeEncounter: null, view: 'patient', selectedPatientId: encounter.patientId, patientTab: 'consultations' }, () => this.notify('La nota quedó guardada como borrador.'));
+    this.setState({
+      activeEncounter: null,
+      view: 'patient',
+      selectedPatientId: encounter.patientId,
+      patientTab: 'consultations',
+      encounterAutosaveStatus: 'saved',
+    }, () => {
+      if (!signed && !encounter.__readOnly) this.notify('La nota quedó guardada como borrador.');
+    });
   };
 
   openDocumentUpload = patient => {
@@ -2082,14 +2114,51 @@ class App extends React.Component {
     if (!encounter) return html`<${EmptyState} icon="notebook" title="No hay una consulta abierta" text="Inicie una consulta desde una cita o desde el expediente del paciente." action=${html`<${Button} onClick=${() => this.setView('agenda')}>Ir a agenda</${Button}>`}/>`;
     const patient = this.state.data.patients.find(item => item.id === encounter.patientId);
     if (!patient) return html`<${EmptyState} icon="alert" title="Paciente no disponible" text="Cierre esta libreta y vuelva al expediente."/>`;
-    const minutes = Math.max(0, Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 60000));
-    const seconds = Math.max(0, Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 1000) % 60);
-    const field = (key, label, placeholder, rows = 4) => html`<label className="notebook-field"><span>${label}</span><textarea rows=${rows} value=${encounter[key] || ''} onChange=${event => this.updateEncounterField(key, event.target.value)} placeholder=${placeholder}></textarea></label>`;
-    return html`<div className="consultation-notebook-view view-enter">
-      <header className="notebook-toolbar"><div><button className="back-button" onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/></button><span className="notebook-badge"><${Icon} name="notebook" size=${18}/> Libreta de consulta</span><div><h1>${patient.preferredName || patient.name}</h1><p>${encounter.title}</p></div></div><div className="notebook-toolbar-actions"><span className="notebook-timer">${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}</span><span className=${`autosave-state ${this.state.encounterAutosaveStatus}`}><${Icon} name="check" size=${15}/>${this.state.encounterAutosaveStatus === 'saving' ? 'Guardando…' : 'Guardado automático'}</span><${Button} tone="secondary" icon="paperclip" onClick=${() => this.openDocumentUpload(patient)}>Adjuntar</${Button}><${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}></div></header>
-      <div className="notebook-layout"><aside className="notebook-patient-panel"><${Avatar} patient=${patient} size="xl"/><h2>${patient.name}</h2><p>${patient.age} años · ${patient.diagnosisCode}</p><div className="notebook-facts"><div><span>Diagnóstico</span><b>${patient.diagnosis}</b></div><div><span>Riesgo actual</span><b>${riskLabel(patient.risk)}</b></div><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || ''}</small></div><div><span>Última consulta</span><b>${formatDate(patient.lastVisit)}</b></div></div><div className="notebook-alert-box"><${Icon} name="shield" size=${18}/><span>${patient.adverseEvents?.filter(item => item.status === 'active').length || 0} efecto(s) activo(s) · ${this.state.data.alerts.filter(item => item.patientId === patient.id && item.status === 'open').length} alerta(s)</span></div></aside>
-      <main className="notebook-paper"><div className="paper-heading"><div><span>${formatLongDate(encounter.startedAt)}</span><h2>Notas de la consulta</h2></div><span>Borrador clínico</span></div>${field('freeNotes', 'Notas libres', 'Escriba libremente durante la conversación…', 10)}<div className="notebook-two-columns">${field('reason', 'Motivo y temas principales', 'Motivo de consulta y temas abordados…', 5)}${field('evolution', 'Evolución desde la última visita', 'Cambios, contexto, adherencia y funcionamiento…', 5)}</div><div className="notebook-two-columns">${field('mentalStatus', 'Estado mental', 'Apariencia, conducta, habla, afecto, pensamiento, cognición, juicio…', 6)}${field('riskAssessment', 'Riesgo y seguridad', 'Ideación, intención, plan, medios, factores protectores y plan de seguridad…', 6)}</div><div className="notebook-two-columns">${field('medicationNotes', 'Medicamentos y tolerabilidad', 'Adherencia, efectos, cambios considerados…', 5)}${field('intervention', 'Intervención realizada', 'Psicoeducación, apoyo, decisiones compartidas, coordinación…', 5)}</div>${field('clinicalImpression', 'Impresión clínica', 'Síntesis profesional de la consulta…', 5)}${field('plan', 'Plan', 'Tratamiento, estudios, derivaciones, indicaciones y tareas…', 5)}${field('followUp', 'Seguimiento', 'Próxima cita, señales de alarma y acuerdos…', 3)}<footer className="notebook-paper-footer"><span>La nota se guarda automáticamente. Al finalizar quedará firmada y cualquier cambio posterior deberá registrarse como una nueva versión.</span></footer></main>
-      <aside className="notebook-tools-panel"><h3>Acciones rápidas</h3><button onClick=${() => this.openAssessment(patient)}><${Icon} name="analytics"/><span>Registrar escala</span></button><button onClick=${() => this.openVitals(patient)}><${Icon} name="activity"/><span>Control físico</span></button><button onClick=${() => this.openMedication(patient)}><${Icon} name="medication"/><span>Medicamento</span></button><button onClick=${() => this.openPrescription(patient)}><${Icon} name="prescription"/><span>Nueva receta</span></button><button onClick=${() => this.openDocumentUpload(patient)}><${Icon} name="folder"/><span>Subir documento</span></button><div className="notebook-side-note"><b>Privacidad</b><p>Evite incluir información innecesaria. Diferencie lo referido por el paciente, lo observado y la información de terceros.</p></div></aside></div>
+
+    const signed = ['completed', 'signed'].includes(String(encounter.status || '').toLowerCase()) || Boolean(encounter.signedAt);
+    const readOnly = signed || Boolean(encounter.__readOnly);
+    const elapsedMs = Math.max(0, Date.now() - new Date(encounter.startedAt).getTime());
+    const minutes = Math.max(0, Math.floor(elapsedMs / 60000));
+    const seconds = Math.max(0, Math.floor(elapsedMs / 1000) % 60);
+    const durationMinutes = Number(encounter.durationMinutes)
+      || (encounter.endedAt ? Math.max(1, Math.round((new Date(encounter.endedAt) - new Date(encounter.startedAt)) / 60000)) : Math.max(1, minutes));
+    const signer = (this.state.data.users || []).find(item => item.id === encounter.signedBy || item.id === encounter.createdBy);
+    const version = Math.max(1, Number(encounter.version || 0), (encounter.versions || []).length + 1);
+    const valueFor = key => String(encounter[key] || '').trim();
+    const field = (key, label, placeholder, rows = 4) => {
+      if (readOnly) {
+        const value = valueFor(key);
+        return html`<section className="notebook-readonly-field"><span>${label}</span><div className=${`notebook-readonly-value ${value ? '' : 'is-empty'}`}>${value || 'No registrado en esta consulta.'}</div></section>`;
+      }
+      return html`<label className="notebook-field"><span>${label}</span><textarea rows=${rows} value=${encounter[key] || ''} onChange=${event => this.updateEncounterField(key, event.target.value)} placeholder=${placeholder}></textarea></label>`;
+    };
+
+    return html`<div className=${`consultation-notebook-view view-enter ${readOnly ? 'notebook-readonly' : ''}`}>
+      <header className="notebook-toolbar">
+        <div><button className="back-button" onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/></button><span className=${`notebook-badge ${signed ? 'signed' : ''}`}><${Icon} name=${signed ? 'lock' : 'notebook'} size=${18}/> ${signed ? 'Nota firmada' : readOnly ? 'Vista de consulta' : 'Libreta de consulta'}</span><div><h1>${patient.preferredName || patient.name}</h1><p>${encounter.title}</p></div></div>
+        <div className="notebook-toolbar-actions">
+          <span className="notebook-timer">${signed ? `${durationMinutes} min` : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`}</span>
+          <span className=${`autosave-state ${signed ? 'signed' : this.state.encounterAutosaveStatus}`}><${Icon} name=${signed ? 'lock' : 'check'} size=${15}/>${signed ? `Firmada ${formatDateTime(encounter.signedAt || encounter.endedAt)}` : this.state.encounterAutosaveStatus === 'saving' ? 'Guardando…' : readOnly ? 'Solo lectura' : 'Guardado automático'}</span>
+          ${!readOnly ? html`<${Button} tone="secondary" icon="paperclip" onClick=${() => this.openDocumentUpload(patient)}>Adjuntar</${Button}>` : null}
+          ${!readOnly ? html`<${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}>` : html`<${Button} tone="secondary" icon="chevronLeft" onClick=${this.closeConsultationNotebook}>Volver al expediente</${Button}>`}
+        </div>
+      </header>
+      <div className="notebook-layout">
+        <aside className="notebook-patient-panel"><${Avatar} patient=${patient} size="xl"/><h2>${patient.name}</h2><p>${patient.age} años · ${patient.diagnosisCode}</p><div className="notebook-facts"><div><span>Diagnóstico</span><b>${patient.diagnosis}</b></div><div><span>Riesgo actual</span><b>${riskLabel(patient.risk)}</b></div><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || ''}</small></div><div><span>Última consulta</span><b>${formatDate(patient.lastVisit)}</b></div></div><div className="notebook-alert-box"><${Icon} name="shield" size=${18}/><span>${patient.adverseEvents?.filter(item => item.status === 'active').length || 0} efecto(s) activo(s) · ${this.state.data.alerts.filter(item => item.patientId === patient.id && item.status === 'open').length} alerta(s)</span></div></aside>
+        <main className="notebook-paper">
+          <div className="paper-heading"><div><span>${formatLongDate(encounter.startedAt)}</span><h2>Notas de la consulta</h2></div><span>${signed ? `Nota firmada · v${version}` : readOnly ? 'Solo lectura' : 'Borrador clínico'}</span></div>
+          ${signed ? html`<div className="notebook-signed-banner"><${Icon} name="lock" size=${18}/><div><b>Nota clínica firmada y cerrada</b><p>Puede consultar todo el contenido. Esta versión no se modifica desde esta pantalla.</p></div></div>` : null}
+          ${field('freeNotes', 'Notas libres', 'Escriba libremente durante la conversación…', 10)}
+          <div className="notebook-two-columns">${field('reason', 'Motivo y temas principales', 'Motivo de consulta y temas abordados…', 5)}${field('evolution', 'Evolución desde la última visita', 'Cambios, contexto, adherencia y funcionamiento…', 5)}</div>
+          <div className="notebook-two-columns">${field('mentalStatus', 'Estado mental', 'Apariencia, conducta, habla, afecto, pensamiento, cognición, juicio…', 6)}${field('riskAssessment', 'Riesgo y seguridad', 'Ideación, intención, plan, medios, factores protectores y plan de seguridad…', 6)}</div>
+          <div className="notebook-two-columns">${field('medicationNotes', 'Medicamentos y tolerabilidad', 'Adherencia, efectos, cambios considerados…', 5)}${field('intervention', 'Intervención realizada', 'Psicoeducación, apoyo, decisiones compartidas, coordinación…', 5)}</div>
+          ${field('clinicalImpression', 'Impresión clínica', 'Síntesis profesional de la consulta…', 5)}
+          ${field('plan', 'Plan', 'Tratamiento, estudios, derivaciones, indicaciones y tareas…', 5)}
+          ${field('followUp', 'Seguimiento', 'Próxima cita, señales de alarma y acuerdos…', 3)}
+          <footer className="notebook-paper-footer"><span>${signed ? 'Nota firmada conservada en el expediente. Para documentar información posterior, abra una nueva consulta.' : readOnly ? 'Contenido mostrado en modo solo lectura.' : 'La nota se guarda automáticamente. Al finalizar quedará firmada y cualquier cambio posterior deberá registrarse como una nueva versión.'}</span></footer>
+        </main>
+        ${readOnly ? html`<aside className="notebook-tools-panel notebook-readonly-tools"><h3>Información de la nota</h3><div className="notebook-meta-list"><div><span>Estado</span><b>${signed ? 'Firmada' : 'Solo lectura'}</b></div><div><span>Profesional</span><b>${signer?.name || patient.clinician || 'Profesional tratante'}</b></div><div><span>Inicio</span><b>${formatDateTime(encounter.startedAt)}</b></div><div><span>Finalización</span><b>${encounter.endedAt ? formatDateTime(encounter.endedAt) : 'No registrada'}</b></div><div><span>Duración</span><b>${durationMinutes} minutos</b></div><div><span>Versión</span><b>${version}</b></div></div><button onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/><span>Volver a consultas</span></button><button onClick=${() => { clearInterval(this.encounterTimer); this.setState({ activeEncounter: null, view: 'patient', selectedPatientId: patient.id, patientTab: 'documents' }); }}><${Icon} name="folder"/><span>Ver documentos</span></button><div className="notebook-side-note"><b>Solo lectura</b><p>La nota firmada permanece íntegra. Las nuevas observaciones deben registrarse en otra consulta.</p></div></aside>` : html`<aside className="notebook-tools-panel"><h3>Acciones rápidas</h3><button onClick=${() => this.openAssessment(patient)}><${Icon} name="analytics"/><span>Registrar escala</span></button><button onClick=${() => this.openVitals(patient)}><${Icon} name="activity"/><span>Control físico</span></button><button onClick=${() => this.openMedication(patient)}><${Icon} name="medication"/><span>Medicamento</span></button><button onClick=${() => this.openPrescription(patient)}><${Icon} name="prescription"/><span>Nueva receta</span></button><button onClick=${() => this.openDocumentUpload(patient)}><${Icon} name="folder"/><span>Subir documento</span></button><div className="notebook-side-note"><b>Privacidad</b><p>Evite incluir información innecesaria. Diferencie lo referido por el paciente, lo observado y la información de terceros.</p></div></aside>`}
+      </div>
     </div>`;
   }
 
@@ -2099,8 +2168,13 @@ class App extends React.Component {
   }
 
   renderConsultationsTab(patient) {
-    const consultations = patient.consultations || [];
-    return html`<div className="dashboard-grid consultations-view"><${Card} className="span-12" title="Notas de consulta" subtitle="Borradores y notas firmadas creadas desde la libreta virtual." action=${this.can('consultationsManage') && patient.vitalStatus !== 'deceased' ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Iniciar consulta</${Button}>` : null}>${consultations.length ? html`<div className="consultation-list">${consultations.map(note => html`<article key=${note.id} className=${`consultation-note-card ${note.status}`}><div className="consultation-note-date"><b>${formatDate(note.startedAt)}</b><span>${formatTime(note.startedAt)}</span></div><div><span>${note.status === 'completed' ? 'Firmada' : 'Borrador'}</span><h4>${note.title}</h4><p>${note.clinicalImpression || note.plan || note.freeNotes || 'Nota sin resumen.'}</p><small>${note.durationMinutes ? `${note.durationMinutes} minutos · ` : ''}${note.status === 'completed' ? `Finalizada ${formatDateTime(note.endedAt)}` : `Actualizada ${formatDateTime(note.updatedAt)}`}</small></div>${note.status === 'draft' && this.can('consultationsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => { clearInterval(this.encounterTimer); this.encounterTimer = window.setInterval(() => this.forceUpdate(), 1000); this.setState({ activeEncounter: { ...note, patientId: patient.id }, view: 'notebook' }); }}>Continuar</${Button}>` : html`<${Badge} tone="success"><${Icon} name="lock" size=${13}/> Firmada</${Badge}>`}</article>`)}</div>` : html`<${EmptyState} icon="notebook" title="Sin notas de consulta" text="Inicie una consulta para abrir la libreta virtual y guardar la primera nota." action=${this.can('consultationsManage') ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Abrir libreta</${Button}>` : null}/>`}</${Card}></div>`;
+    const consultations = [...(patient.consultations || [])].sort((left, right) => new Date(right.startedAt || right.updatedAt || 0) - new Date(left.startedAt || left.updatedAt || 0));
+    const canManage = this.can('consultationsManage');
+    const isSignedNote = note => ['completed', 'signed'].includes(String(note.status || '').toLowerCase()) || Boolean(note.signedAt);
+    return html`<div className="dashboard-grid consultations-view"><${Card} className="span-12" title="Notas de consulta" subtitle="Abra cualquier nota para consultar todo lo registrado. Los borradores pueden continuarse y las notas firmadas se muestran en modo solo lectura." action=${canManage && patient.vitalStatus !== 'deceased' ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Iniciar consulta</${Button}>` : null}>${consultations.length ? html`<div className="consultation-list">${consultations.map(note => {
+      const signed = isSignedNote(note);
+      return html`<article key=${note.id} className=${`consultation-note-card ${signed ? 'completed' : 'draft'}`}><div className="consultation-note-date"><b>${formatDate(note.startedAt)}</b><span>${formatTime(note.startedAt)}</span></div><div><span>${signed ? 'Firmada' : 'Borrador'}</span><h4>${note.title}</h4><p>${note.clinicalImpression || note.plan || note.freeNotes || 'Nota sin resumen.'}</p><small>${note.durationMinutes ? `${note.durationMinutes} minutos · ` : ''}${signed ? `Finalizada ${formatDateTime(note.endedAt || note.signedAt)}` : `Actualizada ${formatDateTime(note.updatedAt)}`}</small></div><div className="consultation-note-actions"><${Badge} tone=${signed ? 'success' : 'warning'}><${Icon} name=${signed ? 'lock' : 'edit'} size=${13}/> ${signed ? 'Firmada' : 'Borrador'}</${Badge}><${Button} tone="secondary" icon=${signed ? 'eye' : 'edit'} onClick=${() => this.openConsultationNote(patient, note)}>${signed ? 'Ver nota' : canManage ? 'Continuar' : 'Ver borrador'}</${Button}></div></article>`;
+    })}</div>` : html`<${EmptyState} icon="notebook" title="Sin notas de consulta" text="Inicie una consulta para abrir la libreta virtual y guardar la primera nota." action=${canManage ? html`<${Button} icon="notebook" onClick=${this.startConsultationForSelectedPatient}>Abrir libreta</${Button}>` : null}/>`}</${Card}></div>`;
   }
 
   openPaymentLink = url => {
