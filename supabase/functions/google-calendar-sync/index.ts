@@ -1,5 +1,5 @@
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireMember,limitAction } from '../_shared/auth.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 
 async function validAccessToken(db: ReturnType<typeof supabaseAdmin>, connection: any) {
@@ -21,34 +21,42 @@ async function validAccessToken(db: ReturnType<typeof supabaseAdmin>, connection
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(request) });
   try {
-    const user = await requireUser(request);
-    const { organizationId, appointment } = await request.json();
-    if (!organizationId || !appointment?.start || !appointment?.end) throw new Error('Faltan datos de la cita.');
-    const db = supabaseAdmin();
-    const { data: member } = await db.from('organization_members').select('active').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle();
-    if (!member?.active) throw new Error('No tiene acceso a la organización.');
+    if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);
+    const { organizationId, appointmentId } = await request.json();
+    const {db,user}=await requireMember(request,organizationId,'appointmentsManage');
+    await limitAction(db,'google-sync',user.id,100);
+    const {data:record,error}=await db.from('linkare_records').select('payload').eq('organization_id',organizationId).eq('kind','appointment').eq('id',appointmentId).eq('deleted',false).maybeSingle();
+    if(error||!record)throw new Error('Guarde primero la cita.');
+    const appointment=record.payload;
     const { data: connection } = await db.from('calendar_connections').select('*').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', 'google').eq('active', true).maybeSingle();
     if (!connection) throw new Error('Conecte Google Calendar primero.');
     const token = await validAccessToken(db, connection);
     const event = {
       summary: 'Consulta privada',
-      description: [appointment.type, appointment.modality].filter(Boolean).join(' · '),
+      description: 'Consulta privada', visibility: 'private',
       start: { dateTime: new Date(appointment.start).toISOString(), timeZone: Deno.env.get('CLINIC_TIMEZONE') || 'America/El_Salvador' },
       end: { dateTime: new Date(appointment.end).toISOString(), timeZone: Deno.env.get('CLINIC_TIMEZONE') || 'America/El_Salvador' },
       extendedProperties: { private: { linkareAppointmentId: String(appointment.id || '') } },
     };
     const calendarId = encodeURIComponent(connection.calendar_id || 'primary');
-    const existingId = appointment.googleEventId ? encodeURIComponent(appointment.googleEventId) : '';
+    const {data:link}=await db.from('linkare_calendar_links_v3').select('google_event_id').eq('organization_id',organizationId).eq('user_id',user.id).eq('appointment_id',appointmentId).maybeSingle();
+    const existingId=link?.google_event_id?encodeURIComponent(link.google_event_id):'';
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(organizationId+':'+user.id+':'+appointmentId));
+    const eventId=Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    if(!existingId)Object.assign(event,{id:eventId});
+    if(appointment.status==='cancelled')Object.assign(event,{status:'cancelled'});
     const endpoint = existingId
       ? `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`
       : `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`;
     const response = await fetch(endpoint, {
-      method: existingId ? 'PUT' : 'POST',
+      method: existingId ? 'PUT' : 'POST', signal:AbortSignal.timeout(15000),
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error?.message || `Google Calendar respondió ${response.status}.`);
+    const {error:saveError}=await db.from('linkare_calendar_links_v3').upsert({organization_id:organizationId,user_id:user.id,appointment_id:appointmentId,google_event_id:payload.id,updated_at:new Date().toISOString()},{onConflict:'organization_id,user_id,appointment_id'});
+    if(saveError)throw new Error('Google recibió la cita, pero no se pudo guardar la referencia. Contacte a soporte antes de repetir.');
     return jsonResponse(request, { ok: true, event: { id: payload.id, htmlLink: payload.htmlLink, updated: payload.updated } });
   } catch (error) {
     return jsonResponse(request, { ok: false, message: error instanceof Error ? error.message : 'No se pudo sincronizar la cita.' }, 400);

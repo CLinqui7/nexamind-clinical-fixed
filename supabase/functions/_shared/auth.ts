@@ -1,20 +1,27 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-function publishableKey() {
-  const legacy = Deno.env.get('SUPABASE_ANON_KEY')?.trim();
-  if (legacy) return legacy;
-  try { return String(JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '{}').default || '').trim(); }
-  catch (_) { return ''; }
+import { supabaseAdmin } from './supabase-admin.ts';
+export class ApiError extends Error { constructor(public status:number, message:string){super(message);} }
+export async function requireUser(request:Request){
+ const token=(request.headers.get('Authorization')||'').match(/^Bearer\s+(.+)$/i)?.[1];
+ if(!token)throw new ApiError(401,'Inicie sesión para continuar.');
+ const {data,error}=await supabaseAdmin().auth.getUser(token);
+ const confirmedAt=(data.user as any)?.email_confirmed_at || (data.user as any)?.confirmed_at;
+ if(error || !data.user)throw new ApiError(401,'Su sesión no es válida. Cierre sesión, vuelva a entrar y repita la operación.');
+ if(!confirmedAt)throw new ApiError(401,'Su correo todavía no está confirmado.');
+ return data.user;
 }
-
-export async function requireUser(request: Request) {
-  const authorization = request.headers.get('Authorization') || '';
-  if (!authorization) throw new Error('Debe iniciar sesión.');
-  const url = Deno.env.get('SUPABASE_URL') || '';
-  const key = publishableKey();
-  if (!url || !key) throw new Error('Supabase no expuso la configuración necesaria para validar la sesión.');
-  const client = createClient(url, key, { global: { headers: { Authorization: authorization } } });
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) throw new Error('La sesión de Supabase no es válida.');
-  return data.user;
+export async function requireMember(request:Request,organizationId:string,permission='member'){
+ if(!/^[a-f\d-]{36}$/i.test(organizationId||''))throw new ApiError(400,'Consultorio no válido.');
+ const user=await requireUser(request);const db=supabaseAdmin();
+ const {data:member,error}=await db.from('organization_members').select('id,role,active,permissions').eq('organization_id',organizationId).eq('user_id',user.id).maybeSingle();
+ if(error || !member?.active)throw new ApiError(403,'No tiene acceso a este consultorio.');
+ const doctor=['owner','doctor','psychiatrist'].includes(String(member.role));
+ if(permission==='doctor' && !doctor)throw new ApiError(403,'Esta operación está reservada al médico.');
+ if(!['member','doctor'].includes(permission) && !doctor && !(member.role==='secretary' && member.permissions?.[permission]===true))throw new ApiError(403,'Su cuenta no tiene este permiso.');
+ return {user,member,doctor,db};
 }
+export async function limitAction(db:ReturnType<typeof supabaseAdmin>,scope:string,actor:string,limit:number){
+ const {data,error}=await db.rpc('linkare_rate_v3',{s:scope,a:actor,max_hits:limit});
+ if(error)throw new ApiError(503,'No se pudo validar el límite de solicitudes.');
+ if(data!==true)throw new ApiError(429,'Demasiadas solicitudes. Intente más tarde.');
+}
+export function safeApiMessage(error:unknown){return error instanceof ApiError?error.message:'No se pudo completar la operación. Revise los registros del servidor con la referencia indicada.';}

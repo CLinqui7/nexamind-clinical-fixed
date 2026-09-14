@@ -203,7 +203,7 @@ export function googleCalendarUrl(appointment) {
 }
 
 function makeICS(appointments = []) {
-  const rows = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//NexaMind Clinical//Agenda//ES', 'CALSCALE:GREGORIAN'];
+  const rows = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Linkare//Agenda//ES', 'CALSCALE:GREGORIAN'];
   appointments.forEach(appointment => {
     rows.push(
       'BEGIN:VEVENT',

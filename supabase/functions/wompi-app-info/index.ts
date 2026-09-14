@@ -1,29 +1,14 @@
-import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
-import { wompiConfig, wompiRequest } from '../_shared/wompi.ts';
-
-// Health/status endpoint. It is intentionally public at the Supabase gateway
-// and must be deployed with --no-verify-jwt. No secrets are returned.
-Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(request) });
-  if (request.method !== 'POST') return jsonResponse(request, { ok: false, message: 'Método no permitido.' }, 405);
-
-  try {
-    const config = wompiConfig();
-    const raw = await wompiRequest('/Aplicativo', { method: 'GET' }, config);
-
-    const app = {
-      nombre: raw?.nombre || raw?.Nombre || 'Wompi',
-      estaProductivo: Boolean(raw?.estaProductivo ?? raw?.EsProductiva ?? raw?.esProductivo),
-      numeroCuenta: raw?.numeroCuenta || raw?.NumeroCuenta || '',
-      cuotasDisponibles: raw?.cuotasDisponibles || raw?.CuotasDisponibles || [],
-      aplicaPagoConPuntos: Boolean(raw?.aplicaPagoConPuntos ?? raw?.AplicaPagoConPuntos),
-    };
-
-    return jsonResponse(request, { ok: true, app }, 200);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo consultar el aplicativo Wompi.';
-    // Return 200 so the frontend can show the real diagnostic message instead of
-    // the generic "Edge Function returned a non-2xx status code".
-    return jsonResponse(request, { ok: false, message }, 200);
-  }
+import { corsHeaders,jsonResponse } from '../_shared/cors.ts';
+import { requireMember,limitAction,ApiError,safeApiMessage } from '../_shared/auth.ts';
+import { wompiConfig,wompiRequest } from '../_shared/wompi.ts';
+Deno.serve(async request=>{
+ if(request.method==='OPTIONS')return new Response('ok',{headers:corsHeaders(request)});
+ if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);
+ const reference=crypto.randomUUID();
+ try{
+  const {organizationId}=await request.json();const {user,db}=await requireMember(request,organizationId,'doctor');await limitAction(db,'wompi-status',user.id,120);
+  const app=await wompiRequest('/Aplicativo',{method:'GET'},wompiConfig());
+  // Do not expose the settlement account, provider keys, or the full provider response.
+  return jsonResponse(request,{ok:true,app:{nombre:app.nombre||'Wompi',estaProductivo:app.estaProductivo===true}});
+ }catch(error){console.error('wompi-app-info',reference,error instanceof Error?error.name:'error');return jsonResponse(request,{ok:false,message:error instanceof ApiError?safeApiMessage(error):'No se pudo verificar Wompi. Revise las credenciales del servidor.',reference},error instanceof ApiError?error.status:502);}
 });

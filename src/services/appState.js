@@ -1,195 +1,85 @@
-import { supabase, supabaseConfigured } from '../lib/supabase.js';
+import { supabase, supabaseConfigured, assertSupabaseConfigured } from '../lib/supabase.js';
+import { StateWriter } from '../domain/state-writer.js';
 
-export const appMode = String(import.meta.env.VITE_APP_MODE || 'demo').trim().toLowerCase();
-export const productionMode = appMode === 'production';
-export const publicAppUrl = String(
-  import.meta.env.VITE_PUBLIC_APP_URL || 'https://nexamind-clinical.vercel.app'
-).trim().replace(/\/+$/, '');
+export const appMode = 'production';
+export const productionMode = true;
+export const publicAppUrl = String(import.meta.env.VITE_PUBLIC_APP_URL || 'https://nexamind-clinical.vercel.app').trim().replace(/\/+$/, '');
 
-export async function signUpProduction({ fullName, clinicName, email, password }) {
-  if (!productionMode) return null;
-  if (!supabaseConfigured || !supabase) throw new Error('Supabase no está configurado para producción.');
-  const cleanEmail = String(email || '').trim().toLowerCase();
-  const cleanName = String(fullName || '').trim();
-  const cleanClinic = String(clinicName || '').trim();
-  if (!cleanName) throw new Error('Escriba su nombre completo.');
-  if (!cleanClinic) throw new Error('Escriba el nombre de su clínica o consultorio.');
-  if (!cleanEmail || !cleanEmail.includes('@')) throw new Error('Escriba un correo válido.');
-  if (String(password || '').length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
-  const { data, error } = await supabase.auth.signUp({
-    email: cleanEmail,
-    password,
-    options: {
-      emailRedirectTo: `${publicAppUrl || window.location.origin}/?email_confirmed=1`,
-      data: {
-        full_name: cleanName,
-        clinic_name: cleanClinic,
-        role: 'doctor',
-      },
-    },
-  });
-  if (error) throw new Error(error.message || 'No se pudo crear la cuenta.');
-  return {
-    user: data.user || null,
-    session: data.session || null,
-    needsEmailConfirmation: Boolean(data.user && !data.session),
-    clinicName: cleanClinic,
+export function readableError(error) {
+  const text=String(error?.message || error || 'No se pudo completar la operación.');
+  const messages={
+    SUBSCRIPTION_REQUIRED:'Seleccione o renueve un plan para guardar registros. Puede consultar la información existente.',
+    REVISION_CONFLICT:'Otra persona modificó este registro. Sus cambios no se sobrescribieron. Copie sus anotaciones y recargue los datos antes de continuar.',
+    SIGNED_NOTE_IMMUTABLE:'La nota ya está firmada y no puede reemplazarse. Registre una nueva nota o adenda.',
+    INVALID_SIGNER:'Solo el autor autenticado puede firmar esta nota.',
+    ACCOUNT_DISABLED:'Su acceso fue desactivado por el responsable del consultorio.',
+    ACCESS_DENIED:'Su cuenta no tiene permiso para esta operación.',
+    EMAIL_NOT_CONFIRMED:'Confirme su correo antes de ingresar.',
+    INVITATION_EXPIRED:'La invitación venció. Solicite una nueva al médico.',
+    INVITATION_REQUIRED:'Necesita una invitación del consultorio para ingresar.',
+    LOGIN_REQUIRED:'Su sesión finalizó. Inicie sesión nuevamente.',
+    'Invalid login credentials':'El correo o la contraseña no son correctos.',
+    'Email not confirmed':'Revise su correo y confirme su cuenta.',
+    'Failed to fetch':'No se pudo conectar con el servidor. Sus cambios pendientes siguen en esta pantalla.',
+    'schema cache':'La base de datos requiere la migración de Linkare 3.0. Contacte a la administración.',
   };
+  for(const [key,message] of Object.entries(messages)) if(text.includes(key)) return message;
+  return text.slice(0,360);
 }
-
-export async function signInProduction(email, password) {
-  if (!productionMode) return null;
-  if (!supabaseConfigured || !supabase) throw new Error('Supabase no está configurado para producción.');
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(error.message || 'No se pudo iniciar sesión en Supabase.');
-  return data.session;
+async function rpc(name,args={}) {
+  const {data,error}=await assertSupabaseConfigured().rpc(name,args);
+  if(error) { const e=new Error(readableError(error));e.code=error.code;e.original=error.message;throw e; }
+  return data;
 }
-
+export async function signUpProduction({fullName,clinicName,email,password}) {
+  const client=assertSupabaseConfigured();
+  if(!String(fullName||'').trim() || !String(clinicName||'').trim())throw new Error('Complete su nombre y el nombre del consultorio.');
+  if(String(password||'').length<12)throw new Error('Use una contraseña de al menos 12 caracteres.');
+  const {data,error}=await client.auth.signUp({email:String(email).trim().toLowerCase(),password,options:{emailRedirectTo:publicAppUrl+'/?auth=confirmed',data:{full_name:fullName.trim(),clinic_name:clinicName.trim()}}});
+  if(error)throw new Error(readableError(error));
+  return {user:data.user,session:data.session,needsEmailConfirmation:!data.session,clinicName};
+}
+export async function signInProduction(email,password) {
+  const {data,error}=await assertSupabaseConfigured().auth.signInWithPassword({email:String(email).trim().toLowerCase(),password});
+  if(error)throw new Error(readableError(error));return data.session;
+}
 export async function getProductionSession() {
-  if (!productionMode || !supabaseConfigured || !supabase) return null;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw new Error(error.message || 'No se pudo leer la sesión.');
-  return data.session;
+  if(!supabaseConfigured)return null;
+  const {data,error}=await supabase.auth.getSession();if(error)throw new Error(readableError(error));return data.session;
 }
-
 export async function signOutProduction() {
-  if (!productionMode || !supabaseConfigured || !supabase) return;
-  await supabase.auth.signOut();
+  if(!supabase)return;
+  const {error}=await supabase.auth.signOut({scope:'local'}); if(error)throw new Error(readableError(error));
+  resetPersistence();
+}
+export async function requestPasswordReset(email) {
+  const {error}=await assertSupabaseConfigured().auth.resetPasswordForEmail(String(email).trim().toLowerCase(),{redirectTo:publicAppUrl+'/?auth=reset'});
+  if(error)throw new Error(readableError(error));
+}
+export async function resendConfirmation(email) {
+  const {error}=await assertSupabaseConfigured().auth.resend({type:'signup',email:String(email).trim(),options:{emailRedirectTo:publicAppUrl+'/?auth=confirmed'}});
+  if(error)throw new Error(readableError(error));
+}
+export async function setAccountPassword(password) {
+  if(String(password).length<12)throw new Error('Use al menos 12 caracteres.');
+  const {error}=await assertSupabaseConfigured().auth.updateUser({password});if(error)throw new Error(readableError(error));
+}
+export async function changeAccountPassword(email,currentPassword,password) { await signInProduction(email,currentPassword);await setAccountPassword(password); }
+export function onAuthChange(callback) { return supabase?.auth.onAuthStateChange(callback)?.data?.subscription || null; }
+export async function bootstrapAndLoadState(_unused,requestedOrganizationName=null) {
+  const organizationId=await rpc('linkare_bootstrap_v3',{requested_name:requestedOrganizationName});
+  const result=await rpc('linkare_load_state_v3',{org:organizationId});
+  if(!['doctor','secretary'].includes(result?.memberRole) || !result?.userId)throw new Error('No hay un rol habilitado para su cuenta.');
+  return result;
 }
 
-export async function bootstrapAndLoadState(seedPayload, requestedOrganizationName = null) {
-  if (!productionMode) return { organizationId: null, payload: seedPayload };
-  if (!supabaseConfigured || !supabase) throw new Error('Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
-
-  const requestedName = requestedOrganizationName || seedPayload?.organization?.name || 'Linkare Clinic';
-  let organizationId = null;
-
-  const { data: rpcOrganizationId, error: bootstrapError } = await supabase.rpc('linkare_bootstrap_organization', {
-    requested_name: requestedName,
-    requested_slug: null,
-  });
-
-  if (!bootstrapError && rpcOrganizationId) {
-    organizationId = rpcOrganizationId;
-  } else {
-    const missingRpc = /Could not find the function|schema cache|PGRST202/i.test(String(bootstrapError?.message || ''));
-    if (!missingRpc) throw new Error(bootstrapError?.message || 'No se pudo preparar la organización.');
-
-    const { data: functionData, error: functionError } = await supabase.functions.invoke('linkare-bootstrap', {
-      body: { requestedName },
-    });
-    if (functionError) throw new Error(functionError.message || 'No se pudo preparar la organización.');
-    organizationId = functionData?.organizationId || null;
-    if (!organizationId) throw new Error(functionData?.error || 'No se pudo crear la organización en Supabase.');
-  }
-
-  const { data: userData } = await supabase.auth.getUser();
-  const currentUserId = userData?.user?.id || null;
-  let memberRole = null;
-  let memberName = null;
-  if (currentUserId) {
-    const { data: memberRow } = await supabase
-      .from('organization_members')
-      .select('role, display_name')
-      .eq('organization_id', organizationId)
-      .eq('user_id', currentUserId)
-      .maybeSingle();
-    memberRole = memberRow?.role || null;
-    memberName = memberRow?.display_name || null;
-  }
-
-  const { data: stateRow, error: stateError } = await supabase
-    .from('linkare_app_state')
-    .select('payload, version')
-    .eq('organization_id', organizationId)
-    .maybeSingle();
-  if (stateError) throw new Error(stateError.message || 'No se pudo cargar el estado de Linkare.');
-
-  const remoteBilling = await loadPlatformBillingSettings(organizationId);
-  const mergeBilling = payload => remoteBilling
-    ? { ...payload, billing: { ...(payload?.billing || {}), ...remoteBilling } }
-    : payload;
-
-  if (stateRow?.payload && Object.keys(stateRow.payload).length) {
-    return { organizationId, payload: mergeBilling(stateRow.payload), memberRole, memberName };
-  }
-
-  const initialPayload = mergeBilling(seedPayload);
-  const { error: insertError } = await supabase.from('linkare_app_state').upsert({
-    organization_id: organizationId,
-    payload: initialPayload,
-    version: 1,
-  }, { onConflict: 'organization_id' });
-  if (insertError) throw new Error(insertError.message || 'No se pudo crear el estado inicial.');
-
-  return { organizationId, payload: initialPayload, memberRole, memberName };
+let activeOrganization=null;
+const writer=new StateWriter(changes=>rpc('linkare_save_changes_v3',{org:activeOrganization,changes}));
+export function setPersistenceBaseline(organizationId,data,revisions,clinical){activeOrganization=organizationId;writer.seed(data,revisions,clinical);}
+export function resetPersistence(){activeOrganization=null;writer.reset();}
+export function saveProductionState(organizationId,payload){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  return writer.save(payload);
 }
-
-export async function saveProductionState(organizationId, payload) {
-  if (!productionMode || !organizationId || !supabaseConfigured || !supabase) return;
-  const { data: userData } = await supabase.auth.getUser();
-  const safePayload = {
-    ...payload,
-    users: Array.isArray(payload?.users)
-      ? payload.users.map(({ password, ...user }) => user)
-      : [],
-  };
-  const { error } = await supabase.from('linkare_app_state').upsert({
-    organization_id: organizationId,
-    payload: safePayload,
-    version: 1,
-    updated_by: userData?.user?.id || null,
-  }, { onConflict: 'organization_id' });
-  if (error) throw new Error(error.message || 'No se pudo guardar en Supabase.');
-}
-
-export async function loadPlatformBillingSettings(organizationId) {
-  if (!productionMode || !organizationId || !supabaseConfigured || !supabase) return null;
-  const { data, error } = await supabase
-    .from('linkare_platform_billing_settings')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .maybeSingle();
-  if (error) throw new Error(error.message || 'No se pudo cargar la configuración de la licencia.');
-  if (!data) return null;
-  return {
-    planName: data.plan_name,
-    planDescription: data.plan_description,
-    subscriptionPrice: Number(data.subscription_price) || 400,
-    currency: data.currency || 'USD',
-    billingCycle: data.billing_cycle || 'anual',
-    payerName: data.payer_name || '',
-    payerEmail: data.payer_email || '',
-    active: data.active !== false,
-    planTier: data.plan_tier || 'professional',
-    subscriptionStatus: data.subscription_status || 'inactive',
-    currentPeriodStart: data.current_period_start || null,
-    currentPeriodEnd: data.current_period_end || null,
-    nextRenewalAt: data.next_renewal_at || data.current_period_end || null,
-    graceUntil: data.grace_until || null,
-    autoRenew: Boolean(data.auto_renew),
-  };
-}
-
-export async function savePlatformBillingSettings(organizationId, billing) {
-  if (!productionMode || !organizationId || !supabaseConfigured || !supabase) return;
-  const { error } = await supabase.from('linkare_platform_billing_settings').upsert({
-    organization_id: organizationId,
-    plan_name: billing.planName,
-    plan_description: billing.planDescription,
-    subscription_price: Number(billing.subscriptionPrice),
-    currency: billing.currency || 'USD',
-    billing_cycle: billing.billingCycle || 'anual',
-    payer_name: billing.payerName || null,
-    payer_email: billing.payerEmail || null,
-    active: billing.active !== false,
-    plan_tier: billing.planTier || 'professional',
-    subscription_status: billing.subscriptionStatus || 'inactive',
-    current_period_start: billing.currentPeriodStart || null,
-    current_period_end: billing.currentPeriodEnd || null,
-    next_renewal_at: billing.nextRenewalAt || billing.currentPeriodEnd || null,
-    grace_until: billing.graceUntil || null,
-    auto_renew: Boolean(billing.autoRenew),
-  }, { onConflict: 'organization_id' });
-  if (error) throw new Error(error.message || 'No se pudo guardar el precio de la licencia en Supabase.');
-}
+// Billing prices and validity are exclusively maintained by server functions.
+export async function savePlatformBillingSettings(){throw new Error('El precio se define por el plan elegido. No puede modificarse desde el consultorio.');}

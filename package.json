@@ -1,22 +1,16 @@
 {
-  "name": "nexamind-clinical",
-  "version": "2.0.1",
+  "name": "linkare-clinical",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "Linkare 2.0.1: plan anual, expediente clínico y visualización completa de notas de consulta firmadas.",
+  "description": "Linkare: cuentas individuales, equipo del consultorio, registros privados y planes de suscripción.",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 4173",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check:syntax": "node --check src/app.js && node --check src/data.js && node --check src/utils.js && node --check src/clinical.js && node --check src/practice.js && node --check src/v2features.js && node --check src/lib/supabase.js && node --check src/services/wompi.js && node --check src/services/appState.js && node --check src/services/documents.js && node --check src/services/reminders.js && node --check src/services/calendar.js && node --check vite.config.js",
-    "check:domain": "node scripts/validate-domain.mjs",
-    "check": "npm run check:syntax && npm run check:release && npm run check:domain && npm run check:wompi && npm run check:v2 && npm run check:consultations && vite build",
-    "check:release": "node scripts/validate-release.mjs",
-    "check:linkare": "node scripts/validate-linkare-v2.0.mjs",
-    "check:wompi": "node scripts/validate-wompi-v1.5.mjs",
-    "check:production": "node scripts/validate-linkare-v2.0.mjs",
-    "check:v2": "node scripts/validate-linkare-v2.0.mjs",
-    "check:consultations": "node scripts/validate-consultation-notes-v2.0.1.mjs"
+    "dev": "vite",
+    "build": "node scripts/check-source.mjs && vite build && node scripts/check-dist.mjs",
+    "preview": "vite preview",
+    "test": "node scripts/test.mjs",
+    "check:syntax": "node scripts/check-source.mjs",
+    "check": "npm run check:syntax && npm test && npm run build"
   },
   "engines": {
     "node": ">=20.19.0"

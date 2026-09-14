@@ -25,9 +25,9 @@ export function wompiConfig(): WompiRuntimeConfig {
     authUrl: Deno.env.get('WOMPI_AUTH_URL')?.trim() || DEFAULT_AUTH_URL,
     apiUrl: (Deno.env.get('WOMPI_API_URL')?.trim() || DEFAULT_API_URL).replace(/\/$/, ''),
     audience: Deno.env.get('WOMPI_AUDIENCE')?.trim() || 'wompi_api',
-    appPublicUrl: Deno.env.get('APP_PUBLIC_URL')?.trim() || 'http://localhost:4173',
+    appPublicUrl: (Deno.env.get('APP_PUBLIC_URL')?.trim() || 'https://nexamind-clinical.vercel.app').replace(/\/+$/, ''),
     notificationEmail: Deno.env.get('WOMPI_NOTIFICATION_EMAIL')?.trim() || '',
-    requireAuth: String(Deno.env.get('WOMPI_REQUIRE_AUTH') || 'false').toLowerCase() === 'true',
+    requireAuth: true,
   };
 }
 
@@ -43,6 +43,7 @@ export async function getWompiToken(config = wompiConfig()) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    signal: AbortSignal.timeout(15000),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -56,6 +57,7 @@ export async function wompiRequest(path: string, init: RequestInit = {}, config 
   const token = await getWompiToken(config);
   const response = await fetch(`${config.apiUrl}${path}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(20000),
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -80,5 +82,8 @@ export async function verifyWompiWebhook(rawBody: string, receivedHash: string |
   );
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
   const expected = Array.from(new Uint8Array(signature)).map(byte => byte.toString(16).padStart(2, '0')).join('');
-  return expected.toLowerCase() === receivedHash.trim().toLowerCase();
+  const actual=receivedHash.trim().toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(actual))return false;
+  let mismatch=0;for(let i=0;i<64;i++)mismatch|=expected.charCodeAt(i)^actual.charCodeAt(i);
+  return mismatch===0;
 }

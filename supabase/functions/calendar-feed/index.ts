@@ -1,26 +1,17 @@
-import { supabaseAdmin } from '../_shared/supabase-admin.ts';
-
-function escapeIcs(value = '') { return String(value).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;'); }
-function date(value: unknown) { return new Date(String(value || '')).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); }
-
-Deno.serve(async request => {
-  const url = new URL(request.url);
-  const token = url.searchParams.get('token');
-  if (!token) return new Response('Token requerido', { status: 400 });
-  try {
-    const db = supabaseAdmin();
-    const { data: feed } = await db.from('calendar_feed_tokens').select('*').eq('token', token).eq('active', true).maybeSingle();
-    if (!feed) return new Response('Calendario no disponible', { status: 404 });
-    const { data: state } = await db.from('linkare_app_state').select('payload').eq('organization_id', feed.organization_id).maybeSingle();
-    const appointments = Array.isArray(state?.payload?.appointments) ? state.payload.appointments : [];
-    const rows = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Linkare//Agenda privada//ES','CALSCALE:GREGORIAN','X-WR-CALNAME:Linkare · Agenda privada'];
-    for (const item of appointments.filter((appointment: any) => appointment.status !== 'cancelled')) {
-      rows.push('BEGIN:VEVENT', `UID:${escapeIcs(item.id)}@linkare`, `DTSTAMP:${date(new Date())}`, `DTSTART:${date(item.start)}`, `DTEND:${date(item.end)}`, 'SUMMARY:Consulta privada', `DESCRIPTION:${escapeIcs([item.type, item.modality].filter(Boolean).join(' · '))}`, 'END:VEVENT');
-    }
-    rows.push('END:VCALENDAR');
-    await db.from('calendar_feed_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', feed.id);
-    return new Response(rows.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'private, max-age=300' } });
-  } catch (error) {
-    return new Response(error instanceof Error ? error.message : 'No se pudo generar el calendario.', { status: 500 });
-  }
+import {supabaseAdmin} from '../_shared/supabase-admin.ts';
+const stamp=(v:unknown)=>new Date(String(v)).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+const esc=(v:unknown)=>String(v||'').replace(/\\/g,'\\\\').replace(/\r?\n|\r/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+Deno.serve(async request=>{
+ if(request.method!=='GET')return new Response('Method not allowed',{status:405});
+ const token=new URL(request.url).searchParams.get('token');if(!/^[a-f0-9]{64}$/i.test(token||''))return new Response('Not found',{status:404});
+ try{const db=supabaseAdmin();const {data:feed,error}=await db.from('calendar_feed_tokens').select('id,organization_id,created_by').eq('token',token).eq('active',true).maybeSingle();if(error)throw error;
+ if(!feed)return new Response('Not found',{status:404});
+ const {data:m}=await db.from('organization_members').select('active,role,permissions').eq('organization_id',feed.organization_id).eq('user_id',feed.created_by).maybeSingle();
+ if(!m?.active || !( ['owner','doctor','psychiatrist'].includes(m.role) || (m.role==='secretary'&&m.permissions?.appointmentsManage===true)))return new Response('Not found',{status:404});
+ const {data:rows,error:e}=await db.from('linkare_records').select('id,payload').eq('organization_id',feed.organization_id).eq('kind','appointment').eq('deleted',false).limit(5000);if(e)throw e;
+ const out=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Linkare//Agenda privada//ES','CALSCALE:GREGORIAN','X-WR-CALNAME:Linkare'];
+ for(const row of rows||[]){const a=row.payload;if(!a.start||!a.end||['cancelled','no_show'].includes(a.status))continue;if(!Number.isFinite(Date.parse(a.start))||!Number.isFinite(Date.parse(a.end)))continue;
+ out.push('BEGIN:VEVENT',`UID:${esc(row.id)}@linkare`,`DTSTAMP:${stamp(new Date())}`,`DTSTART:${stamp(a.start)}`,`DTEND:${stamp(a.end)}`,'SUMMARY:Consulta privada','CLASS:PRIVATE','END:VEVENT');}
+ out.push('END:VCALENDAR');return new Response(out.join('\r\n')+'\r\n',{headers:{'Content-Type':'text/calendar; charset=utf-8','Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
+ }catch{return new Response('Calendar temporarily unavailable',{status:503});}
 });

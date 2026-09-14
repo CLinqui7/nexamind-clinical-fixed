@@ -3,10 +3,10 @@ import { uid } from './utils.js';
 const nowIso = () => new Date().toISOString();
 const clean = value => String(value ?? '').trim();
 
-export const DEMO_DOCTOR_PASSWORD = 'NexaMind2026!';
-export const DEMO_SECRETARY_PASSWORD = 'Agenda2026!';
 
-const defaultPasswordForRole = role => role === 'doctor' || role === 'owner' ? DEMO_DOCTOR_PASSWORD : DEMO_SECRETARY_PASSWORD;
+
+
+
 
 export const PERMISSION_CATALOG = [
   { key: 'patientsView', group: 'Pacientes', label: 'Ver pacientes', description: 'Consultar la lista y la ficha administrativa.' },
@@ -57,20 +57,20 @@ export const REMINDER_OPTIONS = [72, 48, 24, 8, 2];
 export function getActiveUser(data) {
   const users = Array.isArray(data?.users) ? data.users : [];
   const requested = users.find(user => user.id === data?.settings?.activeUserId && user.active !== false);
-  return requested || users.find(user => user.role === 'doctor' && user.active !== false) || users.find(user => user.active !== false) || null;
+  return requested || null;
 }
 
 export function hasPermission(data, permission) {
   const user = getActiveUser(data);
-  if (!user) return true;
+  if (!user) return false;
   if (user.role === 'doctor' || user.role === 'owner') return true;
-  return Boolean(user.permissions?.[permission]);
+  return user.role === 'secretary' && ['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage'].includes(permission) && user.permissions?.[permission] === true;
 }
 
 export function clinicProfileDefaults(data) {
   const organization = data?.organization || {};
   return {
-    name: organization.name || 'NexaMind Clinical',
+    name: organization.name || 'Linkare',
     clinician: organization.clinician || '',
     specialty: organization.specialty || 'Psiquiatría',
     professionalLicense: organization.professionalLicense || '',
@@ -189,96 +189,18 @@ export function savePatientPhoto(data, patientId, photo) {
   };
 }
 
-export function createSecretaryUser(data, draft) {
-  const name = clean(draft.name);
-  const email = clean(draft.email).toLowerCase();
-  if (!name) throw new Error('Escriba el nombre de la secretaria.');
-  if (!email || !email.includes('@')) throw new Error('Escriba un correo válido.');
-  if ((data.users || []).some(user => String(user.email).toLowerCase() === email)) throw new Error('Ya existe un usuario con ese correo.');
-  const password = clean(draft.password) || DEMO_SECRETARY_PASSWORD;
-  const confirmPassword = clean(draft.confirmPassword) || password;
-  if (password.length < 8) throw new Error('La contraseña temporal debe tener al menos 8 caracteres.');
-  if (password !== confirmPassword) throw new Error('Las contraseñas no coinciden.');
-  const user = {
-    id: uid('user'),
-    name,
-    email,
-    password,
-    phone: clean(draft.phone),
-    title: clean(draft.title) || 'Secretaría clínica',
-    role: 'secretary',
-    active: true,
-    avatar: '',
-    permissions: { ...DEFAULT_SECRETARY_PERMISSIONS, ...(draft.permissions || {}) },
-    createdAt: nowIso(),
-  };
-  return { data: { ...data, users: [...(data.users || []), user] }, user };
-}
-
-export function updateUserPermissions(data, userId, draft) {
-  const password = clean(draft.password);
-  const confirmPassword = clean(draft.confirmPassword);
-  if (password && password.length < 8) throw new Error('La nueva contraseña debe tener al menos 8 caracteres.');
-  if (password && password !== confirmPassword) throw new Error('Las contraseñas no coinciden.');
-  const user = (data.users || []).find(item => item.id === userId);
-  if (!user) throw new Error('El usuario ya no está disponible.');
-  return {
-    ...data,
-    users: data.users.map(item => item.id === userId ? {
-      ...item,
-      name: clean(draft.name) || item.name,
-      email: clean(draft.email).toLowerCase() || item.email,
-      phone: clean(draft.phone),
-      title: clean(draft.title) || item.title,
-      password: password || item.password || defaultPasswordForRole(item.role),
-      permissions: { ...item.permissions, ...(draft.permissions || {}) },
-      updatedAt: nowIso(),
-    } : item),
-  };
-}
-
-export function toggleUserActive(data, userId) {
-  const activeUser = getActiveUser(data);
-  if (activeUser?.id === userId) throw new Error('No puede desactivar la sesión que está utilizando.');
-  return {
-    ...data,
-    users: (data.users || []).map(user => user.id === userId ? { ...user, active: user.active === false, updatedAt: nowIso() } : user),
-  };
-}
-
-export function setActiveUser(data, userId) {
-  const user = (data.users || []).find(item => item.id === userId && item.active !== false);
-  if (!user) throw new Error('El usuario seleccionado no está activo.');
-  return { ...data, settings: { ...data.settings, activeUserId: userId } };
-}
 
 
-export function authenticateLocalUser(data, emailValue, passwordValue) {
-  const email = clean(emailValue).toLowerCase();
-  const password = String(passwordValue ?? '');
-  if (!email || !password) throw new Error('Escriba su correo y contraseña.');
-  const user = (data.users || []).find(item => String(item.email || '').toLowerCase() === email);
-  if (!user || user.active === false) throw new Error('Usuario no encontrado o inactivo.');
-  const expected = String(user.password || defaultPasswordForRole(user.role));
-  if (password !== expected) throw new Error('La contraseña no es correcta.');
-  return user;
-}
 
-export function updateLocalPassword(data, userId, currentPasswordValue, newPasswordValue, confirmPasswordValue) {
-  const user = (data.users || []).find(item => item.id === userId && item.active !== false);
-  if (!user) throw new Error('El usuario ya no está disponible.');
-  const currentPassword = String(currentPasswordValue ?? '');
-  const expected = String(user.password || defaultPasswordForRole(user.role));
-  if (currentPassword !== expected) throw new Error('La contraseña actual no es correcta.');
-  const newPassword = clean(newPasswordValue);
-  const confirmPassword = clean(confirmPasswordValue);
-  if (newPassword.length < 8) throw new Error('La nueva contraseña debe tener al menos 8 caracteres.');
-  if (newPassword !== confirmPassword) throw new Error('Las contraseñas nuevas no coinciden.');
-  return {
-    ...data,
-    users: (data.users || []).map(item => item.id === userId ? { ...item, password: newPassword, updatedAt: nowIso() } : item),
-  };
-}
+
+
+
+
+
+
+
+
+
 
 export function savePrescription(data, patientId, draft) {
   const patient = data.patients.find(item => item.id === patientId);

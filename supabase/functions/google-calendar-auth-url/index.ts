@@ -1,19 +1,17 @@
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireMember,limitAction } from '../_shared/auth.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse(request, { ok: false, message: 'Método no permitido.' }, 405);
   try {
-    const user = await requireUser(request);
     const { organizationId } = await request.json();
     if (!organizationId) throw new Error('Falta la organización.');
     const clientId = Deno.env.get('GOOGLE_CALENDAR_CLIENT_ID')?.trim();
     if (!clientId) throw new Error('Google Calendar no está configurado. Falta GOOGLE_CALENDAR_CLIENT_ID.');
-    const db = supabaseAdmin();
-    const { data: member } = await db.from('organization_members').select('active').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle();
-    if (!member?.active) throw new Error('No tiene acceso a la organización.');
+    const {db,user}=await requireMember(request,organizationId,'appointmentsManage');
+    await limitAction(db,'google-connect',user.id,20);
     const state = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
     await db.from('calendar_oauth_states').delete().lt('expires_at', new Date().toISOString());
     const { error } = await db.from('calendar_oauth_states').insert({

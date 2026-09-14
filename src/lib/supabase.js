@@ -21,3 +21,33 @@ export function assertSupabaseConfigured() {
   }
   return supabase;
 }
+
+async function currentSession() {
+  const client = assertSupabaseConfigured();
+  const { data, error } = await client.auth.getSession();
+  if (error) throw new Error(error.message || 'No se pudo leer la sesión.');
+  let session = data.session;
+  if (!session?.access_token) throw new Error('LOGIN_REQUIRED');
+
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  if (expiresAtMs && expiresAtMs < Date.now() + 90_000) {
+    const refreshed = await client.auth.refreshSession();
+    if (refreshed.error || !refreshed.data.session?.access_token) {
+      throw new Error('LOGIN_REQUIRED');
+    }
+    session = refreshed.data.session;
+  }
+  return session;
+}
+
+export async function invokeAuthedFunction(name, body = {}) {
+  const client = assertSupabaseConfigured();
+  const session = await currentSession();
+  const { data, error } = await client.functions.invoke(name, {
+    body,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+  return { data, error };
+}

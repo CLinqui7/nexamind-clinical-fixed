@@ -1,0 +1,6 @@
+// Optional tooling, not a production dependency. Run with a locally installed TypeScript compiler.
+const fs=require('fs'),path=require('path'),crypto=require('crypto');
+let ts;try{ts=require(process.env.TYPESCRIPT_MODULE||'typescript');}catch{throw Error('Set TYPESCRIPT_MODULE to a locally installed TypeScript module.');}
+const root=path.resolve(__dirname,'..'),out={compiler:ts.version,modules:{}};let count=0;
+function walk(dir){for(const f of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,f.name);if(f.isDirectory())walk(p);else if(p.endsWith('.ts')){const source=fs.readFileSync(p,'utf8'),r=ts.transpileModule(source,{fileName:p,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},reportDiagnostics:true});const errors=(r.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);if(errors.length)throw Error(p+': '+errors.map(e=>ts.flattenDiagnosticMessageText(e.messageText,'\n')).join('\n'));out.modules[path.relative(root,p).replaceAll('\\','/')]={sha256:crypto.createHash('sha256').update(source).digest('hex'),javascript:r.outputText};count++;}}}
+walk(path.join(root,'supabase/functions'));fs.writeFileSync(path.join(root,'qa/backend/compiled.json'),JSON.stringify(out));console.log('EDGE_TYPESCRIPT_TRANSPILE_OK',count,'files; syntax only, not Deno type checking');

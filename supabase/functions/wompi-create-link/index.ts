@@ -1,197 +1,37 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
-import { wompiConfig, wompiRequest } from '../_shared/wompi.ts';
-
-type CreateSubscriptionPayload = {
-  organizationId?: string;
-  planName?: string;
-  description?: string;
-  amount?: number;
-  customerEmail?: string;
-  payerName?: string;
-  billingPeriod?: string;
-  purpose?: string;
-  reference?: string;
-};
-
-function createReference() {
-  return `LINKARE-SUB-${crypto.randomUUID().replaceAll('-', '').toUpperCase()}`;
-}
-
-function getPublishableKey() {
-  const legacy = Deno.env.get('SUPABASE_ANON_KEY')?.trim();
-  if (legacy) return legacy;
-  try {
-    const keys = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '{}');
-    return String(keys.default || '').trim();
-  } catch (_) { return ''; }
-}
-
-function getSecretKey() {
-  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
-  if (legacy) return legacy;
-  try {
-    const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}');
-    return String(keys.default || '').trim();
-  } catch (_) { return ''; }
-}
-
-async function getUser(request: Request, requireAuth: boolean) {
-  if (!requireAuth) return null;
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const publishableKey = getPublishableKey();
-  const authorization = request.headers.get('Authorization') || '';
-  if (!authorization) throw new Error('Debe iniciar sesión para generar un enlace de Wompi.');
-  if (!publishableKey) throw new Error('Supabase no expuso una llave pública para validar la sesión.');
-  const client = createClient(supabaseUrl, publishableKey, { global: { headers: { Authorization: authorization } } });
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) throw new Error('La sesión de Supabase no es válida.');
-  return data.user;
-}
-
-Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(request) });
-  if (request.method !== 'POST') return jsonResponse(request, { ok: false, message: 'Método no permitido.' }, 405);
-
-  try {
-    const config = wompiConfig();
-    const user = await getUser(request, config.requireAuth);
-    const input = await request.json() as CreateSubscriptionPayload;
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const secretKey = getSecretKey();
-    if (!secretKey) throw new Error('Supabase no expuso una llave secreta para guardar la factura.');
-    const db = createClient(supabaseUrl, secretKey);
-
-    let planName = String(input.planName || 'Plan Profesional Linkare').trim();
-    let description = String(input.description || '').trim();
-    let amount = Number(input.amount);
-    let payerName = String(input.payerName || '').trim();
-    let payerEmail = String(input.customerEmail || config.notificationEmail || '').trim();
-    let currency = 'USD';
-    let billingCycle = 'anual';
-    let periodStart: string | null = null;
-    let periodEnd: string | null = null;
-    const defaultYear = new Date().getFullYear();
-    const billingPeriod = String(input.billingPeriod || `${defaultYear}-${defaultYear + 1}`).trim();
-    const reference = String(input.reference || '').trim() || createReference();
-    const organizationId = String(input.organizationId || '').trim() || null;
-
-    if (config.requireAuth) {
-      if (!user) throw new Error('Debe iniciar sesión.');
-      if (!organizationId) throw new Error('No se recibió la organización de Linkare.');
-
-      const { data: member, error: memberError } = await db
-        .from('organization_members')
-        .select('role, active')
-        .eq('organization_id', organizationId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (memberError) throw new Error(`No se pudo validar el permiso: ${memberError.message}`);
-      if (!member?.active || !['owner', 'psychiatrist', 'doctor'].includes(String(member.role))) {
-        throw new Error('Solo el médico responsable puede generar el enlace de pago de su licencia.');
-      }
-
-      const { data: billing, error: billingError } = await db
-        .from('linkare_platform_billing_settings')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .single();
-      if (billingError || !billing) throw new Error('No se encontró la configuración del plan Linkare.');
-
-      planName = String(billing.plan_name || planName).trim();
-      description = String(input.description || `${planName} · ${billingPeriod}`).trim();
-      amount = Number(billing.subscription_price);
-      payerName = String(billing.payer_name || payerName).trim();
-      payerEmail = String(billing.payer_email || payerEmail || config.notificationEmail).trim();
-      currency = String(billing.currency || 'USD').trim().toUpperCase();
-      billingCycle = String(billing.billing_cycle || 'anual').trim().toLowerCase();
-      const base = billing.current_period_end && new Date(billing.current_period_end) > new Date()
-        ? new Date(billing.current_period_end)
-        : new Date();
-      periodStart = base.toISOString();
-      const end = new Date(base);
-      if (billingCycle === 'anual') end.setFullYear(end.getFullYear() + 1);
-      else if (billingCycle === 'semestral') end.setMonth(end.getMonth() + 6);
-      else if (billingCycle === 'trimestral') end.setMonth(end.getMonth() + 3);
-      else end.setMonth(end.getMonth() + 1);
-      periodEnd = end.toISOString();
-    }
-
-    if (!periodStart) {
-      periodStart = new Date().toISOString();
-      const end = new Date(periodStart); end.setFullYear(end.getFullYear() + 1); periodEnd = end.toISOString();
-    }
-
-    if (!Number.isFinite(amount) || amount < 0.01) throw new Error('El precio guardado debe ser mayor o igual a US$0.01.');
-    if (!description) description = `${planName} · ${billingPeriod}`;
-    if (!payerEmail) throw new Error('Configure el correo del psiquiatra que pagará.');
-
-    const webhookUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/wompi-webhook`;
-    const redirectUrl = `${config.appPublicUrl.replace(/\/$/, '')}/?payment=return`;
-    const requestBody = {
-      identificadorEnlaceComercio: reference,
-      monto: amount,
-      nombreProducto: description,
-      infoProducto: { descripcionProducto: `${planName} · Periodo ${billingPeriod}` },
-      configuracion: {
-        urlRedirect: redirectUrl,
-        urlRetorno: config.appPublicUrl,
-        urlWebhook: webhookUrl,
-        emailsNotificacion: payerEmail,
-        notificarTransaccionCliente: true,
-        esMontoEditable: false,
-        esCantidadEditable: false,
-        cantidadPorDefecto: 1,
-      },
-      limitesDeUso: { cantidadMaximaPagosExitosos: 1, cantidadMaximaPagosFallidos: 5 },
-    };
-
-    const wompi = await wompiRequest('/EnlacePago', { method: 'POST', body: JSON.stringify(requestBody) }, config);
-    const { error: insertError } = await db.from('linkare_subscription_invoices').insert({
-      organization_id: organizationId,
-      payer_user_id: user?.id || null,
-      plan_name: planName,
-      description,
-      billing_period: billingPeriod,
-      period_start: periodStart,
-      period_end: periodEnd,
-      next_renewal_at: periodEnd,
-      plan_tier: 'professional',
-      payer_name: payerName || null,
-      payer_email: payerEmail,
-      amount,
-      currency,
-      status: 'pending',
-      external_reference: reference,
-      provider: 'wompi_sv',
-      payment_link_id: wompi.idEnlace ? String(wompi.idEnlace) : null,
-      payment_url: wompi.urlEnlace || null,
-      qr_url: wompi.urlQrCodeEnlace || null,
-      is_test: wompi.estaProductivo === false,
-      provider_payload: wompi,
-      metadata: { purpose: input.purpose || 'linkare_subscription', requestedBy: user?.email || 'unknown' },
-    });
-    if (insertError) throw new Error(`Wompi creó el enlace, pero Supabase no pudo guardar la factura: ${insertError.message}`);
-
-    return jsonResponse(request, {
-      ok: true,
-      reference,
-      payment: {
-        id: wompi.idEnlace,
-        url: wompi.urlEnlace,
-        qrUrl: wompi.urlQrCodeEnlace,
-        productive: wompi.estaProductivo,
-        amount,
-        currency,
-        periodStart,
-        periodEnd,
-        nextRenewalAt: periodEnd,
-      },
-    });
-  } catch (error) {
-    return jsonResponse(request, {
-      ok: false,
-      message: error instanceof Error ? error.message : 'No se pudo crear el enlace de pago.',
-    }, 400);
-  }
+import { corsHeaders,jsonResponse } from '../_shared/cors.ts';
+import { requireMember,limitAction,ApiError,safeApiMessage } from '../_shared/auth.ts';
+import { wompiConfig,wompiRequest } from '../_shared/wompi.ts';
+function payment(o:any){return {id:o.id,url:o.payment_url,qrUrl:o.qr_url,amount:o.amount_cents/100,currency:o.currency,productive:!o.is_test};}
+Deno.serve(async request=>{
+ if(request.method==='OPTIONS')return new Response('ok',{headers:corsHeaders(request)});
+ if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);
+ const reference=crypto.randomUUID();let reservedId:string|null=null;
+ try{
+  const {organizationId,planCode}=await request.json();const {user,db}=await requireMember(request,organizationId,'doctor');await limitAction(db,'checkout',user.id,20);
+  if(!['monthly','semiannual','annual'].includes(planCode))throw new ApiError(400,'Seleccione un plan válido.');
+  const config=wompiConfig();
+  const info=await wompiRequest('/Aplicativo',{method:'GET'},config);
+  if(info.estaProductivo!==true)throw new ApiError(503,'El comercio aún no está habilitado para cobros en vivo.');
+  const {data:reservation,error}=await db.rpc('linkare_reserve_order_v3',{org:organizationId,payer:user.id,selected_plan:planCode});
+  if(error){const message=error.message.includes('PENDING_DIFFERENT_PLAN')?'Ya existe una orden pendiente con otra modalidad. Revísela antes de generar un nuevo cobro.':'Ya hay una solicitud de pago en curso o pendiente de revisión. No se generará un cobro duplicado.';throw new ApiError(409,message);}
+  const order=reservation.order;
+  if(reservation.existing)return jsonResponse(request,{ok:true,existing:true,reference:order.external_reference,payment:payment(order)});
+  reservedId=order.id;
+  // The amount, duration, and reference come only from the immutable server order.
+  const body={identificadorEnlaceComercio:order.external_reference,monto:order.amount_cents/100,nombreProducto:order.plan_name,
+   infoProducto:{descripcionProducto:`Acceso a Linkare durante ${order.months} mes(es). Renovación manual.`},
+   configuracion:{urlRedirect:config.appPublicUrl+'/?payment=return',urlRetorno:config.appPublicUrl,urlWebhook:(Deno.env.get('SUPABASE_URL')||'')+'/functions/v1/wompi-webhook',emailsNotificacion:config.notificationEmail||user.email,notificarTransaccionCliente:true,esMontoEditable:false,esCantidadEditable:false,cantidadPorDefecto:1},
+   limitesDeUso:{cantidadMaximaPagosExitosos:1,cantidadMaximaPagosFallidos:5}};
+  const response=await wompiRequest('/EnlacePago',{method:'POST',body:JSON.stringify(body)},config);
+  const url=new URL(String(response.urlEnlace||''));
+  if(url.protocol!=='https:' || !['wompi.sv','s.wompi.sv','pagos.wompi.sv'].includes(url.hostname) || response.estaProductivo!==true)throw new Error('Invalid provider checkout response');
+  const update={status:'pending',payment_link_id:String(response.idEnlace),payment_url:url.href,qr_url:response.urlQrCodeEnlace||null,is_test:false,updated_at:new Date().toISOString()};
+  const {error:updateError}=await db.from('linkare_orders_v3').update(update).eq('id',order.id).eq('status','creating');if(updateError)throw updateError;
+  return jsonResponse(request,{ok:true,reference:order.external_reference,payment:payment({...order,...update})});
+ }catch(error){
+  // A timeout could have created a link at the provider. Do not automatically create another.
+  if(reservedId){try{const {supabaseAdmin}=await import('../_shared/supabase-admin.ts');await supabaseAdmin().from('linkare_orders_v3').update({status:'review',updated_at:new Date().toISOString()}).eq('id',reservedId).eq('status','creating');}catch{}}
+  console.error('wompi-create-link',reference,error instanceof Error?error.name:'error');
+  return jsonResponse(request,{ok:false,message:error instanceof ApiError?safeApiMessage(error):'No se pudo confirmar la creación del enlace. La orden quedó para revisión; no repita un pago sin comprobarla.',reference},error instanceof ApiError?error.status:502);
+ }
 });

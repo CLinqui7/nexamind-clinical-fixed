@@ -1,4 +1,4 @@
-import { assertSupabaseConfigured } from '../lib/supabase.js';
+import { invokeAuthedFunction } from '../lib/supabase.js';
 
 async function unwrap(data, error, fallback) {
   if (error) {
@@ -16,8 +16,7 @@ async function unwrap(data, error, fallback) {
 }
 
 export async function requestGoogleCalendarConnection(organizationId) {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('google-calendar-auth-url', { body: { organizationId } });
+  const { data, error } = await invokeAuthedFunction('google-calendar-auth-url', { organizationId });
   const result = await unwrap(data, error, 'No se pudo iniciar la conexión con Google Calendar.');
   if (!result.url) throw new Error('Google Calendar no devolvió una URL de autorización.');
   window.location.href = result.url;
@@ -25,19 +24,16 @@ export async function requestGoogleCalendarConnection(organizationId) {
 }
 
 export async function fetchCalendarIntegrationStatus(organizationId) {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('calendar-status', { body: { organizationId } });
+  const { data, error } = await invokeAuthedFunction('calendar-status', { organizationId });
   return (await unwrap(data, error, 'No se pudo consultar los calendarios.')).status;
 }
 
 export async function syncAppointmentToGoogle(organizationId, appointment) {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('google-calendar-sync', { body: { organizationId, appointment } });
+  const { data, error } = await invokeAuthedFunction('google-calendar-sync', { organizationId, appointmentId: appointment.id });
   return await unwrap(data, error, 'No se pudo sincronizar la cita con Google Calendar.');
 }
 
 export async function createAppleCalendarFeed(organizationId) {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('calendar-feed-token', { body: { organizationId } });
+  const { data, error } = await invokeAuthedFunction('calendar-feed-token', { organizationId });
   return await unwrap(data, error, 'No se pudo crear el enlace de Apple Calendar.');
 }

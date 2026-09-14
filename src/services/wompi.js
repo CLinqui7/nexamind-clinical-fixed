@@ -1,80 +1,21 @@
-import { assertSupabaseConfigured, supabaseConfigured } from '../lib/supabase.js';
-
+import { assertSupabaseConfigured, invokeAuthedFunction, supabaseConfigured } from '../lib/supabase.js';
 export { supabaseConfigured };
 
-async function extractFunctionError(error) {
-  if (!error) return '';
-  let message = error?.message || '';
-  const context = error?.context;
-  try {
-    if (context instanceof Response) {
-      const clone = context.clone();
-      const payload = await clone.json().catch(async () => ({ message: await clone.text().catch(() => '') }));
-      message = payload?.message || payload?.error || payload?.msg || message;
-    } else if (context?.body) {
-      if (typeof context.body === 'string') {
-        try {
-          const parsed = JSON.parse(context.body);
-          message = parsed?.message || parsed?.error || context.body || message;
-        } catch (_) {
-          message = context.body || message;
-        }
-      } else {
-        message = context.body?.message || context.body?.error || message;
-      }
-    }
-  } catch (_) {
-    // Keep the original Supabase error message.
-  }
-  return message || 'No se pudo completar la operación con Wompi.';
+async function invoke(name,body){
+  const {data,error}=await invokeAuthedFunction(name,body);
+  if(error){let message=error.message;try{const p=await error.context?.clone().json();message=p?.message||message;}catch{}throw new Error(message);}
+  if(!data?.ok)throw new Error(data?.message||'La operación no se completó.');return data;
 }
-
-async function unwrapFunctionResponse(data, error) {
-  if (error) throw new Error(await extractFunctionError(error));
-  if (!data?.ok) throw new Error(data?.message || 'Wompi devolvió una respuesta incompleta.');
-  return data;
+export async function fetchWompiAppInfo(organizationId){return (await invoke('wompi-app-info',{organizationId})).app;}
+export async function createWompiPaymentLink({organizationId,planCode}){return invoke('wompi-create-link',{organizationId,planCode});}
+export async function fetchBilling(organizationId){
+ const client=assertSupabaseConfigured();
+ const [plans,subscription,orders]=await Promise.all([
+  client.from('linkare_plans_v3').select('code,name,amount_cents,months,currency').eq('active',true).order('months'),
+  client.from('linkare_subscriptions_v3').select('plan_code,current_period_start,current_period_end').eq('organization_id',organizationId).maybeSingle(),
+  client.from('linkare_orders_v3').select('id,plan_code,plan_name,amount_cents,months,status,payment_url,is_test,paid_at,period_start,period_end,created_at,external_reference').eq('organization_id',organizationId).order('created_at',{ascending:false}).limit(100),
+ ]);
+ for(const result of [plans,subscription,orders])if(result.error)throw new Error('No se pudo cargar su suscripción. Revise la conexión o la migración de la base.');
+ return {plans:plans.data||[],subscription:subscription.data,orders:orders.data||[]};
 }
-
-export async function fetchWompiAppInfo() {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('wompi-app-info', { body: {} });
-  return (await unwrapFunctionResponse(data, error)).app;
-}
-
-export async function createWompiPaymentLink(payload) {
-  const client = assertSupabaseConfigured();
-  const { data, error } = await client.functions.invoke('wompi-create-link', { body: payload });
-  return await unwrapFunctionResponse(data, error);
-}
-
-export async function fetchSubscriptionInvoices(organizationId) {
-  const client = assertSupabaseConfigured();
-  if (!organizationId) return [];
-  const { data, error } = await client
-    .from('linkare_subscription_invoices')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message || 'No se pudo cargar el historial de facturación.');
-  return (data || []).map(row => ({
-    id: row.id,
-    description: row.description,
-    amount: Number(row.amount) || 0,
-    method: row.method || 'wompi',
-    status: row.status || 'pending',
-    payerName: row.payer_name || '',
-    payerEmail: row.payer_email || '',
-    billingPeriod: row.billing_period || '',
-    periodStart: row.period_start || null,
-    periodEnd: row.period_end || null,
-    nextRenewalAt: row.next_renewal_at || row.period_end || null,
-    planTier: row.plan_tier || 'professional',
-    externalReference: row.external_reference || '',
-    paymentUrl: row.payment_url || '',
-    qrUrl: row.qr_url || '',
-    receiptUrl: row.receipt_url || '',
-    isTest: Boolean(row.is_test),
-    createdAt: row.created_at,
-    paidAt: row.paid_at,
-  }));
-}
+export async function fetchSubscriptionInvoices(organizationId){const {orders}=await fetchBilling(organizationId);return orders.map(o=>({...o,amount:o.amount_cents/100,paymentUrl:o.payment_url,planName:o.plan_name,createdAt:o.created_at,paidAt:o.paid_at,periodStart:o.period_start,periodEnd:o.period_end}));}

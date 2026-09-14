@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 
 Deno.serve(async request => {
+  if(request.method!=='GET')return new Response('Method not allowed',{status:405});
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
@@ -9,15 +10,17 @@ Deno.serve(async request => {
   try {
     if (!code || !state) return redirect('error', 'Google no devolvió código o estado.');
     const db = supabaseAdmin();
-    const { data: stateRow, error: stateError } = await db.from('calendar_oauth_states').select('*').eq('state', state).maybeSingle();
+    const { data: stateRow, error: stateError } = await db.from('calendar_oauth_states').delete().eq('state', state).select('*').maybeSingle();
     if (stateError || !stateRow || new Date(stateRow.expires_at) < new Date()) return redirect('error', 'La autorización expiró. Intente de nuevo.');
+    const {data:m}=await db.from('organization_members').select('role,active,permissions').eq('organization_id',stateRow.organization_id).eq('user_id',stateRow.user_id).maybeSingle();
+    if(!m?.active||!(['owner','doctor','psychiatrist'].includes(m.role)||(m.role==='secretary'&&m.permissions?.appointmentsManage===true)))return redirect('error','Acceso revocado.');
     const clientId = Deno.env.get('GOOGLE_CALENDAR_CLIENT_ID')?.trim();
     const clientSecret = Deno.env.get('GOOGLE_CALENDAR_CLIENT_SECRET')?.trim();
     const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '');
     const redirectUri = Deno.env.get('GOOGLE_CALENDAR_REDIRECT_URI')?.trim() || `${supabaseUrl}/functions/v1/google-calendar-callback`;
     if (!clientId || !clientSecret) return redirect('error', 'Credenciales Google incompletas.');
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      method: 'POST', signal:AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }),
     });
     const tokens = await tokenResponse.json().catch(() => ({}));
@@ -39,10 +42,10 @@ Deno.serve(async request => {
       active: true,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'organization_id,user_id,provider' });
-    if (saveError) return redirect('error', saveError.message);
+    if (saveError) return redirect('error', 'No se pudo guardar la autorización.');
     await db.from('calendar_oauth_states').delete().eq('state', state);
     return redirect('connected');
   } catch (error) {
-    return redirect('error', error instanceof Error ? error.message : 'No se completó la conexión.');
+    return redirect('error', 'No se completó la conexión. Intente nuevamente.');
   }
 });

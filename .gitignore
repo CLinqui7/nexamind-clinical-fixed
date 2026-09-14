@@ -13,3 +13,10 @@ Thumbs.db
 _backups/
 .qa-selenium-venv/
 qa/selenium/artifacts/
+
+qa-results/
+playwright-report/
+test-results/
+*.env.private
+supabase/.temp/
+qa/results/

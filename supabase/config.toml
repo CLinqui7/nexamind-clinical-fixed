@@ -1,4 +1,51 @@
-project_id = "linkare-wompi"
+project_id = "linkare-clinical"
+
+# Gateway JWT verification is disabled per handler. Private handlers explicitly call
+# auth.getUser(bearerToken) and verify active organization membership.
+# Webhook = HMAC; Google callback = single-use state; calendar feed = bearer feed token;
+# reminder-dispatch = dedicated cron secret. Retired endpoints only return HTTP 410.
+
+[functions.calendar-feed]
+verify_jwt = false
+
+[functions.calendar-feed-token]
+verify_jwt = false
+
+[functions.calendar-status]
+verify_jwt = false
+
+[functions.google-calendar-auth-url]
+verify_jwt = false
+
+[functions.google-calendar-callback]
+verify_jwt = false
+
+[functions.google-calendar-sync]
+verify_jwt = false
+
+[functions.linkare-billing-admin]
+verify_jwt = false
+
+[functions.linkare-billing-summary]
+verify_jwt = false
+
+[functions.linkare-bootstrap]
+verify_jwt = false
+
+[functions.linkare-create-payment-link]
+verify_jwt = false
+
+[functions.linkare-team]
+verify_jwt = false
+
+[functions.reminder-dispatch]
+verify_jwt = false
+
+[functions.reminder-provider-status]
+verify_jwt = false
+
+[functions.send-reminder]
+verify_jwt = false
 
 [functions.wompi-app-info]
 verify_jwt = false
