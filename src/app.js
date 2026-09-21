@@ -407,8 +407,9 @@ class App extends React.Component {
     window.addEventListener('focus',this.validateSessionAccess);
     this.authSubscription=onAuthChange((event,session)=>{
       // Do not await SDK calls inside this callback: Supabase holds its auth lock.
+      const eventEpoch=this.authEpoch;
       setTimeout(()=>{
-        if(!this.mounted)return;
+        if(!this.mounted || eventEpoch!==this.authEpoch)return;
         if(event==='SIGNED_OUT')this.clearSessionView();
         if(event==='SIGNED_IN' && this.state.authenticatedUserId && session?.user?.id!==this.state.authenticatedUserId){this.clearSessionView();this.restoreProductionSession();}
         if(event==='PASSWORD_RECOVERY')this.setState({authenticatedUserId:null,authView:'set-password',productionLoading:false});
