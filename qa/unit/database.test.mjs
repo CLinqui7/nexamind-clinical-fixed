@@ -125,12 +125,29 @@ test('DB: legacy medication metadata no longer blocks additions and legacy rows 
  await actor('owner');await save([{kind:'patient_clinical',id:'legacy-save',expectedRevision:1,payload:{medications:[{id:'legacy-existing',name:'Eutebrol',startDate:'2026-01-01',createdAt:'2026-01-01',createdBy:null,status:'active',isPrimary:false},{id:'new-medication',name:'Coenzima Q10',dose:'100 mg',status:'active',source:'clinical',isPrimary:true}]}}]);const stored=(await db.query("select payload from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id='legacy-save'",[org])).rows[0].payload;assert.equal(stored.medications.length,2);assert.equal(stored.medications[0].createdAt,undefined);assert.ok(stored.medications[1].createdAt);
  const archived=(await db.query("select public.linkare_archive_medication_v1($1,'legacy-archive','med_legacy-archive_0','Registro duplicado') data",[org])).rows[0].data;assert.equal(archived.ok,true);const old=(await db.query("select payload->'medications'->0 med from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id='legacy-archive'",[org])).rows[0].med;assert.equal(old.id,'med_legacy-archive_0');assert.ok(old.archivedAt);assert.equal(old.archiveReason,'Registro duplicado');assert.equal(old.status,'discontinued');
 });
-test('DB: a second medication with parentheses saves without reusing stale client identity metadata',async()=>{
+test('DB: 3, 4 and 5 sequential medications save with stale client identity metadata',async()=>{
  await actor('owner');
- const first={id:'medication-first',name:'Vessone (Vilazodona)',dose:'10 mg',doseValue:10,doseUnit:'mg',frequency:'una vez al día',route:'oral',startDate:'2026-09-21',status:'active',source:'clinical',isPrimary:true,createdBy:ids.owner,createdAt:'2026-09-21T22:36:35.000Z',reviewedBy:ids.owner,reviewedAt:'2026-09-21T22:36:35.000Z'};
- await save([{kind:'patient_admin',id:'sequential-medications',expectedRevision:0,payload:{name:'Sequential medications'}},{kind:'patient_clinical',id:'sequential-medications',expectedRevision:0,payload:{medications:[first]}}]);
- const second={id:'medication-second',name:'Ansiogen (Bromazepam)',dose:'3 mg',doseValue:3,doseUnit:'mg',frequency:'según necesidad (PRN)',route:'oral',startDate:'2026-09-21',status:'active',source:'clinical',isPrimary:true,createdBy:ids.owner,createdAt:'2026-09-21T22:38:00.000Z',reviewedBy:ids.owner,reviewedAt:'2026-09-21T22:38:00.000Z'};
- await save([{kind:'patient_clinical',id:'sequential-medications',expectedRevision:1,payload:{medications:[{...first,isPrimary:false},second]}}]);
+ const drafts=[
+  {id:'medication-1',name:'Vessone (Vilazodona)',doseValue:10,frequency:'una vez al día'},
+  {id:'medication-2',name:'Ansiogen (Bromazepam)',doseValue:3,frequency:'según necesidad (PRN)'},
+  {id:'medication-3',name:'Calcigam',doseValue:1,frequency:'una vez al día'},
+  {id:'medication-4',name:'Coenzima Q10',doseValue:100,frequency:'una vez al día'},
+  {id:'medication-5',name:'Medicamento QA (5)',doseValue:5,frequency:'una vez al día'},
+ ];
+ let staleClientMedications=[];
+ for(let index=0;index<drafts.length;index+=1){
+  staleClientMedications=staleClientMedications.map(medication=>({...medication,isPrimary:false}));
+  const draft=drafts[index];
+  const clientTimestamp=`2026-09-21T22:${String(36+index).padStart(2,'0')}:00.000Z`;
+  const medication={...draft,dose:`${draft.doseValue} mg`,doseUnit:'mg',route:'oral',startDate:'2026-09-21',status:'active',source:'clinical',isPrimary:true,createdBy:ids.owner,createdAt:clientTimestamp,reviewedBy:ids.owner,reviewedAt:clientTimestamp};
+  staleClientMedications.push(medication);
+  const records=[{kind:'patient_clinical',id:'sequential-medications',expectedRevision:index,payload:{medications:staleClientMedications}}];
+  if(index===0)records.unshift({kind:'patient_admin',id:'sequential-medications',expectedRevision:0,payload:{name:'Sequential medications'}});
+  await save(records);
+  const stored=(await db.query("select payload->'medications' medications from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id='sequential-medications'",[org])).rows[0].medications;
+  assert.equal(stored.length,index+1);
+  assert.deepEqual(stored.map(item=>item.name),drafts.slice(0,index+1).map(item=>item.name));
+ }
  const stored=(await db.query("select payload->'medications' medications from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id='sequential-medications'",[org])).rows[0].medications;
- assert.equal(stored.length,2);assert.equal(stored[1].name,'Ansiogen (Bromazepam)');assert.notEqual(stored[0].createdAt,first.createdAt);assert.equal(stored[0].reviewedAt,undefined);
+ assert.notEqual(stored[0].createdAt,staleClientMedications[0].createdAt);assert.equal(stored[0].reviewedAt,undefined);
 });
