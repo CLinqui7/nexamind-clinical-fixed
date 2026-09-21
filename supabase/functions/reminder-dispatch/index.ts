@@ -5,7 +5,7 @@ Deno.serve(async request=>{
  const secret=Deno.env.get('LINKARE_CRON_SECRET')||'';const received=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
  if(request.method!=='POST'||secret.length<32||!same(secret,received))return new Response('Unauthorized',{status:401});
  try{const db=supabaseAdmin(),now=Date.now(),providers=configuredProviders();let processed=0,accepted=0;
- const {data:orgs,error}=await db.from('linkare_subscriptions_v3').select('organization_id').gt('current_period_end',new Date(now-7*86400000).toISOString()).limit(100);if(error)throw error;
+ const {data:orgs,error}=await db.from('linkare_subscriptions_v3').select('organization_id').or(`complimentary_access.eq.true,current_period_end.gt.${new Date(now-7*86400000).toISOString()}`).limit(100);if(error)throw error;
  for(const {organization_id:org} of orgs||[]){
   const {data:settings}=await db.from('linkare_records').select('payload').eq('organization_id',org).eq('kind','settings').eq('id','clinic').maybeSingle();
   const {data:appointments}=await db.from('linkare_records').select('id,payload').eq('organization_id',org).eq('kind','appointment').eq('deleted',false).gt('payload->>start',new Date(now).toISOString()).lt('payload->>start',new Date(now+73*3600000).toISOString()).limit(200);

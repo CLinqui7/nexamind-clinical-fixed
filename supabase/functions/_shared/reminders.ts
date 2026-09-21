@@ -30,7 +30,7 @@ async function sendSms(destination: string, message: string) {
   return { provider: 'twilio', id: payload?.sid || null };
 }
 
-async function sendWhatsApp(destination: string, message: string) {
+export async function sendWhatsApp(destination: string, message: string) {
   const token = Deno.env.get('META_WHATSAPP_TOKEN')?.trim();
   const phoneNumberId = Deno.env.get('META_WHATSAPP_PHONE_NUMBER_ID')?.trim();
   const template = Deno.env.get('META_WHATSAPP_TEMPLATE_NAME')?.trim();
@@ -70,8 +70,8 @@ export async function deliverReminder(org:string,appointmentId:string,channel:st
  if(!['email','sms','whatsapp'].includes(channel)||![2,8,24,48,72].includes(Number(hours)))throw new ApiError(400,'Canal o anticipación no válidos.');
  if(!configuredProviders()[channel as 'email'|'sms'|'whatsapp'])throw new ApiError(503,'Este canal no está configurado.');
  const db=supabaseAdmin();
- const {data:sub,error:subError}=await db.from('linkare_subscriptions_v3').select('current_period_end').eq('organization_id',org).maybeSingle();
- if(subError||!sub?.current_period_end||Date.parse(sub.current_period_end)+7*86400000<Date.now())throw new ApiError(403,'Renueve el plan para enviar recordatorios.');
+ const {data:sub,error:subError}=await db.from('linkare_subscriptions_v3').select('current_period_end,complimentary_access').eq('organization_id',org).maybeSingle();
+ if(subError||(!sub?.complimentary_access&&(!sub?.current_period_end||Date.parse(sub.current_period_end)+7*86400000<Date.now())))throw new ApiError(403,'El consultorio no tiene acceso habilitado para enviar recordatorios.');
  const {data:row,error}=await db.from('linkare_records').select('payload').eq('organization_id',org).eq('kind','appointment').eq('id',appointmentId).eq('deleted',false).maybeSingle();
  const a=row?.payload;if(error||!a||['cancelled','completed','no_show'].includes(a.status)||Date.parse(a.start)<Date.now())throw new ApiError(409,'La cita ya no admite recordatorios.');
  const [{data:admin},{data:clinical}]=await Promise.all([
@@ -89,7 +89,7 @@ export async function deliverReminder(org:string,appointmentId:string,channel:st
  await limitAction(db,'reminder-org',org,200);
  const when=new Intl.DateTimeFormat('es-SV',{dateStyle:'long',timeStyle:'short',timeZone:tz}).format(new Date(a.start));
  const message=`Le recordamos su cita el ${when}. Para confirmar o reprogramar, contacte directamente a su consultorio.`;
- const key=`${appointmentId}:${a.start}:${hours}:${channel}`;
+ const key=`${org}:${appointmentId}:${destination}:${channel}:${hours}:${a.start}`;
  const {data:audit,error:reserveError}=await db.from('linkare_notification_deliveries').insert({organization_id:org,appointment_id:appointmentId,patient_id:a.patientId,channel,destination,status:'queued',dedupe_key:key,created_by:actor,metadata:{hours,scheduledStart:a.start}}).select('id').single();
  if(reserveError){if(reserveError.code==='23505')return {ok:true,duplicate:true,message:'Este aviso ya fue procesado. Revise el registro de entregas.'};throw reserveError;}
  try{

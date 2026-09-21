@@ -132,7 +132,7 @@ import {
   downloadPatientDocument,
   openPatientDocument,
 } from './services/documents.js';
-import { fetchReminderProviderStatus, sendReminderThroughProvider } from './services/reminders.js';
+import { fetchReminderProviderStatus, sendDailyAgendaToWhatsApp, sendReminderThroughProvider } from './services/reminders.js';
 import {
   createAppleCalendarFeed,
   fetchCalendarIntegrationStatus,
@@ -397,6 +397,13 @@ class App extends React.Component {
     if(!popup)return this.notify('El navegador bloqueó la ventana de impresión.','danger');popup.opener=null;
     const rows=(agenda.items||[]).map(item=>`<tr><td>${formatTime(item.start)}</td><td>${String(item.patientName||'').replace(/[<>&]/g,'')}</td><td>${item.currentMedication?`${String(item.currentMedication.name||'').replace(/[<>&]/g,'')} ${String(item.currentMedication.dose||'').replace(/[<>&]/g,'')}`:'Sin tratamiento activo'}</td><td>${String(item.relevantNote||'Sin cambio reciente').replace(/[<>&]/g,'')}</td></tr>`).join('');
     popup.document.write(`<!doctype html><html lang="es"><meta charset="utf-8"><title>Agenda del día</title><style>body{font:14px Arial;color:#17324d;padding:30px}h1{color:#05316e}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #ccd8e3;text-align:left}th{background:#05316e;color:#fff}</style><h1>Agenda del día</h1><p>${formatLongDate(agenda.date)}</p><table><thead><tr><th>Hora</th><th>Paciente</th><th>Medicamento actual</th><th>Último cambio relevante</th></tr></thead><tbody>${rows}</tbody></table><script>print()</script></html>`);popup.document.close();
+  };
+
+  sendDailyAgenda = async () => {
+    if(!this.state.reminderProviders.whatsapp)return this.notify('WhatsApp aún no está configurado para envíos reales.','danger');
+    this.setState({integrationBusy:true});
+    try{const result=await sendDailyAgendaToWhatsApp(this.state.remoteOrganizationId,this.state.dailyAgenda.date);this.setState({integrationBusy:false});this.notify(result.duplicate?'La agenda ya había sido procesada.':'Agenda aceptada por WhatsApp.');}
+    catch(error){this.setState({integrationBusy:false});this.notify(error.message||'No se pudo enviar la agenda.','danger');}
   };
 
   restoreProductionSession = async () => {
@@ -1661,7 +1668,7 @@ class App extends React.Component {
           <${LineChart} series=${[{ label: 'Síntomas relativos', points: symptomPoints }]}/>
           <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Muestra cambios registrados durante el tratamiento. No demuestra que un medicamento sea la causa del cambio.</div>
         </${Card}>
-        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div><button className="text-button" onClick=${this.printDailyAgenda}>Imprimir</button><button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
+        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div><button className="text-button" onClick=${this.printDailyAgenda}>Imprimir</button>${this.state.reminderProviders.whatsapp?html`<button className="text-button" disabled=${this.state.integrationBusy} onClick=${this.sendDailyAgenda}>Enviar por WhatsApp</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="date-hero"><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'long' }).format(new Date())}</span><strong>${new Date().getDate()}</strong><small>${new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' }).format(new Date())}</small></div>
           <div className="today-list">
             ${this.state.dailyAgendaLoading?html`<p>Cargando agenda segura…</p>`:(this.state.dailyAgenda?.items||[]).length ? this.state.dailyAgenda.items.map(item => {
@@ -2478,4 +2485,5 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 export { App };
 
 createRoot(document.getElementById('root')).render(html`<${AppErrorBoundary}><${App}/></${AppErrorBoundary}>`);
+
 

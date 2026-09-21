@@ -26,3 +26,10 @@ export async function fetchReminderProviderStatus(organizationId) {
   if (error) throw new Error(await extractFunctionMessage(error, 'No se pudo consultar los canales.'));
   return data?.providers || { email: false, sms: false, whatsapp: false };
 }
+
+export async function sendDailyAgendaToWhatsApp(organizationId,date){
+  const {data,error}=await invokeAuthedFunction('send-daily-agenda',{organizationId,date});
+  if(error)throw new Error(await extractFunctionMessage(error,'No se pudo enviar la agenda.'));
+  if(!data?.ok)throw new Error(data?.message||'No se pudo enviar la agenda.');
+  return data;
+}

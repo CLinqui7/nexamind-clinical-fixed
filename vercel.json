@@ -3,8 +3,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!assets/).*)",
+      "source": "/((?!api/|assets/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/reminder-dispatch",
+      "schedule": "0 14 * * *"
     }
   ],
   "headers": [

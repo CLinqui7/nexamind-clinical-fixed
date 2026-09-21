@@ -103,3 +103,6 @@ test('DB: daily agenda uses the requested date, current medication, tenant and c
  await permissions('secretary',{patientsView:true,appointmentsManage:true});await denied(()=>db.query('select public.linkare_daily_agenda_v1($1,$2::date)',[org,'2026-10-01']));
  await actor('other');await denied(()=>db.query('select public.linkare_daily_agenda_v1($1,$2::date)',[org,'2026-10-01']));
 });
+test('DB: reminder and daily agenda delivery keys are idempotent',async()=>{
+ await db.exec('reset role');const key=`${org}:appointment:+50370000000:whatsapp:24:2026-10-01T12:00:00Z`;await db.query("insert into public.linkare_notification_deliveries(organization_id,appointment_id,channel,destination,dedupe_key,status) values($1,'appointment','whatsapp','+50370000000',$2,'queued')",[org,key]);await assert.rejects(()=>db.query("insert into public.linkare_notification_deliveries(organization_id,appointment_id,channel,destination,dedupe_key,status) values($1,'appointment','whatsapp','+50370000000',$2,'queued')",[org,key]),e=>e.code==='23505');
+});
