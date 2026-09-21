@@ -5,27 +5,9 @@ export const appMode = 'production';
 export const productionMode = true;
 export const publicAppUrl = String(import.meta.env.VITE_PUBLIC_APP_URL || 'https://nexamind-clinical.vercel.app').trim().replace(/\/+$/, '');
 
-export function readableError(error) {
-  const text=String(error?.message || error || 'No se pudo completar la operación.');
-  const messages={
-    SUBSCRIPTION_REQUIRED:'Seleccione o renueve un plan para guardar registros. Puede consultar la información existente.',
-    REVISION_CONFLICT:'Otra persona modificó este registro. Sus cambios no se sobrescribieron. Copie sus anotaciones y recargue los datos antes de continuar.',
-    SIGNED_NOTE_IMMUTABLE:'La nota ya está firmada y no puede reemplazarse. Registre una nueva nota o adenda.',
-    INVALID_SIGNER:'Solo el autor autenticado puede firmar esta nota.',
-    ACCOUNT_DISABLED:'Su acceso fue desactivado por el responsable del consultorio.',
-    ACCESS_DENIED:'Su cuenta no tiene permiso para esta operación.',
-    EMAIL_NOT_CONFIRMED:'Confirme su correo antes de ingresar.',
-    INVITATION_EXPIRED:'La invitación venció. Solicite una nueva al médico.',
-    INVITATION_REQUIRED:'Necesita una invitación del consultorio para ingresar.',
-    LOGIN_REQUIRED:'Su sesión finalizó. Inicie sesión nuevamente.',
-    'Invalid login credentials':'El correo o la contraseña no son correctos.',
-    'Email not confirmed':'Revise su correo y confirme su cuenta.',
-    'Failed to fetch':'No se pudo conectar con el servidor. Sus cambios pendientes siguen en esta pantalla.',
-    'schema cache':'La base de datos requiere la migración de Linkare 3.0. Contacte a la administración.',
-  };
-  for(const [key,message] of Object.entries(messages)) if(text.includes(key)) return message;
-  return text.slice(0,360);
-}
+import { readableError } from '../domain/errors.js';
+export { readableError };
+
 async function rpc(name,args={}) {
   const {data,error}=await assertSupabaseConfigured().rpc(name,args);
   if(error) { const e=new Error(readableError(error));e.code=error.code;e.original=error.message;throw e; }
@@ -48,9 +30,17 @@ export async function getProductionSession() {
   const {data,error}=await supabase.auth.getSession();if(error)throw new Error(readableError(error));return data.session;
 }
 export async function signOutProduction() {
-  if(!supabase)return;
-  const {error}=await supabase.auth.signOut({scope:'local'}); if(error)throw new Error(readableError(error));
-  resetPersistence();
+  try {
+    if(!supabase)return;
+    const {error}=await supabase.auth.signOut({scope:'local'});
+    if(error){
+      // Explicitly clear only this project's Auth storage on an offline sign-out.
+      supabase.auth.stopAutoRefresh();
+      const storageKey=supabase.auth.storageKey;
+      if(storageKey)for(const suffix of ['', '-code-verifier','-user'])localStorage.removeItem(storageKey+suffix);
+      throw new Error(readableError(error));
+    }
+  } finally { resetPersistence(); }
 }
 export async function requestPasswordReset(email) {
   const {error}=await assertSupabaseConfigured().auth.resetPasswordForEmail(String(email).trim().toLowerCase(),{redirectTo:publicAppUrl+'/?auth=reset'});
@@ -66,10 +56,11 @@ export async function setAccountPassword(password) {
 }
 export async function changeAccountPassword(email,currentPassword,password) { await signInProduction(email,currentPassword);await setAccountPassword(password); }
 export function onAuthChange(callback) { return supabase?.auth.onAuthStateChange(callback)?.data?.subscription || null; }
+export function checkProductionAccess(organizationId) { return rpc('linkare_access_v3',{org:organizationId}); }
 export async function bootstrapAndLoadState(_unused,requestedOrganizationName=null) {
   const organizationId=await rpc('linkare_bootstrap_v3',{requested_name:requestedOrganizationName});
   const result=await rpc('linkare_load_state_v3',{org:organizationId});
-  if(!['doctor','secretary'].includes(result?.memberRole) || !result?.userId)throw new Error('No hay un rol habilitado para su cuenta.');
+  if(!['owner','doctor','nurse','secretary'].includes(result?.memberRole) || !result?.userId)throw new Error('No hay un rol habilitado para su cuenta.');
   return result;
 }
 

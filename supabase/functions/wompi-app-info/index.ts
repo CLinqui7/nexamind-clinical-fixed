@@ -6,7 +6,7 @@ Deno.serve(async request=>{
  if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);
  const reference=crypto.randomUUID();
  try{
-  const {organizationId}=await request.json();const {user,db}=await requireMember(request,organizationId,'doctor');await limitAction(db,'wompi-status',user.id,120);
+  const {organizationId}=await request.json();const {user,db}=await requireMember(request,organizationId,'owner');await limitAction(db,'wompi-status',user.id,120);
   const app=await wompiRequest('/Aplicativo',{method:'GET'},wompiConfig());
   // Do not expose the settlement account, provider keys, or the full provider response.
   return jsonResponse(request,{ok:true,app:{nombre:app.nombre||'Wompi',estaProductivo:app.estaProductivo===true}});

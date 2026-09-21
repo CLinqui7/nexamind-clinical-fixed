@@ -1,8 +1,34 @@
--- Read only. No clinical payloads or credentials are returned.
-select 'organizations' metric,count(*) value from public.organizations
-union all select 'subscriptions',count(*) from public.linkare_subscriptions_v3
-union all select 'organizations_without_subscription',count(*) from public.organizations o left join public.linkare_subscriptions_v3 s on s.organization_id=o.id where s.organization_id is null
-union all select 'paid_orders',count(*) from public.linkare_orders_v3 where status='paid'
-union all select 'patients_admin',count(*) from public.linkare_records where kind='patient_admin' and not deleted
-union all select 'patients_clinical',count(*) from public.linkare_records where kind='patient_clinical' and not deleted
-union all select 'appointments',count(*) from public.linkare_records where kind='appointment' and not deleted;
+-- Read-only aggregate report; excludes clinical contents, contacts and credentials.
+select jsonb_build_object(
+ 'organizations',(select count(*) from public.organizations),
+ 'users',(select count(*) from auth.users),
+ 'active_owners',(select count(*) from public.organization_members where active and role::text='owner'),
+ 'active_doctors',(select count(*) from public.organization_members where active and role::text='psychiatrist'),
+ 'active_nurses',(select count(*) from public.organization_members where active and role::text='clinical_assistant'),
+ 'active_secretaries',(select count(*) from public.organization_members where active and role::text='secretary'),
+  'entitled_organizations',(select count(*) from public.organizations where public.linkare_entitled_v3(id)),
+ 'patients_admin',(select count(*) from public.linkare_records where kind='patient_admin' and not deleted),
+ 'patients_clinical',(select count(*) from public.linkare_records where kind='patient_clinical' and not deleted),
+ 'appointments',(select count(*) from public.linkare_records where kind='appointment' and not deleted),
+ 'appointment_clinical',(select count(*) from public.linkare_records where kind='appointment_clinical' and not deleted),
+ 'alerts',(select count(*) from public.linkare_records where kind='alert' and not deleted),
+ 'documents',(select coalesce(sum(jsonb_array_length(case when jsonb_typeof(payload->'documents')='array' then payload->'documents' else '[]' end)),0) from public.linkare_records where kind='patient_clinical' and not deleted),
+ 'storage_documents',(select count(*) from storage.objects where bucket_id='patient-documents'),
+ 'audit_events',(select count(*) from public.linkare_audit_v3),
+ 'document_audit_events',(select count(*) from public.patient_document_audit),
+ 'notification_deliveries',(select count(*) from public.linkare_notification_deliveries),
+ 'calendar_integrations',(select count(*) from public.calendar_connections),
+ 'paid_orders',(select count(*) from public.linkare_orders_v3 where status='paid'),
+ 'orders',(select count(*) from public.linkare_orders_v3),
+ 'subscriptions',(select count(*) from public.linkare_subscriptions_v3),
+ 'members_without_auth_user',(select count(*) from public.organization_members m left join auth.users u on u.id=m.user_id where u.id is null),
+ 'organizations_without_owner',(select count(*) from public.organizations o where not exists(select 1 from public.organization_members m where m.organization_id=o.id and m.role::text='owner' and m.active)),
+ 'clinical_records_without_admin_patient',(select count(*) from public.linkare_records c where c.kind='patient_clinical' and not c.deleted and not exists(select 1 from public.linkare_records a where a.organization_id=c.organization_id and a.kind='patient_admin' and a.id=c.id and not a.deleted)),
+ 'duplicate_memberships',(select count(*) from (select organization_id,user_id from public.organization_members group by 1,2 having count(*)>1) duplicates),
+ 'records_without_organization',(select count(*) from public.linkare_records r left join public.organizations o on o.id=r.organization_id where o.id is null),
+ 'users_without_membership',(select count(*) from auth.users u where not exists(select 1 from public.organization_members m where m.user_id=u.id)),
+ 'client_can_edit_subscriptions',has_table_privilege('authenticated','public.linkare_subscriptions_v3','UPDATE'),
+ 'client_can_edit_memberships',has_table_privilege('authenticated','public.organization_members','UPDATE'),
+ 'documents_bucket_private',(select not public from storage.buckets where id='patient-documents'),
+ 'missing_rls',(select coalesce(jsonb_agg(c.relname),'[]') from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('organizations','organization_members','linkare_records','linkare_invites_v3','linkare_subscriptions_v3','linkare_orders_v3','linkare_plans_v3','linkare_audit_v3','patient_document_audit','linkare_notification_deliveries','calendar_connections') and not c.relrowsecurity)
+) as precheck;

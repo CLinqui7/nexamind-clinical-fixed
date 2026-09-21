@@ -1,0 +1,20 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.57.4": "05a369085eb4a4c99d85ccece97f0cf1e05357122e0e74373da1f0e91b014902"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@electric-sql/pglite@0.5.8",
+        "npm:@supabase/supabase-js@2.57.4",
+        "npm:htm@3.1.1",
+        "npm:playwright@1.63.0",
+        "npm:react-dom@19.2.7",
+        "npm:react@19.2.7",
+        "npm:typescript@5.9.3",
+        "npm:vite@7.3.6"
+      ]
+    }
+  }
+}

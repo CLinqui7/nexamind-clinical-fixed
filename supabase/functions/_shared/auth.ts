@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase-admin.ts';
+import { permissionAllowed } from './permissions.ts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -71,19 +72,11 @@ export async function requireMember(
     throw new ApiError(403, 'No tiene acceso a este consultorio.');
   }
 
-  const doctor = ['owner', 'doctor', 'psychiatrist'].includes(String(member.role));
-
-  if (permission === 'doctor' && !doctor) {
-    throw new ApiError(403, 'Esta operación está reservada al médico.');
-  }
-
-  if (
-    !['member', 'doctor'].includes(permission) &&
-    !doctor &&
-    !(member.role === 'secretary' && member.permissions?.[permission] === true)
-  ) {
-    throw new ApiError(403, 'Su cuenta no tiene este permiso.');
-  }
+  const doctor = ['owner','psychiatrist','doctor'].includes(String(member.role));
+  const allowed = permission === 'member'
+    ? ['owner','psychiatrist','doctor','clinical_assistant','secretary'].includes(String(member.role))
+    : permission === 'owner' ? member.role === 'owner' : permissionAllowed(member,permission);
+  if (!allowed) throw new ApiError(403, 'Su cuenta no tiene este permiso.');
 
   return { user, member, doctor, db };
 }

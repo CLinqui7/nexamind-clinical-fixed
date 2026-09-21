@@ -1,3 +1,4 @@
+import { readableError } from '../domain/errors.js';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim();
@@ -49,5 +50,9 @@ export async function invokeAuthedFunction(name, body = {}) {
       Authorization: `Bearer ${session.access_token}`,
     },
   });
+  if(error) {
+    console.error('Linkare integration',name,error.name);
+    error.message=readableError(error);
+  }
   return { data, error };
 }

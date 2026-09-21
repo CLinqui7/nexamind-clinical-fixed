@@ -1,4 +1,5 @@
 import { uid } from './utils.js';
+import { permissionAllowed } from './domain/permissions.js';
 
 const nowIso = () => new Date().toISOString();
 const clean = value => String(value ?? '').trim();
@@ -19,14 +20,14 @@ export const PERMISSION_CATALOG = [
   { key: 'medicationsManage', group: 'Información clínica', label: 'Gestionar medicamentos', description: 'Agregar, pausar, finalizar y cambiar dosis.' },
   { key: 'prescriptionsCreate', group: 'Documentos', label: 'Generar recetas', description: 'Crear e imprimir recetas membretadas.' },
   { key: 'documentsView', group: 'Documentos', label: 'Ver archivos clínicos', description: 'Consultar documentos adjuntos al expediente.' },
-  { key: 'documentsManage', group: 'Documentos', label: 'Subir y eliminar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
-  { key: 'consultationsManage', group: 'Información clínica', label: 'Usar libreta de consulta', description: 'Iniciar, guardar y firmar notas de consulta.' },
+  { key: 'documentsManage', group: 'Documentos', label: 'Subir y archivar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
+  { key: 'consultationsManage', group: 'Información clínica', label: 'Usar libreta de consulta', description: 'Iniciar y guardar notas; solo un médico puede firmarlas.' },
   { key: 'postmortemExport', group: 'Supervisión', label: 'Exportar resumen post mortem', description: 'Generar el paquete documental para revisión médico-legal.' },
   { key: 'alertsView', group: 'Supervisión', label: 'Ver alertas', description: 'Consultar y marcar señales clínicas revisadas.' },
   { key: 'analyticsView', group: 'Supervisión', label: 'Ver resultados generales', description: 'Consultar analíticas agregadas.' },
   { key: 'exportsManage', group: 'Supervisión', label: 'Exportar información', description: 'Descargar CSV, ICS y respaldos.' },
   { key: 'settingsManage', group: 'Administración', label: 'Configurar clínica', description: 'Editar identidad, recordatorios y apariencia.' },
-  { key: 'usersManage', group: 'Administración', label: 'Gestionar usuarios', description: 'Crear secretarias y asignar permisos.' },
+  { key: 'usersManage', group: 'Administración', label: 'Gestionar usuarios', description: 'Administrar equipo y permisos (solo propietario).' },
 ];
 
 export const ALL_PERMISSIONS = Object.fromEntries(PERMISSION_CATALOG.map(item => [item.key, true]));
@@ -61,10 +62,7 @@ export function getActiveUser(data) {
 }
 
 export function hasPermission(data, permission) {
-  const user = getActiveUser(data);
-  if (!user) return false;
-  if (user.role === 'doctor' || user.role === 'owner') return true;
-  return user.role === 'secretary' && ['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage'].includes(permission) && user.permissions?.[permission] === true;
+  return permissionAllowed(getActiveUser(data), permission);
 }
 
 export function clinicProfileDefaults(data) {
@@ -90,6 +88,7 @@ export function secretaryFormDefaults() {
     email: '',
     phone: '',
     title: 'Secretaría clínica',
+    role: 'secretary',
     password: '',
     confirmPassword: '',
     permissions: { ...DEFAULT_SECRETARY_PERMISSIONS },
@@ -174,7 +173,7 @@ export function savePracticeProfile(data, draft) {
       prescriptionFooter: clean(draft.prescriptionFooter),
       updatedAt: nowIso(),
     },
-    users: (data.users || []).map(user => user.role === 'doctor'
+    users: (data.users || []).map(user => user.role === 'owner' && user.id===data.settings.activeUserId
       ? { ...user, name: clinician, title: clean(draft.specialty) || 'Psiquiatría', avatar: draft.doctorPhoto || user.avatar || '' }
       : user),
   };

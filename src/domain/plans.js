@@ -5,7 +5,7 @@ export const PLAN_OPTIONS = Object.freeze([
   { code:'annual',label:'Anual',amount:400,months:12,cycle:'año',description:'Doce meses en un solo pago.' },
 ]);
 export function subscriptionView(subscription, now=new Date()) {
-  if(subscription?.complimentary_access===true)return {label:'Plan gratuito',tone:'success',days:null,active:true,free:true};
+  if(subscription?.complimentary_access === true) return {label:'Plan gratuito',tone:'success',days:null,active:true,free:true};
   if(!subscription?.current_period_end) return {label:'Sin suscripción activa',tone:'neutral',days:0,active:false};
   const end=new Date(subscription.current_period_end);
   const delta=end-now;if(!Number.isFinite(delta))return {label:'Periodo no verificado',tone:'warning',days:0,active:false};

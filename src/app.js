@@ -1,3 +1,4 @@
+import { permissionAllowed, PERMISSION_KEYS, ROLE_LABELS, OWNER_ONLY, defaultPermissions, changePermission } from './domain/permissions.js';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import htm from 'htm';
@@ -97,7 +98,7 @@ import {
   signOutProduction,
   bootstrapAndLoadState,
   saveProductionState,
-  setPersistenceBaseline, resetPersistence, readableError, onAuthChange,
+  setPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
 } from './services/appState.js';
 import {
@@ -363,16 +364,16 @@ class App extends React.Component {
     if(epoch!==this.authEpoch || !this.mounted)return;
     const data=normalizeData(remote.payload);
     const user=data.users.find(u=>u.id===session.user.id && u.active);
-    if(!user || !['doctor','secretary'].includes(user.role))throw new Error('Su cuenta no tiene acceso habilitado.');
+    if(!user || !['owner','doctor','nurse','secretary'].includes(user.role))throw new Error('Su cuenta no tiene acceso habilitado.');
     data.settings.activeUserId=user.id;
     this.persistedData=data;
-    setPersistenceBaseline(remote.organizationId,data,remote.revisions,user.role==='doctor');
+    setPersistenceBaseline(remote.organizationId,data,remote.revisions,Object.fromEntries(PERMISSION_KEYS.map(k=>[k,permissionAllowed(user,k)])));
     clearTimeout(this.loadingTimer);
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
-        if(user.role==='doctor'){this.loadSubscriptionInvoices();this.refreshTeam();}
+        if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.loadIntegrationStatus();this.checkConsultationPrompt();
       });
   };
@@ -402,11 +403,14 @@ class App extends React.Component {
     window.addEventListener('offline',this.handleOffline);
     window.addEventListener('beforeunload',this.warnUnsaved);
     this.consultationPromptTimer=setInterval(this.checkConsultationPrompt,30000);
-    this.authSubscription=onAuthChange((event)=>{
+    this.accessTimer=setInterval(this.validateSessionAccess,30000);
+    window.addEventListener('focus',this.validateSessionAccess);
+    this.authSubscription=onAuthChange((event,session)=>{
       // Do not await SDK calls inside this callback: Supabase holds its auth lock.
       setTimeout(()=>{
         if(!this.mounted)return;
         if(event==='SIGNED_OUT')this.clearSessionView();
+        if(event==='SIGNED_IN' && this.state.authenticatedUserId && session?.user?.id!==this.state.authenticatedUserId){this.clearSessionView();this.restoreProductionSession();}
         if(event==='PASSWORD_RECOVERY')this.setState({authenticatedUserId:null,authView:'set-password',productionLoading:false});
       },0);
     });
@@ -418,6 +422,7 @@ class App extends React.Component {
     window.removeEventListener('keydown',this.handleKeyDown);
     window.removeEventListener('online',this.handleOnline);window.removeEventListener('offline',this.handleOffline);window.removeEventListener('beforeunload',this.warnUnsaved);
     this.authSubscription?.unsubscribe();
+    clearInterval(this.accessTimer);window.removeEventListener('focus',this.validateSessionAccess);
     for(const timer of [this.persistTimer,this.toastTimer,this.loadingTimer,this.encounterSaveIndicatorTimer])clearTimeout(timer);
     clearInterval(this.consultationPromptTimer);clearInterval(this.encounterTimer);document.body.style.overflow='';
   }
@@ -492,9 +497,31 @@ class App extends React.Component {
     catch(error){this.setState({loginBusy:false,productionLoading:false,loginError:readableError(error)});}
   };
 
+  validateSessionAccess = async () => {
+    if(!this.state.remoteReady||!navigator.onLine||this.checkingAccess)return;
+    const epoch=this.authEpoch;this.checkingAccess=true;
+    try {
+      const access=await checkProductionAccess(this.state.remoteOrganizationId);
+      if(epoch!==this.authEpoch)return;
+      const user=this.activeUser();
+      if(user && (access.role!==user.role || JSON.stringify(access.permissions)!==JSON.stringify(user.permissions))){
+        this.clearSessionView();await this.restoreProductionSession();
+      }
+    } catch(error) {
+      if(epoch===this.authEpoch && /ACCOUNT_DISABLED|ACCESS_DENIED/.test(error.original||'')){
+        this.clearSessionView();await signOutProduction().catch(()=>{});
+        this.setState({authNotice:'El propietario cambió o desactivó su acceso. Inicie sesión nuevamente.'});
+      }
+    } finally {this.checkingAccess=false;}
+  };
+
   logoutUser = async () => {
-    try{if(['dirty','saving','error','offline'].includes(this.state.remoteSaveStatus))await this.flushChanges();await signOutProduction();this.clearSessionView();}
-    catch(error){this.notify('No se cerró la sesión: hay cambios pendientes. '+readableError(error),'danger');}
+    if(this.loggingOut)return;this.loggingOut=true;
+    let notice='';
+    try { if(['dirty','saving','error','offline'].includes(this.state.remoteSaveStatus))await this.flushChanges(); }
+    catch(error) { notice='No fue posible guardar los últimos cambios. '+readableError(error); }
+    try { await signOutProduction(); } catch(error) { notice=notice||readableError(error); }
+    finally { this.clearSessionView();this.loggingOut=false;if(notice)this.setState({authNotice:notice}); }
   };
 
   openAccount = () => {
@@ -522,7 +549,7 @@ class App extends React.Component {
     {title:'Pacientes',text:'Busque un paciente o registre uno nuevo. La secretaría utiliza únicamente los datos administrativos autorizados.'},
     ...(this.can('clinicalView')?[{title:'Expediente',text:'Medicamentos, dosis, evolución, documentos y consultas están reunidos en la ficha. Las notas firmadas se abren con Ver nota.'},{title:'Libreta',text:'Durante la consulta, escriba sus anotaciones. Compruebe el estado de guardado antes de cerrar. Una nota firmada no puede reemplazarse.'}]:[]),
     {title:'Agenda',text:'Cree, confirme o reprograme citas. Prepare recordatorios según las preferencias autorizadas por el paciente.'},
-    ...(this.can('settingsManage')?[{title:'Equipo y plan',text:'Invite a su equipo desde Configuración. El plan gratuito permite usar todos los módulos según los permisos asignados.'}]:[])
+    ...(this.can('settingsManage')?[{title:'Equipo y plan',text:'Agregue doctores, enfermería y secretaría desde Configuración. El plan gratuito habilita todos los módulos según los permisos asignados.'}]:[])
   ];
 
   startTour = () => this.openHelp();
@@ -555,7 +582,7 @@ class App extends React.Component {
 
   can = permission => {
     const user=this.activeUser();
-    const allowed=!!user&&(user.role==='doctor'||(user.role==='secretary'&&SECRETARY_PERMISSIONS.includes(permission)&&user.permissions?.[permission]===true));
+    const allowed=permissionAllowed(user,permission);
     return allowed;
   };
 
@@ -570,7 +597,7 @@ class App extends React.Component {
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
   };
 
-  closeModal = () => this.setState({ modal: null, modalError: '' });
+  closeModal = () => {if(!this.state.formSaving&&!this.state.documentBusy)this.setState({ modal: null, modalError: '' });};
 
   updateDraft = (key, value) => {
     this.setState(prev => ({ modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, [key]: value } } : null, modalError: '' }));
@@ -582,7 +609,7 @@ class App extends React.Component {
         ...prev.modal,
         draft: {
           ...prev.modal.draft,
-          permissions: { ...(prev.modal.draft.permissions || {}), [key]: value },
+          permissions: changePermission(prev.modal.draft.permissions || {},key,value),
         },
       } : null,
       modalError: '',
@@ -592,7 +619,7 @@ class App extends React.Component {
   openNewPatient = () => {
     if (!this.can('patientsCreate')) return this.permissionDenied();
     const draft = patientFormDefaults();
-    if (!this.can('clinicalView')) {
+    if (!this.can('clinicalEdit')) {
       draft.diagnosis = 'Pendiente de valoración médica';
       draft.diagnosisCode = 'Pendiente';
       draft.initialScore = '';
@@ -668,7 +695,7 @@ class App extends React.Component {
 
   checkConsultationPrompt = () => {
     const user = this.activeUser();
-    if (!this.state.authenticatedUserId || !user || !['doctor', 'owner'].includes(user.role) || this.state.activeEncounter) return;
+    if (!this.state.authenticatedUserId || !user || !this.can('consultationsManage') || this.state.activeEncounter) return;
     const appointment = appointmentReadyForConsultation(this.state.data, new Date());
     if (!appointment || appointment.id === this.state.promptDismissedFor) {
       if (!appointment && this.state.appointmentPrompt) this.setState({ appointmentPrompt: null });
@@ -735,17 +762,20 @@ class App extends React.Component {
   };
 
   finishConsultation = async () => {
+    if(!this.can('consultationsManage') || !['owner','doctor'].includes(this.activeUser()?.role))return this.permissionDenied();
+    const epoch=this.authEpoch;
     if(this.state.signing)return;const current=this.state.activeEncounter;if(!current)return;
     if(current.__readOnly||current.signedAt)return;
     if(![current.freeNotes,current.evolution,current.mentalStatus,current.clinicalImpression,current.plan].some(v=>String(v||'').trim()))return this.notify('Escriba al menos una anotación antes de finalizar.','danger');
     const result=upsertEncounter(this.state.data,current.patientId,current,{finalize:true,user:this.activeUser()});
     this.setState({data:result.data,signing:true},async()=>{
-      try{await this.flushChanges();clearInterval(this.encounterTimer);this.setState({activeEncounter:null,signing:false,view:'patient',selectedPatientId:current.patientId,patientTab:'consultations'});this.notify('Nota firmada y guardada.');}
+      try{await this.flushChanges();if(epoch!==this.authEpoch)return;clearInterval(this.encounterTimer);this.setState({activeEncounter:null,signing:false,view:'patient',selectedPatientId:current.patientId,patientTab:'consultations'});this.notify('Nota firmada y guardada.');}
       catch(e){this.setState({signing:false});this.notify('La firma no pudo confirmarse. No cierre la ventana. '+readableError(e),'danger');}
     });
   };
 
   closeConsultationNotebook = () => {
+    const epoch=this.authEpoch;
     const encounter = this.state.activeEncounter;
     if (!encounter) return this.setView('dashboard');
     const signed = ['completed', 'signed'].includes(String(encounter.status || '').toLowerCase()) || Boolean(encounter.signedAt);
@@ -757,7 +787,7 @@ class App extends React.Component {
       patientTab: 'consultations',
       encounterAutosaveStatus: 'saved',
     }, () => {
-      if (!signed && !encounter.__readOnly) this.notify('La nota quedó guardada como borrador.');
+      if (!signed && !encounter.__readOnly) this.flushChanges().then(()=>{if(epoch===this.authEpoch)this.notify('La nota quedó guardada como borrador.');}).catch(()=>{if(epoch===this.authEpoch)this.notify('La nota aún no se guardó. Revise el aviso de sincronización.','danger');});
     });
   };
 
@@ -782,6 +812,7 @@ class App extends React.Component {
   savePatientDocumentForm = async event => {
     event.preventDefault();
     if (this.state.documentBusy) return;
+    const epoch=this.authEpoch;const organizationId=this.state.remoteOrganizationId;
     const modal = this.state.modal;
     const patient = this.state.data.patients.find(item => item.id === modal?.patientId);
     if (!patient) return this.setState({ modalError: 'El paciente ya no está disponible.' });
@@ -790,9 +821,10 @@ class App extends React.Component {
     try {
       if (!this.can('documentsManage')) throw new Error('Acceso restringido.');
       await this.flushChanges();
+      if(epoch!==this.authEpoch)return;
       const document = await createPatientDocument({
         file: modal.draft.file,
-        organizationId: this.state.remoteOrganizationId,
+        organizationId,
         patientId: patient.id,
         uploadedBy: this.activeUser()?.id,
         category: modal.draft.category,
@@ -800,6 +832,7 @@ class App extends React.Component {
         clinicalDate: modal.draft.clinicalDate,
         confidentiality: modal.draft.confidentiality,
       });
+      if(epoch!==this.authEpoch)return;
       const timestamp = new Date().toISOString();
       const data = {
         ...this.state.data,
@@ -858,11 +891,13 @@ class App extends React.Component {
 
   loadIntegrationStatus = async () => {
     if (!productionMode || !this.state.remoteOrganizationId || !supabaseConfigured) return;
+    const epoch=this.authEpoch;
     try {
       const [calendarStatus, reminderProviders] = await Promise.all([
-        fetchCalendarIntegrationStatus(this.state.remoteOrganizationId).catch(() => this.state.calendarStatus),
-        fetchReminderProviderStatus(this.state.remoteOrganizationId).catch(() => this.state.reminderProviders),
+        this.can('appointmentsManage')?fetchCalendarIntegrationStatus(this.state.remoteOrganizationId).catch(() => null):Promise.resolve(null),
+        this.can('remindersManage')?fetchReminderProviderStatus(this.state.remoteOrganizationId).catch(() => null):Promise.resolve(null),
       ]);
+      if(epoch!==this.authEpoch)return;
       this.setState({ calendarStatus: calendarStatus || this.state.calendarStatus, reminderProviders: reminderProviders || this.state.reminderProviders });
     } catch (_) { /* Integrations remain optional. */ }
   };
@@ -875,10 +910,12 @@ class App extends React.Component {
   };
 
   createAppleFeed = async () => {
+    const epoch=this.authEpoch;
     if (!this.state.remoteOrganizationId) return this.notify('Inicie sesión con una cuenta real para crear el calendario privado.', 'danger');
     this.setState({ integrationBusy: true });
     try {
       const result = await createAppleCalendarFeed(this.state.remoteOrganizationId);
+      if(epoch!==this.authEpoch)return;
       await navigator.clipboard.writeText(result.feedUrl);
       this.setState(prev => ({ integrationBusy: false, calendarStatus: { ...prev.calendarStatus, apple: { connected: true, feedUrl: result.feedUrl } } }));
       this.notify('Enlace privado copiado. Péguelo en Apple Calendar como calendario suscrito.');
@@ -889,11 +926,14 @@ class App extends React.Component {
   };
 
   syncGoogleAppointment = async appointment => {
+    const epoch=this.authEpoch;const organizationId=this.state.remoteOrganizationId;
     if (!this.state.remoteOrganizationId) return window.open(googleCalendarUrl(appointment), '_blank', 'noopener,noreferrer');
     this.setState({ integrationBusy: true });
     try {
       await this.flushChanges();
-      const result = await syncAppointmentToGoogle(this.state.remoteOrganizationId, appointment);
+      if(epoch!==this.authEpoch)return;
+      const result = await syncAppointmentToGoogle(organizationId, appointment);
+      if(epoch!==this.authEpoch)return;
       const data = {
         ...this.state.data,
         appointments: this.state.data.appointments.map(item => item.id === appointment.id ? { ...item, googleEventId: result.event?.id || item.googleEventId, googleEventUrl: result.event?.htmlLink || item.googleEventUrl, updatedAt: new Date().toISOString() } : item),
@@ -984,7 +1024,7 @@ class App extends React.Component {
           <span>${signed || readOnly ? html`<span className="notebook-timer">${durationMinutes} min</span>` : html`<${ElapsedClock} start=${encounter.startedAt}/>`}</span>
           <span role="status" className=${`autosave-state ${signed ? 'signed' : this.state.remoteSaveStatus}`}><${Icon} name=${signed ? 'lock' : this.state.remoteSaveStatus === 'error' ? 'alert' : 'check'} size=${15}/>${signed ? `Firmada ${formatDateTime(encounter.signedAt || encounter.endedAt)}` : readOnly ? 'Solo lectura' : this.state.remoteSaveStatus === 'error' ? 'Sin guardar: revise el aviso' : ['dirty','saving'].includes(this.state.remoteSaveStatus) ? 'Guardando…' : this.state.networkOffline ? 'Sin conexión: no cierre la página' : 'Guardado en el servidor'}</span>
           ${!readOnly ? html`<${Button} tone="secondary" icon="paperclip" onClick=${() => this.openDocumentUpload(patient)}>Adjuntar</${Button}>` : null}
-          ${!readOnly ? html`<${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}>` : html`<${Button} tone="secondary" icon="chevronLeft" onClick=${this.closeConsultationNotebook}>Volver al expediente</${Button}>`}
+          ${!readOnly && ['owner','doctor'].includes(this.activeUser()?.role) ? html`<${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}>` : html`<${Button} tone="secondary" icon="chevronLeft" onClick=${this.closeConsultationNotebook}>Volver al expediente</${Button}>`}
         </div>
       </header>
       <div className="notebook-layout">
@@ -1029,8 +1069,9 @@ class App extends React.Component {
 
   loadSubscriptionInvoices = async () => {
     if(!this.state.remoteOrganizationId||!this.can('settingsManage'))return;
+    const epoch=this.authEpoch;
     this.setState({billingLoading:true,billingError:''});
-    try{const billingData=await fetchBilling(this.state.remoteOrganizationId);this.setState({billingData,billingLoading:false,subscriptionWritable:subscriptionView(billingData.subscription).active,complimentaryAccess:billingData.subscription?.complimentary_access===true});}
+    try{const billingData=await fetchBilling(this.state.remoteOrganizationId);if(epoch!==this.authEpoch)return;this.setState({billingData,billingLoading:false,subscriptionWritable:subscriptionView(billingData.subscription).active,complimentaryAccess:billingData.subscription?.complimentary_access===true});}
     catch(e){this.setState({billingError:readableError(e),billingLoading:false});}
   };
 
@@ -1072,7 +1113,7 @@ class App extends React.Component {
 
   openUserPermissions = user => {
     if (!this.can('usersManage')) return this.permissionDenied();
-    this.setState({ modal: { type: 'userPermissions', userId: user.id, draft: { name: user.name, email: user.email, phone: user.phone || '', title: user.title || '', password: '', confirmPassword: '', permissions: { ...(user.permissions || {}) } } }, modalError: '' });
+    this.setState({ modal: { type: 'userPermissions', userId: user.id, draft: { name: user.name, email: user.email, phone: user.phone || '', title: user.title || '', role: user.role, password: '', confirmPassword: '', permissions: { ...(user.permissions || {}) } } }, modalError: '' });
   };
 
   openHelp = () => this.setState({modal:{type:'help',draft:{}},modalError:'',tourIndex:0});
@@ -1101,13 +1142,15 @@ class App extends React.Component {
   };
 
   handlePatientPhotoUpload = async (patientId, event) => {
+    const epoch=this.authEpoch;
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     if (!this.can('patientsEdit')) return this.permissionDenied();
     try {
       const photo = await optimizeImageFile(file, { maxDimension: 560, quality: 0.82 });
-      this.setState(prev => ({ data: savePatientPhoto(prev.data, patientId, photo) }), () => this.notify('Fotografía del paciente actualizada.'));
+      if(epoch!==this.authEpoch)return;
+      await this.persistDataUpdate({data:savePatientPhoto(this.state.data,patientId,photo)},'Fotografía del paciente actualizada.');
     } catch (error) {
       this.notify(error instanceof Error ? error.message : 'No se pudo guardar la fotografía.', 'danger');
     }
@@ -1115,7 +1158,7 @@ class App extends React.Component {
 
   removePatientPhoto = patientId => {
     if (!this.can('patientsEdit')) return this.permissionDenied();
-    this.setState(prev => ({ data: savePatientPhoto(prev.data, patientId, '') }), () => this.notify('Fotografía eliminada.'));
+    this.persistDataUpdate({data:savePatientPhoto(this.state.data,patientId,'')},'Fotografía eliminada.');
   };
 
   updatePrescriptionItem = (itemId, key, value) => {
@@ -1157,10 +1200,12 @@ class App extends React.Component {
       if(epoch!==this.authEpoch||!this.mounted)return;
       this.persistedData=patch.data;
       this.setState({...patch,formSaving:false,remoteSaveStatus:'saved'},()=>this.notify(message));
+      return true;
     } catch(error) {
       if(epoch!==this.authEpoch||!this.mounted)return;
       const detail=readableError(error);
       this.setState({formSaving:false,remoteSaveStatus:'error',saveError:detail,modalError:'No se guardó el registro. '+detail});
+      return false;
     } finally {if(epoch===this.authEpoch)this.savingForm=false;}
   };
 
@@ -1276,22 +1321,21 @@ class App extends React.Component {
     catch(e){this.setState({teamBusy:false,modalError:readableError(e)});}
   };
 
-  savePrescriptionForm = event => {
+  savePrescriptionForm = async event => {
     event.preventDefault();
     try {
       const { patientId, draft } = this.state.modal;
       const result = savePrescription(this.state.data, patientId, draft);
       const patient = this.state.data.patients.find(item => item.id === patientId);
       const printWindow = window.open('', '_blank', 'width=920,height=980');
+      const saved=await this.persistDataUpdate({data:result.data,patientTab:'prescriptions',modal:null,modalError:''},printWindow?'Receta guardada y abierta para impresión.':'Receta guardada. Use Imprimir en la pestaña Recetas.');
+      if(!saved){printWindow?.close();return;}
       if (printWindow && patient) {
         printWindow.opener = null;
     printWindow.document.open();
         printWindow.document.write(buildPrescriptionPrintHtml(this.state.data, patient, result.prescription));
         printWindow.document.close();
       }
-      this.setState({ data: result.data, patientTab: 'prescriptions', modal: null, modalError: '' }, () => {
-        this.notify(printWindow ? 'Receta guardada y abierta para impresión.' : 'Receta guardada. Use Imprimir en la pestaña Recetas.');
-      });
     } catch (error) { this.handleFormError(error); }
   };
 
@@ -1344,10 +1388,10 @@ class App extends React.Component {
   updateAppointmentStatus = (appointmentId, status) => {
     if (!this.can('appointmentsManage')) return this.permissionDenied();
     const next = changeAppointmentStatus(this.state.data, appointmentId, status);
-    this.setState(prev => ({
+    this.persistDataUpdate({
       data: next,
-      appointmentDetails: prev.appointmentDetails?.id === appointmentId ? { ...prev.appointmentDetails, status } : prev.appointmentDetails,
-    }), () => this.notify(`Cita marcada como ${statusLabel(status).toLowerCase()}.`));
+      appointmentDetails: this.state.appointmentDetails?.id === appointmentId ? { ...this.state.appointmentDetails, status } : this.state.appointmentDetails,
+    }, `Cita marcada como ${statusLabel(status).toLowerCase()}.`);
   };
 
   deleteAppointment = appointmentId => {
@@ -1358,12 +1402,12 @@ class App extends React.Component {
 
   acknowledgeAlert = alertId => {
     if (!this.can('alertsView')) return this.permissionDenied();
-    return this.setState({ data: updateAlertStatus(this.state.data, alertId, 'acknowledged') }, () => this.notify('Alerta marcada como revisada.'));
+    return this.persistDataUpdate({data:updateAlertStatus(this.state.data,alertId,'acknowledged')},'Alerta marcada como revisada.');
   };
 
   reopenAlert = alertId => {
     if (!this.can('alertsView')) return this.permissionDenied();
-    return this.setState({ data: updateAlertStatus(this.state.data, alertId, 'open') }, () => this.notify('Alerta reabierta.'));
+    return this.persistDataUpdate({data:updateAlertStatus(this.state.data,alertId,'open')},'Alerta reabierta.');
   };
 
   changeMedicationStatus = (patient, medication, status) => this.openMedicationStatus(patient, medication, status);
@@ -1433,7 +1477,7 @@ class App extends React.Component {
       ['dashboard', 'overview', 'Inicio', true],
       ['patients', 'patients', 'Pacientes', this.can('patientsView')],
       ['agenda', 'calendar', 'Agenda', this.can('appointmentsManage')],
-      ['payments', 'insurance', 'Mi plan', user?.role === 'owner' || user?.role === 'doctor'],
+      ['payments', 'insurance', 'Mi plan', user?.role === 'owner'],
       ['analytics', 'analytics', 'Resultados', this.can('analyticsView')],
       ['alerts', 'alert', 'Alertas', this.can('alertsView')],
     ].filter(item => item[3]);
@@ -1495,7 +1539,7 @@ class App extends React.Component {
   }
 
   renderDashboard() {
-    if (this.activeUser()?.role === 'secretary') return this.renderSecretaryDashboard();
+    if (!this.can('clinicalView')) return this.renderSecretaryDashboard();
     const { patients, appointments, alerts } = this.state.data;
     const summaries = patients.map(patient => getAssessmentSummary(patient)).filter(Boolean);
     const responseRate = summaries.length ? summaries.filter(summary => summary.improvement >= 50).length / summaries.length * 100 : 0;
@@ -1637,6 +1681,7 @@ class App extends React.Component {
           ${reminders.length ? html`<div className="reminder-mini-list">${reminders.map(reminder => html`<div key=${reminder.id} className=${`reminder-mini reminder-${reminder.status}`}><span><${Icon} name="message" size=${16}/></span><div><b>${reminderLabel(reminder.hours)}</b><small>${formatDateTime(reminder.appointment.start)}</small></div>${this.can('remindersManage') && reminder.status === 'due' ? html`<button className="text-button" onClick=${() => this.sendReminderWhatsApp(reminder)}>Enviar</button>` : null}</div>`)}</div>` : html`<${EmptyState} icon="check" title="Sin recordatorios pendientes" text="Se crearán según la configuración de la clínica."/>`}
         </${Card}>
       </div>
+      ${this.can('documentsView') ? this.renderDocumentsTab(patient) : null}
     </div>`;
   }
 
@@ -1792,12 +1837,8 @@ class App extends React.Component {
   }
 
   updateSetting = (key, value) => {
-    this.setState(prev => ({
-      data: {
-        ...prev.data,
-        settings: { ...prev.data.settings, [key]: value },
-      },
-    }), () => this.notify('Preferencia actualizada.'));
+    if(!this.can('settingsManage'))return this.permissionDenied();
+    this.persistDataUpdate({data:{...this.state.data,settings:{...this.state.data.settings,[key]:value}}},'Preferencia actualizada.');
   };
 
   renderAgenda() {
@@ -1961,7 +2002,7 @@ class App extends React.Component {
   renderPayments() {
     if(!this.can('settingsManage'))return html`<${EmptyState} icon="lock" title="Acceso restringido" text="La suscripción corresponde al médico responsable."/>`;
     const {plans,subscription,orders}=this.state.billingData;const status=subscriptionView(subscription);
-    if(this.state.complimentaryAccess||status.free)return html`<div className="view-enter"><${PageHeader} title="Mi plan" subtitle="Acceso completo habilitado"/><section className="subscription-hero"><div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>Plan gratuito</h2><p>Expedientes, consultas, agenda, documentos y equipo del consultorio.</p><${Badge} tone="success">Acceso completo</${Badge}></div><div className="subscription-status-card"><span>Precio</span><b>US$0</b><small>Todos los módulos disponibles según los permisos de su cuenta.</small></div></section></div>`;
+    if(this.state.complimentaryAccess || status.free)return html`<div className="view-enter"><${PageHeader} title="Mi plan" subtitle="Acceso completo habilitado"/><section className="subscription-hero"><div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>Plan gratuito</h2><p>Expedientes, consultas, agenda, documentos y equipo del consultorio.</p><${Badge} tone="success">Acceso completo</${Badge}></div><div className="subscription-status-card"><span>Precio</span><b>US$0</b><small>Puede usar todos los módulos según los permisos de su cuenta.</small></div></section></div>`;
     const current=plans.find(p=>p.code===subscription?.plan_code);const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
     const pending=orders.find(o=>['pending','creating','review'].includes(o.status));const ws=this.state.wompiStatus;
     return html`<div className="view-enter"><${PageHeader} title="Mi plan Linkare" subtitle="El mismo consultorio, con la modalidad de pago que mejor le convenga." actions=${html`<${Button} tone="secondary" onClick=${this.loadSubscriptionInvoices} disabled=${this.state.billingLoading}>Actualizar estado</${Button}>`}/>
@@ -1980,8 +2021,8 @@ class App extends React.Component {
       <div className="settings-grid">
         <${Card} title="Identidad del consultorio"><h3>${org.name}</h3><p>${org.clinician}</p><p>${org.email}</p><${Button} icon="edit" onClick=${this.openClinicProfile}>Editar datos y logotipo</${Button}></${Card}>
         <${Card} title="Lectura y movimiento"><label className="setting-row"><span>Texto grande</span><input type="checkbox" checked=${!!s.largeText} onChange=${e=>this.updateSetting('largeText',e.target.checked)}/></label><label className="setting-row"><span>Reducir movimiento</span><input type="checkbox" checked=${!!s.reducedMotion} onChange=${e=>this.updateSetting('reducedMotion',e.target.checked)}/></label></${Card}>
-        <${Card} className="settings-wide" title="Equipo del consultorio" action=${html`<${Button} icon="userPlus" onClick=${this.openSecretary}>Invitar a secretaría</${Button}>`}>
-          <div className="team-list">${this.state.data.users.map(u=>html`<article className="team-member" key=${u.id}><${UserAvatar} user=${u}/><div className="team-member-main"><b>${u.name}</b><small>${u.email}</small><span>${u.role==='doctor'?'Médico':'Secretaría'} · ${u.active?'Activo':'Sin acceso'}</span></div>${u.role==='secretary'?html`<div className="team-actions"><${Button} tone="secondary" onClick=${()=>this.openUserPermissions(u)}>Permisos</${Button}><${Button} tone="secondary" onClick=${()=>this.toggleTeamUser(u.id)}>${u.active?'Desactivar':'Activar'}</${Button}></div>`:null}</article>`)}</div>
+        <${Card} className="settings-wide" title="Equipo del consultorio" action=${html`<${Button} icon="userPlus" onClick=${this.openSecretary}>Agregar usuario</${Button}>`}>
+          <div className="team-list">${this.state.data.users.map(u=>html`<article className="team-member" key=${u.id}><${UserAvatar} user=${u}/><div className="team-member-main"><b>${u.name}</b><small>${u.email}</small><span>${ROLE_LABELS[u.role]||'Sin acceso'} · ${u.active?'Activo':'Sin acceso'}</span></div>${u.role!=='owner'?html`<div className="team-actions"><${Button} tone="secondary" onClick=${()=>this.openUserPermissions(u)}>Permisos</${Button}><${Button} tone="secondary" onClick=${()=>this.toggleTeamUser(u.id)}>${u.active?'Desactivar':'Activar'}</${Button}></div>`:null}</article>`)}</div>
           ${this.state.teamInvites.length?html`<h3>Invitaciones pendientes</h3><div className="team-list">${this.state.teamInvites.map(i=>html`<article className="team-member" key=${i.id}><div className="team-member-main"><b>${i.display_name}</b><small>${i.email}</small><span>${i.delivery_status==='sent'?'Correo enviado':'Envío pendiente'} · Vence ${formatDate(i.expires_at)}</span></div><${Button} tone="secondary" disabled=${this.state.teamBusy} onClick=${()=>this.manageInvitation(i,'resend')}>Reenviar</${Button}><${Button} tone="secondary" disabled=${this.state.teamBusy} onClick=${()=>this.manageInvitation(i,'revoke')}>Revocar</${Button}></article>`)}</div>`:null}
         </${Card}>
         <${Card} className="settings-wide" title="Anticipación de recordatorios"><p>Elija las horas previas a la cita. La preferencia y el consentimiento del paciente se revisan antes del envío.</p><div className="reminder-settings-grid">${REMINDER_OPTIONS.map(h=>html`<button className=${`reminder-option ${s.reminderHours.includes(h)?'active':''}`} key=${h} onClick=${()=>this.toggleReminderHour(h)}>${reminderLabel(h)}</button>`)}</div><p className="field-note">Los canales automáticos requieren un proveedor configurado. Desde la agenda puede preparar o enviar cada recordatorio.</p></${Card}>
@@ -2043,9 +2084,9 @@ class App extends React.Component {
   renderPatientFormModal() {
     const draft = this.state.modal.draft;
     const scale = SCALE_CATALOG.find(item => item.code === draft.scaleCode) || SCALE_CATALOG[0];
-    const clinicalFields = this.can('clinicalView');
+    const clinicalFields = this.can('clinicalEdit');
     return html`<${Modal} title="Nuevo paciente" subtitle=${clinicalFields ? 'Registre identificación, contexto, preferencias y una medición inicial.' : 'Registre datos administrativos. El médico completará la información clínica.'} onClose=${this.closeModal} size="xl"><form className="clinical-form" onSubmit=${this.savePatientForm}>${this.renderModalError()}
-      <fieldset data-tour="patient-form-identification"><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="PNG, JPG o WEBP. Se optimiza para cargar rápidamente." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Ana Martínez" required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => { this.updateDraft('phone', event.target.value); this.updateDraft('reminderPhone', event.target.value); }} placeholder="Ej. +503 7000 0000"/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => { this.updateDraft('email', event.target.value); this.updateDraft('reminderEmail', event.target.value); }} placeholder="paciente@correo.com"/></${FormField}></fieldset>
+      <fieldset data-tour="patient-form-identification"><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="PNG, JPG o WEBP. Se optimiza para cargar rápidamente." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Ana Martínez" required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid">${clinicalFields ? html`<${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}>` : null}<${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => { this.updateDraft('phone', event.target.value); this.updateDraft('reminderPhone', event.target.value); }} placeholder="Ej. +503 7000 0000"/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => { this.updateDraft('email', event.target.value); this.updateDraft('reminderEmail', event.target.value); }} placeholder="paciente@correo.com"/></${FormField}></fieldset>
 
       ${clinicalFields ? html`<fieldset><legend>Identidad y contexto personal <small>Opcional y autoidentificado</small></legend><div className="form-grid"><${FormField} label="Nombre preferido"><input value=${draft.preferredName} onChange=${event => this.updateDraft('preferredName', event.target.value)}/></${FormField}><${FormField} label="Pronombres"><input value=${draft.pronouns} onChange=${event => this.updateDraft('pronouns', event.target.value)} placeholder="Ej. ella, él, elle"/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Sexo asignado al nacer"><select value=${draft.sexAssignedAtBirth} onChange=${event => this.updateDraft('sexAssignedAtBirth', event.target.value)}>${SEX_ASSIGNED_AT_BIRTH_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Identidad de género"><select value=${draft.genderIdentity} onChange=${event => this.updateDraft('genderIdentity', event.target.value)}>${GENDER_IDENTITY_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Orientación sexual"><select value=${draft.sexualOrientation} onChange=${event => this.updateDraft('sexualOrientation', event.target.value)}>${SEXUAL_ORIENTATION_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Estado de relación"><select value=${draft.relationshipStatus} onChange=${event => this.updateDraft('relationshipStatus', event.target.value)}>${RELATIONSHIP_STATUS_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Personas significativas y red de apoyo"><input value=${draft.significantPeople} onChange=${event => this.updateDraft('significantPeople', event.target.value)} placeholder="Familia, pareja, amistades o cuidadores"/></${FormField}></div><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Información sensible y opcional</b><p>Regístrela solo cuando sea clínicamente pertinente y a partir de lo expresado por el paciente. Secretaría no la verá.</p></div></div></fieldset>` : null}
       ${clinicalFields ? html`<fieldset><legend>Antecedentes de seguridad <small>Información documentada, no inferida</small></legend><div className="form-grid form-grid-three"><${FormField} label="Antecedente de ideación suicida"><select value=${draft.ideationHistory} onChange=${event => this.updateDraft('ideationHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Previa, sin fecha precisa</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Intentos documentados"><input type="number" min="0" max="99" value=${draft.suicideAttemptsCount} onChange=${event => this.updateDraft('suicideAttemptsCount', event.target.value)}/></${FormField}><${FormField} label="Fecha del último intento"><input type="date" value=${draft.lastAttemptDate} onChange=${event => this.updateDraft('lastAttemptDate', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Autolesión sin intención suicida"><select value=${draft.selfHarmHistory} onChange=${event => this.updateDraft('selfHarmHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Antecedente previo</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Contacto de emergencia"><input value=${draft.emergencyContact} onChange=${event => this.updateDraft('emergencyContact', event.target.value)} placeholder="Nombre, relación y teléfono"/></${FormField}></div><${FormField} label="Plan de seguridad"><textarea rows="3" value=${draft.safetyPlan} onChange=${event => this.updateDraft('safetyPlan', event.target.value)} placeholder="Señales de alerta, estrategias, contactos y recursos acordados"></textarea></${FormField}><${FormField} label="Notas de antecedentes"><textarea rows="2" value=${draft.safetyHistoryNotes} onChange=${event => this.updateDraft('safetyHistoryNotes', event.target.value)} placeholder="Fuente, fecha aproximada y atención recibida"></textarea></${FormField}><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Diferencie riesgo actual de antecedentes</b><p>Un antecedente no equivale a riesgo actual. Registre fuente y contexto, y actualice la valoración clínica en cada consulta cuando corresponda.</p></div></div></fieldset>` : null}
@@ -2056,16 +2097,16 @@ class App extends React.Component {
 
       <fieldset><legend>Recordatorios y consentimiento</legend><label className=${`insurance-toggle-card ${draft.reminderEnabled ? 'active' : ''}`}><input type="checkbox" checked=${Boolean(draft.reminderEnabled)} onChange=${event => this.updateDraft('reminderEnabled', event.target.checked)}/><span className="insurance-toggle-icon"><${Icon} name="message" size=${22}/></span><span><b>${draft.reminderEnabled ? 'Recordatorios activados' : 'Sin recordatorios'}</b><small>El paciente o el médico puede elegir canales y anticipación.</small></span></label>${draft.reminderEnabled ? html`<div className="reminder-preferences-form"><div className="channel-choice-grid">${REMINDER_CHANNELS.map(channel => { const active = (draft.reminderChannels || []).includes(channel.value); return html`<label key=${channel.value} className=${active ? 'active' : ''}><input type="checkbox" checked=${active} onChange=${event => this.updateDraft('reminderChannels', event.target.checked ? [...new Set([...(draft.reminderChannels || []), channel.value])] : (draft.reminderChannels || []).filter(item => item !== channel.value))}/><${Icon} name=${channel.value === 'email' ? 'mail' : 'message'} size=${17}/><span>${channel.label}</span></label>`; })}</div><div className="form-grid"><${FormField} label="Correo para recordatorios"><input type="email" value=${draft.reminderEmail} onChange=${event => this.updateDraft('reminderEmail', event.target.value)}/></${FormField}><${FormField} label="Teléfono para SMS/WhatsApp"><input value=${draft.reminderPhone} onChange=${event => this.updateDraft('reminderPhone', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Consentimiento"><select value=${draft.reminderConsentStatus} onChange=${event => this.updateDraft('reminderConsentStatus', event.target.value)}><option value="pending">Pendiente</option><option value="granted">Otorgado</option><option value="declined">Rechazado</option></select></${FormField}><${FormField} label="Idioma"><input value=${draft.reminderLanguage} onChange=${event => this.updateDraft('reminderLanguage', event.target.value)}/></${FormField}></div></div>` : null}</fieldset>
 
-      <fieldset data-tour="patient-form-followup"><legend>Seguimiento</legend><div className="form-grid"><${FormField} label="Próxima cita"><input type="datetime-local" value=${draft.nextVisit} onChange=${event => this.updateDraft('nextVisit', event.target.value)}/></${FormField}><${FormField} label="Nota inicial"><textarea rows="2" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Contexto importante"></textarea></${FormField}></div></fieldset><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Crear paciente"/></form></${Modal}>`;
+      <fieldset data-tour="patient-form-followup"><legend>Seguimiento</legend><div className="form-grid"><${FormField} label="Próxima cita"><input type="datetime-local" value=${draft.nextVisit} onChange=${event => this.updateDraft('nextVisit', event.target.value)}/></${FormField}>${clinicalFields ? html`<${FormField} label="Nota inicial"><textarea rows="2" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Contexto importante"></textarea></${FormField}>` : null}</div></fieldset><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Crear paciente"/></form></${Modal}>`;
   }
 
   renderPatientEditFormModal() {
     const { draft, patientId } = this.state.modal;
     const patient = this.state.data.patients.find(item => item.id === patientId);
-    const clinicalFields = this.can('clinicalView');
+    const clinicalFields = this.can('clinicalEdit');
     const deceased = draft.vitalStatus === 'deceased';
     return html`<${Modal} title="Editar paciente" subtitle=${`Actualice datos, preferencias y estado vital de ${patient?.name || 'este paciente'}.`} onClose=${this.closeModal} size="xl"><form className="clinical-form" onSubmit=${this.savePatientEditForm}>${this.renderModalError()}
-      <fieldset><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="La imagen se guarda optimizada." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid"><${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)}/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)}/></${FormField}></fieldset>
+      <fieldset><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="La imagen se guarda optimizada." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid">${clinicalFields ? html`<${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}>` : null}<${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)}/></${FormField}></div><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)}/></${FormField}></fieldset>
 
       ${clinicalFields ? html`<fieldset><legend>Identidad y contexto personal <small>Opcional y autoidentificado</small></legend><div className="form-grid"><${FormField} label="Nombre preferido"><input value=${draft.preferredName} onChange=${event => this.updateDraft('preferredName', event.target.value)}/></${FormField}><${FormField} label="Pronombres"><input value=${draft.pronouns} onChange=${event => this.updateDraft('pronouns', event.target.value)}/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Sexo asignado al nacer"><select value=${draft.sexAssignedAtBirth} onChange=${event => this.updateDraft('sexAssignedAtBirth', event.target.value)}>${SEX_ASSIGNED_AT_BIRTH_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Identidad de género"><select value=${draft.genderIdentity} onChange=${event => this.updateDraft('genderIdentity', event.target.value)}>${GENDER_IDENTITY_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Orientación sexual"><select value=${draft.sexualOrientation} onChange=${event => this.updateDraft('sexualOrientation', event.target.value)}>${SEXUAL_ORIENTATION_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Estado de relación"><select value=${draft.relationshipStatus} onChange=${event => this.updateDraft('relationshipStatus', event.target.value)}>${RELATIONSHIP_STATUS_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Personas significativas y red de apoyo"><input value=${draft.significantPeople} onChange=${event => this.updateDraft('significantPeople', event.target.value)}/></${FormField}></div></fieldset>` : null}
       ${clinicalFields ? html`<fieldset><legend>Antecedentes de seguridad <small>Información documentada, no inferida</small></legend><div className="form-grid form-grid-three"><${FormField} label="Antecedente de ideación suicida"><select value=${draft.ideationHistory} onChange=${event => this.updateDraft('ideationHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Previa, sin fecha precisa</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Intentos documentados"><input type="number" min="0" max="99" value=${draft.suicideAttemptsCount} onChange=${event => this.updateDraft('suicideAttemptsCount', event.target.value)}/></${FormField}><${FormField} label="Fecha del último intento"><input type="date" value=${draft.lastAttemptDate} onChange=${event => this.updateDraft('lastAttemptDate', event.target.value)}/></${FormField}></div><div className="form-grid"><${FormField} label="Autolesión sin intención suicida"><select value=${draft.selfHarmHistory} onChange=${event => this.updateDraft('selfHarmHistory', event.target.value)}><option>No registrada</option><option>No referida</option><option>Antecedente previo</option><option>Actual</option><option>En remisión</option><option>Prefiere no responder</option></select></${FormField}><${FormField} label="Contacto de emergencia"><input value=${draft.emergencyContact} onChange=${event => this.updateDraft('emergencyContact', event.target.value)} placeholder="Nombre, relación y teléfono"/></${FormField}></div><${FormField} label="Plan de seguridad"><textarea rows="3" value=${draft.safetyPlan} onChange=${event => this.updateDraft('safetyPlan', event.target.value)} placeholder="Señales de alerta, estrategias, contactos y recursos acordados"></textarea></${FormField}><${FormField} label="Notas de antecedentes"><textarea rows="2" value=${draft.safetyHistoryNotes} onChange=${event => this.updateDraft('safetyHistoryNotes', event.target.value)} placeholder="Fuente, fecha aproximada y atención recibida"></textarea></${FormField}><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Diferencie riesgo actual de antecedentes</b><p>Un antecedente no equivale a riesgo actual. Registre fuente y contexto, y actualice la valoración clínica en cada consulta cuando corresponda.</p></div></div></fieldset>` : null}
@@ -2088,17 +2129,22 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
       <fieldset data-tour="clinic-profile-identity"><legend>Datos del consultorio</legend><div className="form-grid"><${FormField} label="Nombre de la clínica" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} required/></${FormField}><${FormField} label="Especialidad"><input value=${draft.specialty} onChange=${event => this.updateDraft('specialty', event.target.value)} placeholder="Psiquiatría"/></${FormField}></div><div className="form-grid" data-tour="clinic-profile-doctor"><${FormField} label="Nombre del profesional" required=${true}><input value=${draft.clinician} onChange=${event => this.updateDraft('clinician', event.target.value)} required/></${FormField}><${FormField} label="N.º de junta o licencia"><input value=${draft.professionalLicense} onChange=${event => this.updateDraft('professionalLicense', event.target.value)} placeholder="Ej. JVPM 0000"/></${FormField}></div><${FormField} label="Dirección"><input value=${draft.address} onChange=${event => this.updateDraft('address', event.target.value)} placeholder="Dirección del consultorio"/></${FormField}><div className="form-grid"><${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => this.updateDraft('phone', event.target.value)}/></${FormField}><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => this.updateDraft('email', event.target.value)}/></${FormField}></div><${FormField} label="Sitio web"><input value=${draft.website} onChange=${event => this.updateDraft('website', event.target.value)} placeholder="https://..."/></${FormField}></fieldset><div data-tour="clinic-profile-footer"><${FormField} label="Texto al pie de la receta" hint="Aparecerá en todas las recetas impresas."><textarea rows="3" value=${draft.prescriptionFooter} onChange=${event => this.updateDraft('prescriptionFooter', event.target.value)}></textarea></${FormField}><div className="letterhead-preview"><div className="letterhead-preview-logo">${draft.clinicLogo ? html`<img src=${draft.clinicLogo} alt="Logo"/>` : html`<${Icon} name="building" size=${26}/>`}</div><div><span>Vista previa del membrete</span><b>${draft.name || 'Nombre de la clínica'}</b><small>${draft.clinician || 'Nombre del profesional'} · ${draft.specialty || 'Especialidad'}</small></div></div></div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Guardar identidad"/></form></${Modal}>`;
   }
 
+  renderTeamRoleFields(d) {
+    return html`<${FormField} label="Teléfono"><input value=${d.phone||''} onChange=${e=>this.updateDraft('phone',e.target.value)}/></${FormField}><${FormField} label="Cargo"><input value=${d.title||''} onChange=${e=>this.updateDraft('title',e.target.value)}/></${FormField}><${FormField} label="Rol"><select value=${d.role||'secretary'} onChange=${e=>{const role=e.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,role,permissions:defaultPermissions(role)}}}));}}><option value="doctor">Doctor</option><option value="nurse">Enfermería</option><option value="secretary">Secretaría</option></select></${FormField}><h3>Permisos</h3>`;
+  }
+
   renderPermissionGroups(draft) {
-    return html`<div className="permission-groups">${PERMISSION_CATALOG.filter(p=>SECRETARY_PERMISSIONS.includes(p.key)).map(p=>html`<label key=${p.key} className="permission-row"><input type="checkbox" checked=${draft.permissions?.[p.key]===true} onChange=${e=>this.updateDraftPermission(p.key,e.target.checked)}/><span><b>${p.label}</b><small>${p.description}</small></span></label>`)}</div>`;
+    const catalog=PERMISSION_CATALOG.filter(p=>!OWNER_ONLY.includes(p.key) && (draft.role!=='secretary'||SECRETARY_PERMISSIONS.includes(p.key)));
+    return html`<div className="permission-groups">${[...new Set(catalog.map(p=>p.group))].map(group=>html`<fieldset key=${group}><legend>${group}</legend>${catalog.filter(p=>p.group===group).map(p=>html`<label key=${p.key} className="permission-row"><input type="checkbox" checked=${draft.permissions?.[p.key]===true} onChange=${e=>this.updateDraftPermission(p.key,e.target.checked)}/><span><b>${p.label}</b><small>${p.description}</small></span></label>`)}</fieldset>`)}</div>`;
   }
 
   renderSecretaryModal() {
     const d=this.state.modal.draft;
-    return html`<${Modal} title="Invitar a secretaría" subtitle="La persona recibirá un correo para definir su propia contraseña." onClose=${this.closeModal} size="lg">
+    return html`<${Modal} title="Agregar usuario" subtitle="La persona recibirá un correo para definir su propia contraseña." onClose=${this.closeModal} size="lg">
       <form className="clinical-form" onSubmit=${this.saveSecretaryForm}>${this.renderModalError()}
         <${FormField} label="Nombre completo"><input required value=${d.name} onChange=${e=>this.updateDraft('name',e.target.value)}/></${FormField}>
         <${FormField} label="Correo"><input required type="email" value=${d.email} onChange=${e=>this.updateDraft('email',e.target.value)}/></${FormField}>
-        <p className="field-note">El acceso clínico permanece reservado al médico. Seleccione las tareas administrativas autorizadas.</p>
+        ${this.renderTeamRoleFields(d)}<p className="field-note">Seleccione los permisos del usuario. La administración del equipo y del plan corresponde al propietario.</p>
         ${this.renderPermissionGroups(d)}
         <${Button} type="submit" disabled=${this.state.teamBusy}>${this.state.teamBusy?'Enviando invitación…':'Enviar invitación'}</${Button}>
       </form></${Modal}>`;
@@ -2106,10 +2152,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   renderUserPermissionsModal() {
     const d=this.state.modal.draft;
-    return html`<${Modal} title="Permisos de secretaría" subtitle="Las restricciones se comprueban también en la base de datos." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveUserPermissionsForm}>${this.renderModalError()}
+    return html`<${Modal} title="Permisos del usuario" subtitle="Las restricciones se comprueban también en la base de datos." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveUserPermissionsForm}>${this.renderModalError()}
       <${FormField} label="Nombre"><input required value=${d.name} onChange=${e=>this.updateDraft('name',e.target.value)}/></${FormField}>
       <${FormField} label="Correo"><input value=${d.email} readOnly/></${FormField}>
-      <${FormField} label="Cargo"><input value=${d.title} onChange=${e=>this.updateDraft('title',e.target.value)}/></${FormField}>
+      ${this.renderTeamRoleFields(d)}
       ${this.renderPermissionGroups(d)}<${Button} type="submit" disabled=${this.state.teamBusy}>Guardar permisos</${Button}></form></${Modal}>`;
   }
 
@@ -2117,7 +2163,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     const user = this.activeUser();
     const draft = this.state.modal.draft;
     if (!user) return null;
-    return html`<${Modal} title="Mi cuenta" subtitle="Revise su sesión, cambie la contraseña o cierre el acceso actual." onClose=${this.closeModal} size="md"><div className="account-summary"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="xl"/><div><span>${user.role === 'doctor' ? 'Médico administrador' : 'Secretaría clínica'}</span><h3>${user.name}</h3><p>${user.email}</p><${Badge} tone=${user.role === 'doctor' ? 'blue' : 'success'} dot=${true}>${user.role === 'doctor' ? 'Acceso clínico completo' : 'Permisos asignados'}</${Badge}></div></div><form className="clinical-form account-password-form" onSubmit=${this.saveAccountPassword}>${this.renderModalError()}<fieldset><legend>Cambiar contraseña</legend><${FormField} label="Contraseña actual"><div className="password-field"><input type=${draft.showPasswords ? 'text' : 'password'} value=${draft.currentPassword} onChange=${event => this.updateDraft('currentPassword', event.target.value)} autoComplete="current-password"/><button type="button" onClick=${() => this.updateDraft('showPasswords', !draft.showPasswords)} aria-label=${draft.showPasswords ? 'Ocultar contraseñas' : 'Mostrar contraseñas'}><${Icon} name=${draft.showPasswords ? 'eyeOff' : 'eye'} size=${18}/></button></div></${FormField}><div className="form-grid"><${FormField} label="Nueva contraseña"><input type=${draft.showPasswords ? 'text' : 'password'} minLength="12" value=${draft.newPassword} onChange=${event => this.updateDraft('newPassword', event.target.value)} autoComplete="new-password"/></${FormField}><${FormField} label="Confirmar contraseña"><input type=${draft.showPasswords ? 'text' : 'password'} minLength="12" value=${draft.confirmPassword} onChange=${event => this.updateDraft('confirmPassword', event.target.value)} autoComplete="new-password"/></${FormField}></div><small className="field-note">Use al menos 12 caracteres. La contraseña se actualiza en su cuenta de acceso.</small></fieldset><div className="account-actions"><${Button} tone="secondary" type="submit" icon="lock">Actualizar contraseña</${Button}><${Button} tone="secondary" icon="settings" onClick=${() => this.setState({ modal: null, view: 'settings' })} disabled=${!this.can('settingsManage') && !this.can('usersManage')}>Configuración</${Button}><button type="button" className="logout-button" onClick=${this.logoutUser}><${Icon} name="logout" size=${18}/> Cerrar sesión</button></div></form></${Modal}>`;
+    return html`<${Modal} title="Mi cuenta" subtitle="Revise su sesión, cambie la contraseña o cierre el acceso actual." onClose=${this.closeModal} size="md"><div className="account-summary"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="xl"/><div><span>${ROLE_LABELS[user.role]||'Usuario'}</span><h3>${user.name}</h3><p>${user.email}</p><${Badge} tone=${user.role === 'owner' ? 'blue' : 'success'} dot=${true}>${user.role === 'owner' ? 'Acceso clínico completo' : 'Permisos asignados'}</${Badge}></div></div><form className="clinical-form account-password-form" onSubmit=${this.saveAccountPassword}>${this.renderModalError()}<fieldset><legend>Cambiar contraseña</legend><${FormField} label="Contraseña actual"><div className="password-field"><input type=${draft.showPasswords ? 'text' : 'password'} value=${draft.currentPassword} onChange=${event => this.updateDraft('currentPassword', event.target.value)} autoComplete="current-password"/><button type="button" onClick=${() => this.updateDraft('showPasswords', !draft.showPasswords)} aria-label=${draft.showPasswords ? 'Ocultar contraseñas' : 'Mostrar contraseñas'}><${Icon} name=${draft.showPasswords ? 'eyeOff' : 'eye'} size=${18}/></button></div></${FormField}><div className="form-grid"><${FormField} label="Nueva contraseña"><input type=${draft.showPasswords ? 'text' : 'password'} minLength="12" value=${draft.newPassword} onChange=${event => this.updateDraft('newPassword', event.target.value)} autoComplete="new-password"/></${FormField}><${FormField} label="Confirmar contraseña"><input type=${draft.showPasswords ? 'text' : 'password'} minLength="12" value=${draft.confirmPassword} onChange=${event => this.updateDraft('confirmPassword', event.target.value)} autoComplete="new-password"/></${FormField}></div><small className="field-note">Use al menos 12 caracteres. La contraseña se actualiza en su cuenta de acceso.</small></fieldset><div className="account-actions"><${Button} tone="secondary" type="submit" icon="lock">Actualizar contraseña</${Button}><${Button} tone="secondary" icon="settings" onClick=${() => this.setState({ modal: null, view: 'settings' })} disabled=${!this.can('settingsManage') && !this.can('usersManage')}>Configuración</${Button}><button type="button" className="logout-button" onClick=${this.logoutUser}><${Icon} name="logout" size=${18}/> Cerrar sesión</button></div></form></${Modal}>`;
   }
 
   renderPrescriptionModal() {
@@ -2178,7 +2224,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   renderAppointmentFormModal() {
     const draft = this.state.modal.draft;
     const patients = this.state.data.patients;
-    return html`<${Modal} title=${draft.id ? 'Editar cita' : 'Nueva cita'} subtitle="La cita quedará guardada en la agenda local." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<div data-tour="appointment-form-who-when"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)}>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name} · ${patient.diagnosis}</option>`)}</select></${FormField}><div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}><option>Seguimiento</option><option>Primera consulta</option><option>Prioritaria</option><option>Seguridad</option><option>Laboratorios</option></select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmada</option><option value="pending">Pendiente</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></${FormField}></div><${FormField} label="Notas de preparación"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}></div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear cita'}/></form></${Modal}>`;
+    return html`<${Modal} title=${draft.id ? 'Editar cita' : 'Nueva cita'} subtitle="La cita se guardará en la agenda del consultorio." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<div data-tour="appointment-form-who-when"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)}>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name} · ${patient.diagnosis}</option>`)}</select></${FormField}><div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}><option>Seguimiento</option><option>Primera consulta</option><option>Prioritaria</option><option>Seguridad</option><option>Laboratorios</option></select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmada</option><option value="pending">Pendiente</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></${FormField}></div><${FormField} label="Notas de preparación"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}></div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear cita'}/></form></${Modal}>`;
   }
 
   renderReportModal() {
@@ -2232,7 +2278,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     if(state==='error')return html`<div className="sync-banner error" role="alert"><span>${this.state.saveError||'No se pudo guardar.'}</span><button onClick=${()=>this.flushChanges().catch(()=>{})}>Reintentar</button></div>`;
     if(['dirty','saving'].includes(state))return html`<div className="sync-banner" role="status"><span className="mini-spinner"></span> Guardando cambios…</div>`;
     if(this.state.remoteReady&&this.state.complimentaryAccess)return html`<div className="sync-banner" role="status">Plan gratuito · Acceso completo habilitado</div>`;
-    if(this.state.remoteReady&&!this.state.subscriptionWritable)return html`<div className="sync-banner warning" role="status"><span>El consultorio no tiene un periodo de pago vigente. Puede leer los registros existentes. Para guardar cambios, ${this.activeUser()?.role==='doctor'?'elija un plan en Mi plan.':'solicite la renovación al médico.'}</span>${this.activeUser()?.role==='doctor'?html`<button onClick=${()=>this.setView('payments')}>Ver planes</button>`:null}</div>`;
+    if(this.state.remoteReady&&!this.state.subscriptionWritable)return html`<div className="sync-banner warning" role="status"><span>El consultorio no tiene un periodo de pago vigente. Puede leer los registros existentes. Para guardar cambios, ${this.activeUser()?.role==='owner'?'elija un plan en Mi plan.':'solicite la renovación al médico.'}</span>${this.activeUser()?.role==='owner'?html`<button onClick=${()=>this.setView('payments')}>Ver planes</button>`:null}</div>`;
     return null;
   }
 
@@ -2263,7 +2309,8 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   refreshTeam = async () => {
     if(!this.can('usersManage')||!this.state.remoteOrganizationId)return;
-    try{const r=await manageTeam(this.state.remoteOrganizationId,'list');this.setState(prev=>({data:{...prev.data,users:r.users},teamInvites:r.invitations||[]}));}
+    const epoch=this.authEpoch;
+    try{const r=await manageTeam(this.state.remoteOrganizationId,'list');if(epoch!==this.authEpoch)return;this.setState(prev=>({data:{...prev.data,users:r.users},teamInvites:r.invitations||[]}));}
     catch(e){this.notify(readableError(e),'danger');}
   };
 
@@ -2291,10 +2338,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   };
 
   clearSessionView = () => {
-    this.authEpoch++;this.savingForm=false;this.persistedData=null;clearTimeout(this.persistTimer);clearInterval(this.encounterTimer);resetPersistence();
+    this.authEpoch++;this.savingForm=false;this.persistedData=null;clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {

@@ -1,0 +1,19 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage();
+const checks=[];const name='QA Confirmed '+Date.now();
+const control=async(data)=>page.request.post('http://127.0.0.1:4173/__qa',{data:{control:true,...data}});
+const login=async(email)=>{await page.locator('input[type=email]').fill(email);await page.locator('input[type=password]').fill('qa-password-123');await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).click();await page.getByRole('button',{name:'Pacientes',exact:true}).waitFor();};
+const logout=async()=>{await page.locator('.profile-chip-button').click();await page.getByRole('button',{name:'Cerrar sesión',exact:true}).click();await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).waitFor();};
+try{
+await page.goto('http://127.0.0.1:4173');await login('owner@example.invalid');
+await page.getByRole('button',{name:'Nuevo paciente',exact:true}).first().click();await page.getByLabel('Nombre completo').fill(name);await page.getByRole('spinbutton',{name:'Edad',exact:true}).fill('30');await page.getByLabel('Diagnóstico principal').fill('QA synthetic diagnosis');
+await control({delay:1500});await page.getByRole('button',{name:'Crear paciente',exact:true}).click();
+assert.equal(await page.getByText('Paciente registrado correctamente.',{exact:true}).count(),0);assert.equal(await page.getByLabel('Nombre completo').inputValue(),name);checks.push('no premature success while database is pending');
+await page.getByText('Paciente registrado correctamente.',{exact:true}).waitFor();await page.reload();await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByText(name,{exact:true}).waitFor();checks.push('patient remains after immediate reload following success');
+await control({fail:true});await page.getByRole('button',{name:'Nuevo paciente',exact:true}).first().click();await page.getByLabel('Nombre completo').fill(name+' failed');await page.getByRole('spinbutton',{name:'Edad',exact:true}).fill('31');await page.getByLabel('Diagnóstico principal').fill('QA synthetic');await page.getByRole('button',{name:'Crear paciente',exact:true}).click();await page.getByText(/No se guardó el registro/).waitFor();assert.equal(await page.getByLabel('Nombre completo').inputValue(),name+' failed');checks.push('failed save preserves the draft and reports failure');
+await control({fail:false});await page.getByRole('button',{name:'Cancelar',exact:true}).click();await logout();assert.equal(await page.getByText(name,{exact:true}).count(),0);checks.push('logout clears patient from screen');
+await login('other@example.invalid');await page.getByRole('button',{name:'Pacientes',exact:true}).click();assert.equal(await page.getByText(name,{exact:true}).count(),0);checks.push('second organization cannot see the first patient');await logout();
+await login('owner@example.invalid');await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByText(name,{exact:true}).waitFor();checks.push('patient persists across logout and login');
+console.log(JSON.stringify({passed:checks.length,checks,scope:'React/Vite browser + isolated PostgreSQL; Auth adapter, no production data'},null,2));
+}finally{await browser.close();}

@@ -182,11 +182,11 @@ export function normalizePatient(patient = {}) {
 export function normalizeData(input = {}) {
   const users = Array.isArray(input.users) ? input.users.map(user => ({
     id: user.id, name: user.name || 'Profesional', email: user.email || '',
-    phone: user.phone || '', title: user.title || '', role: user.role || 'secretary',
+    phone: user.phone || '', title: user.title || '', role: user.role || 'read_only',
     active: user.active !== false, avatar: user.avatar || '', permissions: user.permissions || {},
     createdAt: user.createdAt || null, updatedAt: user.updatedAt || null,
   })) : [];
-  const doctor = users.find(user => user.role === 'doctor') || {};
+  const doctor = users.find(user => user.role === 'owner') || {};
   return {
     version: 3,
     organization: {

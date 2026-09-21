@@ -1,3 +1,4 @@
+import { permissionAllowed } from '../_shared/permissions.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 
 Deno.serve(async request => {
@@ -13,7 +14,7 @@ Deno.serve(async request => {
     const { data: stateRow, error: stateError } = await db.from('calendar_oauth_states').delete().eq('state', state).select('*').maybeSingle();
     if (stateError || !stateRow || new Date(stateRow.expires_at) < new Date()) return redirect('error', 'La autorización expiró. Intente de nuevo.');
     const {data:m}=await db.from('organization_members').select('role,active,permissions').eq('organization_id',stateRow.organization_id).eq('user_id',stateRow.user_id).maybeSingle();
-    if(!m?.active||!(['owner','doctor','psychiatrist'].includes(m.role)||(m.role==='secretary'&&m.permissions?.appointmentsManage===true)))return redirect('error','Acceso revocado.');
+    if(!m?.active||!permissionAllowed(m,'appointmentsManage'))return redirect('error','Acceso revocado.');
     const clientId = Deno.env.get('GOOGLE_CALENDAR_CLIENT_ID')?.trim();
     const clientSecret = Deno.env.get('GOOGLE_CALENDAR_CLIENT_SECRET')?.trim();
     const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '');

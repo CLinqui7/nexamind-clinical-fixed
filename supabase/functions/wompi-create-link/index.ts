@@ -7,7 +7,7 @@ Deno.serve(async request=>{
  if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);
  const reference=crypto.randomUUID();let reservedId:string|null=null;
  try{
-  const {organizationId,planCode}=await request.json();const {user,db}=await requireMember(request,organizationId,'doctor');await limitAction(db,'checkout',user.id,20);
+  const {organizationId,planCode}=await request.json();const {user,db}=await requireMember(request,organizationId,'owner');await limitAction(db,'checkout',user.id,20);
   if(!['monthly','semiannual','annual'].includes(planCode))throw new ApiError(400,'Seleccione un plan válido.');
   const config=wompiConfig();
   const info=await wompiRequest('/Aplicativo',{method:'GET'},config);

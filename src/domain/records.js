@@ -22,22 +22,24 @@ export function recordKey(kind,id) { return `${kind}:${id}`; }
 export function projectRecords(data, clinical = false) {
   const out = new Map();
   const add = (kind,id,payload) => out.set(recordKey(kind,id), {kind,id:String(id),payload});
-  if (clinical) {
+  const can = key => typeof clinical==='boolean' ? clinical || ['patientsCreate','patientsEdit','appointmentsManage'].includes(key) : clinical?.[key]===true;
+  if (can('settingsManage')) {
     add('profile','clinic',pick(data.organization, PROFILE_KEYS));
     add('settings','clinic',pick(data.settings, SETTINGS_KEYS));
   }
   for (const patient of data.patients || []) {
-    add('patient_admin',patient.id,pick(patient,ADMIN_PATIENT_KEYS));
-    if(clinical) {
+    if(can('patientsCreate') || can('patientsEdit')) add('patient_admin',patient.id,pick(patient,can('patientsEdit')?ADMIN_PATIENT_KEYS:ADMIN_PATIENT_KEYS.filter(k=>k!=='updatedAt')));
+    if(['clinicalEdit','medicationsManage','documentsManage','prescriptionsCreate','consultationsManage'].some(can)) {
       const privateFields=Object.fromEntries(Object.entries(patient).filter(([k])=>!ADMIN_PATIENT_KEYS.includes(k) && !k.startsWith('__')));
-      add('patient_clinical',patient.id,privateFields);
+      const special={medications:'medicationsManage',medication:'medicationsManage',medicationEvents:'medicationsManage',documents:'documentsManage',prescriptions:'prescriptionsCreate',consultations:'consultationsManage'};
+      add('patient_clinical',patient.id,Object.fromEntries(Object.entries(privateFields).filter(([key])=>can(special[key]||'clinicalEdit'))));
     }
   }
   for (const a of data.appointments || []) {
-    add('appointment',a.id,pick(a,APPOINTMENT_KEYS));
-    if (clinical) add('appointment_clinical',a.id,{notes:a.notes || ''});
+    if(can('appointmentsManage') || can('remindersManage')) add('appointment',a.id,pick(a,can('appointmentsManage')?APPOINTMENT_KEYS:['id','reminderLog']));
+    if (can('clinicalEdit') && can('appointmentsManage')) add('appointment_clinical',a.id,{notes:a.notes || ''});
   }
-  if(clinical) for(const alert of data.alerts || []) add('alert',alert.id,alert);
+  if(can('alertsView')) for(const alert of data.alerts || []) add('alert',alert.id,alert);
   return out;
 }
 export function diffRecords(previous, next, revisions = new Map()) {
