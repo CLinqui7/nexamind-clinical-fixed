@@ -111,11 +111,14 @@ function normalizeMedication(medication, patient, index = 0) {
     reportedNotes: medication?.reportedNotes || '',
     source: medication?.source || 'clinical',
     createdBy: medication?.createdBy || null,
-    createdAt: medication?.createdAt || medication?.startDate || patient.lastVisit || null,
+    createdAt: medication?.createdAt || null,
     reviewedBy: medication?.reviewedBy || null,
     reviewedAt: medication?.reviewedAt || null,
     events: Array.isArray(medication?.events) ? medication.events : [],
     doseHistory,
+    archivedAt: medication?.archivedAt || null,
+    archivedBy: medication?.archivedBy || null,
+    archiveReason: medication?.archiveReason || '',
   };
 }
 

@@ -78,5 +78,8 @@ export function captureReportedMedication(organizationId,patientId,draft){
 export function loadDailyAgenda(organizationId,date){
   return rpc('linkare_daily_agenda_v1',{org:organizationId,agenda_date:date});
 }
+export function archiveMedication(organizationId,patientId,medicationId,reason){
+  return rpc('linkare_archive_medication_v1',{p_org:organizationId,p_patient_id:patientId,p_medication_id:medicationId,p_reason:reason});
+}
 // Billing prices and validity are exclusively maintained by server functions.
 export async function savePlatformBillingSettings(){throw new Error('El precio se define por el plan elegido. No puede modificarse desde el consultorio.');}
