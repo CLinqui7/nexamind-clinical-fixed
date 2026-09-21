@@ -114,6 +114,9 @@ function normalizeMedication(medication, patient, index = 0) {
     createdAt: medication?.createdAt || null,
     reviewedBy: medication?.reviewedBy || null,
     reviewedAt: medication?.reviewedAt || null,
+    correctedBy: medication?.correctedBy || null,
+    correctedAt: medication?.correctedAt || null,
+    corrections: Array.isArray(medication?.corrections) ? medication.corrections.map(item => ({ ...item })) : [],
     events: Array.isArray(medication?.events) ? medication.events : [],
     doseHistory,
     archivedAt: medication?.archivedAt || null,
@@ -129,7 +132,7 @@ export function normalizePatient(patient = {}) {
       ? [patient.medication]
       : [];
   const medications = sourceMedications.map((medication, index) => normalizeMedication(medication, patient, index));
-  const primary = medications.find(item => item.isPrimary && item.status === 'active') || medications.find(item => item.status === 'active') || null;
+  const primary = medications.find(item => !item.archivedAt && item.isPrimary && item.status === 'active') || medications.find(item => !item.archivedAt && item.status === 'active') || null;
   medications.forEach(item => { item.isPrimary = Boolean(primary && item.id === primary.id); });
 
   const vitals = patient.vitals || {};
@@ -185,6 +188,9 @@ export function normalizePatient(patient = {}) {
     medicationEvents: Array.isArray(patient.medicationEvents) ? patient.medicationEvents : [],
     followUps: Array.isArray(patient.followUps) ? patient.followUps : [],
     archived: Boolean(patient.archived),
+    archivedAt: patient.archivedAt || null,
+    archivedBy: patient.archivedBy || null,
+    archiveReason: patient.archiveReason || '',
     notes: Array.isArray(patient.notes) ? patient.notes : [],
     prescriptions: Array.isArray(patient.prescriptions) ? patient.prescriptions.map((item, index) => ({ ...item, id: item.id || `rx_${patient.id}_${index}`, items: Array.isArray(item.items) ? item.items : [] })) : [],
     ...normalizePatientV2(patient),

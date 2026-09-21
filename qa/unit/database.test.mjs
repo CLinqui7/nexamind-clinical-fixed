@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  await actor('other');otherOrg=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
@@ -150,4 +150,21 @@ test('DB: 3, 4 and 5 sequential medications save with stale client identity meta
  }
  const stored=(await db.query("select payload->'medications' medications from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id='sequential-medications'",[org])).rows[0].medications;
  assert.notEqual(stored[0].createdAt,staleClientMedications[0].createdAt);assert.equal(stored[0].reviewedAt,undefined);
+});
+test('DB: patient archival is audited, cancels future appointments and respects permissions',async()=>{
+ await actor('owner');
+ await save([{kind:'patient_admin',id:'archive-target',expectedRevision:0,payload:{name:'Archive target'}},{kind:'patient_clinical',id:'archive-target',expectedRevision:0,payload:{diagnosis:'QA'}},{kind:'appointment',id:'archive-appointment',expectedRevision:0,payload:{patientId:'archive-target',start:'2026-12-01T12:00:00Z',end:'2026-12-01T12:30:00Z',status:'confirmed'}},{kind:'appointment',id:'archive-past-appointment',expectedRevision:0,payload:{patientId:'archive-target',start:'2026-01-01T12:00:00Z',end:'2026-01-01T12:30:00Z',status:'confirmed'}}]);
+ await permissions('secretary',{patientsView:true,patientsEdit:false});
+ await denied(()=>db.query("select public.linkare_archive_patient_v1($1,'archive-target','Duplicado')",[org]));
+ await actor('owner');
+ const result=(await db.query("select public.linkare_archive_patient_v1($1,'archive-target','Expediente creado por error') data",[org])).rows[0].data;
+ assert.equal(result.ok,true);
+ const admin=(await db.query("select payload from public.linkare_records where organization_id=$1 and kind='patient_admin' and id='archive-target'",[org])).rows[0].payload;
+ assert.equal(admin.archived,true);assert.equal(admin.archiveReason,'Expediente creado por error');assert.equal(admin.archivedBy,ids.owner);
+ const appointment=(await db.query("select payload from public.linkare_records where organization_id=$1 and kind='appointment' and id='archive-appointment'",[org])).rows[0].payload;
+ assert.equal(appointment.status,'cancelled');
+ const pastAppointment=(await db.query("select payload from public.linkare_records where organization_id=$1 and kind='appointment' and id='archive-past-appointment'",[org])).rows[0].payload;
+ assert.equal(pastAppointment.status,'confirmed');
+ const actions=(await db.query("select action from public.linkare_audit_v3 where organization_id=$1 and record_id in('archive-target','archive-appointment') order by id",[org])).rows.map(row=>row.action);
+ assert.ok(actions.includes('patient.archived'));assert.ok(actions.includes('appointment.cancelled.patient_archived'));
 });

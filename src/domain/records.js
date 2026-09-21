@@ -1,7 +1,7 @@
 /** Persistence contract shared by the UI and tests. No authentication data is persisted here. */
 export const ADMIN_PATIENT_KEYS = Object.freeze([
   'id', 'name', 'initials', 'age', 'phone', 'email', 'photo', 'insurance',
-  'nextVisit', 'archived', 'createdAt', 'updatedAt', 'notificationPreferences',
+  'nextVisit', 'archived', 'archivedAt', 'archivedBy', 'archiveReason', 'createdAt', 'updatedAt', 'notificationPreferences',
 ]);
 export const APPOINTMENT_KEYS = Object.freeze([
   'id', 'patientId', 'title', 'start', 'end', 'type', 'modality', 'status',

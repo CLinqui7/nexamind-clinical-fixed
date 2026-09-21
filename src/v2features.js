@@ -155,6 +155,7 @@ export function normalizePatientV2(patient = {}) {
       createdAt: consultation.createdAt || nowIso(),
       updatedAt: consultation.updatedAt || consultation.createdAt || nowIso(),
     })) : [],
+    consultationRetractions: Array.isArray(patient.consultationRetractions) ? patient.consultationRetractions.map(item => ({ ...item })) : [],
   };
 }
 
@@ -216,6 +217,37 @@ export function createEncounterDraft(patient, appointment = null, user = null) {
     clinicalImpression: '',
     plan: '',
     followUp: '',
+    createdBy: user?.id || null,
+    signedBy: null,
+    signedAt: null,
+    versions: [],
+    createdAt: startedAt,
+    updatedAt: startedAt,
+  };
+}
+
+export function createEncounterCorrection(patient, original, user = null) {
+  if (!original) throw new Error('La consulta original ya no está disponible.');
+  const startedAt = nowIso();
+  return {
+    id: uid('encounter'),
+    appointmentId: null,
+    correctsConsultationId: original.id,
+    title: `Corrección · ${original.title || patient?.name || 'Consulta'}`,
+    status: 'draft',
+    startedAt,
+    endedAt: null,
+    durationMinutes: null,
+    reason: `Corrección vinculada a la nota del ${formatDate(original.startedAt || original.createdAt)}.`,
+    freeNotes: original.freeNotes || '',
+    evolution: original.evolution || '',
+    mentalStatus: original.mentalStatus || '',
+    riskAssessment: original.riskAssessment || '',
+    medicationNotes: original.medicationNotes || '',
+    intervention: original.intervention || '',
+    clinicalImpression: original.clinicalImpression || '',
+    plan: original.plan || '',
+    followUp: original.followUp || '',
     createdBy: user?.id || null,
     signedBy: null,
     signedAt: null,

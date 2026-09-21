@@ -864,7 +864,7 @@ body { font-size: 14px; }
 .assessment-list { display: flex; flex-direction: column; gap: 9px; }
 .assessment-row {
   display: grid;
-  grid-template-columns: auto minmax(190px,1.4fr) repeat(3,minmax(72px,.55fr)) minmax(110px,.8fr);
+  grid-template-columns: auto minmax(190px,1.4fr) repeat(3,minmax(72px,.55fr)) minmax(110px,.8fr) minmax(150px,auto);
   align-items: center;
   gap: 12px;
   padding: 12px;
@@ -894,8 +894,10 @@ body { font-size: 14px; }
 .safety-stats small { color: #8b8e9e; font-size: 8px; line-height: 1.35; }
 .adverse-severe,
 .adverse-critical { color: var(--coral); background: var(--coral-soft); }
-.adverse-actions { margin-top: 10px; }
+.adverse-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .adverse-actions .button { min-height: 36px; padding-inline: 12px; font-size: 10px; }
+.record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.record-actions .button { min-height: 34px; padding-inline: 10px; font-size: 9px; }
 .compact-detail { grid-template-columns: 7px 1fr; }
 .compact-detail .button { grid-column: 2; justify-self: start; margin-top: 4px; }
 .chart-empty { min-height: 185px; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 11px; padding: 25px; border-radius: 14px; background: #f8f7fb; }

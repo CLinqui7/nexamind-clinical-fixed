@@ -60,9 +60,9 @@ export function relativeDate(value, reference = new Date()) {
 
 export function getAssessmentSummary(patient, code = null) {
   const assessments = patient?.assessments || [];
-  const primary = code ? assessments.find(item => item.code === code) : assessments[0];
-  if (!primary?.points?.length) return null;
-  const points = [...primary.points].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const primary = code ? assessments.find(item => item.code === code) : assessments.find(item => item.points?.some(point => !point.archivedAt));
+  if (!primary?.points?.some(point => !point.archivedAt)) return null;
+  const points = primary.points.filter(point => !point.archivedAt).sort((a, b) => new Date(a.date) - new Date(b.date));
   const baseline = Number(points[0].value);
   const current = Number(points[points.length - 1].value);
   let improvement = 0;

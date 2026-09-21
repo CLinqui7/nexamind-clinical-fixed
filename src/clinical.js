@@ -1,4 +1,4 @@
-import { COMMON_ADVERSE_EFFECTS, SCALE_CATALOG, normalizePatient } from './data.js';
+import { COMMON_ADVERSE_EFFECTS, FREQUENCIES, SCALE_CATALOG, normalizePatient } from './data.js';
 import { normalizeDeathRecord, normalizeNotificationPreferences, patientExtensionDefaults } from './v2features.js';
 import {
   addMinutes,
@@ -34,8 +34,8 @@ function sortedByDate(items, field = 'date') {
 }
 
 function activePrimaryMedication(patient) {
-  return patient.medications?.find(item => item.status === 'active' && item.isPrimary)
-    || patient.medications?.find(item => item.status === 'active')
+  return patient.medications?.find(item => !item.archivedAt && item.status === 'active' && item.isPrimary)
+    || patient.medications?.find(item => !item.archivedAt && item.status === 'active')
     || null;
 }
 
@@ -112,11 +112,12 @@ export function patientEditFormDefaults(patient) {
   };
 }
 
-export function medicationFormDefaults(patient) {
+export function medicationFormDefaults(patient, medication = null) {
+  const customFrequency = medication && !FREQUENCIES.includes(medication.frequency) ? medication.frequency : medication?.customFrequency || '';
   return {
-    patientId: patient?.id || '', name: '', class: 'ISRS', indication: patient?.diagnosis || '',
-    doseValue: '', doseUnit: 'mg', frequency: 'una vez al día', route: 'oral',
-    customFrequency: '', frequencySlots: [], startDate: new Date().toISOString().slice(0, 10), isPrimary: true, isPrn: false, notes: '',
+    id: medication?.id || '', patientId: patient?.id || '', name: medication?.name || '', class: medication?.class || 'ISRS', indication: medication?.indication || patient?.diagnosis || '',
+    doseValue: medication?.doseValue ?? '', doseUnit: medication?.doseUnit || 'mg', frequency: customFrequency ? 'otra' : medication?.frequency || 'una vez al día', route: medication?.route || 'oral',
+    customFrequency, frequencySlots: medication?.frequencySlots || [], startDate: String(medication?.startDate || new Date().toISOString()).slice(0, 10), isPrimary: medication?.isPrimary ?? true, isPrn: medication?.isPrn ?? false, notes: medication?.clinicalNotes || medication?.notes || '',
   };
 }
 
@@ -141,38 +142,41 @@ export function doseFormDefaults(patient, medicationId = null) {
   };
 }
 
-export function assessmentFormDefaults(patient) {
+export function assessmentFormDefaults(patient, assessment = null, point = null) {
   const primary = patient?.assessments?.[0];
   return {
-    patientId: patient?.id || '', code: primary?.code || 'PHQ-9', score: '',
-    date: new Date().toISOString().slice(0, 10), adherence: patient?.adherence ?? 100,
+    patientId: patient?.id || '', code: assessment?.code || primary?.code || 'PHQ-9', score: point?.value ?? '',
+    pointId: point?.id || '', originalDate: point?.date || '', editing: Boolean(point),
+    date: String(point?.date || new Date().toISOString()).slice(0, 10), adherence: patient?.adherence ?? 100,
     functioningChange: patient?.functioningChange ?? 0, sleepCurrent: patient?.sleepCurrent ?? '',
     status: patient?.status || 'stable', risk: patient?.risk || 'low', note: '',
   };
 }
 
-export function vitalsFormDefaults(patient) {
-  const bp = String(patient?.vitals?.bp || '').split('/');
+export function vitalsFormDefaults(patient, record = null) {
+  const source = record || patient?.vitals || {};
+  const bp = String(source.bp || '').split('/');
   return {
-    patientId: patient?.id || '', date: new Date().toISOString().slice(0, 10),
-    weight: patient?.vitals?.weight ?? '', height: patient?.vitals?.height ?? '',
-    systolic: bp[0] || '', diastolic: bp[1] || '', pulse: patient?.vitals?.pulse ?? '',
-    sleepCurrent: patient?.sleepCurrent ?? '', appetite: patient?.appetite || 'No registrado', notes: '',
+    id: record?.id || '', patientId: patient?.id || '', date: String(record?.date || new Date().toISOString()).slice(0, 10),
+    weight: source.weight ?? '', height: source.height ?? '',
+    systolic: bp[0] || '', diastolic: bp[1] || '', pulse: source.pulse ?? '',
+    sleepCurrent: source.sleepCurrent ?? patient?.sleepCurrent ?? '', appetite: source.appetite || patient?.appetite || 'No registrado', notes: source.notes || '',
   };
 }
 
-export function adverseFormDefaults(patient) {
+export function adverseFormDefaults(patient, adverseEvent = null) {
+  const knownName = adverseEvent && COMMON_ADVERSE_EFFECTS.includes(adverseEvent.name) ? adverseEvent.name : adverseEvent ? 'Otro' : COMMON_ADVERSE_EFFECTS[0];
   return {
-    patientId: patient?.id || '', medicationId: activePrimaryMedication(patient)?.id || '',
-    name: COMMON_ADVERSE_EFFECTS[0], customName: '', severity: 'mild', status: 'active',
-    onset: new Date().toISOString().slice(0, 10), relation: '', actionTaken: '',
+    id: adverseEvent?.id || '', patientId: patient?.id || '', medicationId: adverseEvent?.medicationId || activePrimaryMedication(patient)?.id || '',
+    name: knownName, customName: knownName === 'Otro' ? adverseEvent?.name || '' : '', severity: adverseEvent?.severity || 'mild', status: adverseEvent?.status || 'active',
+    onset: String(adverseEvent?.onset || new Date().toISOString()).slice(0, 10), relation: adverseEvent?.relation || '', actionTaken: adverseEvent?.actionTaken || '',
   };
 }
 
-export function labFormDefaults(patient) {
+export function labFormDefaults(patient, lab = null) {
   return {
-    patientId: patient?.id || '', name: '', value: '', unit: '', status: 'normal',
-    date: new Date().toISOString().slice(0, 10), reference: '', notes: '',
+    id: lab?.id || '', patientId: patient?.id || '', name: lab?.name || '', value: lab?.value ?? '', unit: lab?.unit || '', status: lab?.status || 'normal',
+    date: String(lab?.date || new Date().toISOString()).slice(0, 10), reference: lab?.reference || '', notes: lab?.notes || '',
   };
 }
 
@@ -480,6 +484,60 @@ export function addMedication(data, patientId, draft) {
   return { data: next, medicationId };
 }
 
+export function updateMedication(data, patientId, draft) {
+  const patient = data.patients.find(item => item.id === patientId);
+  const previous = patient?.medications?.find(item => item.id === draft.id);
+  if (!previous || previous.archivedAt) throw new Error('El medicamento ya no está disponible para editarse.');
+  const name = cleanText(draft.name);
+  const doseValue = numberOrNull(draft.doseValue);
+  if (!name) throw new Error('Escribe el nombre del medicamento.');
+  if (doseValue === null || doseValue <= 0) throw new Error('Escribe una dosis mayor que cero.');
+  const timestamp = nowIso();
+  const actor = data.settings?.activeUserId || null;
+  const doseUnit = cleanText(draft.doseUnit) || 'mg';
+  const frequency = draft.frequency === 'otra' ? cleanText(draft.customFrequency) : draft.frequency || 'una vez al día';
+  if (!frequency) throw new Error('Escribe la frecuencia del medicamento.');
+  const dose = `${doseValue} ${doseUnit}`;
+  const correction = {
+    at: timestamp,
+    by: actor,
+    before: {
+      name: previous.name, class: previous.class, indication: previous.indication, dose: previous.dose,
+      frequency: previous.frequency, route: previous.route, startDate: previous.startDate,
+      isPrimary: previous.isPrimary, isPrn: previous.isPrn, clinicalNotes: previous.clinicalNotes || previous.notes || '',
+    },
+  };
+  const updated = {
+    ...previous,
+    name,
+    class: draft.class || 'Otro',
+    indication: cleanText(draft.indication) || 'Sin indicación registrada',
+    doseValue,
+    doseUnit,
+    dose,
+    frequency,
+    frequencySlots: frequencySlotsFor(draft.frequency, draft.customFrequency),
+    customFrequency: draft.frequency === 'otra' ? cleanText(draft.customFrequency) : '',
+    route: draft.route || 'oral',
+    startDate: clinicalDateIso(draft.startDate),
+    isPrimary: Boolean(draft.isPrimary),
+    isPrn: Boolean(draft.isPrn),
+    notes: cleanText(draft.notes),
+    clinicalNotes: cleanText(draft.notes),
+    correctedAt: timestamp,
+    correctedBy: actor,
+    corrections: [...(previous.corrections || []), correction],
+    events: [...(previous.events || []), { id: uid('medevent'), type: 'corrected', date: timestamp, actorId: actor, reason: 'Datos del medicamento corregidos' }],
+    doseHistory: previous.dose === dose ? previous.doseHistory : [...(previous.doseHistory || []), { id: uid('dose'), date: timestamp, doseValue, doseUnit, dose, reason: 'Corrección del registro', notes: cleanText(draft.notes) }],
+  };
+  const next = updatePatient(data, patientId, current => ({
+    ...current,
+    medications: (current.medications || []).map(item => item.id === previous.id ? updated : draft.isPrimary ? { ...item, isPrimary: false } : item),
+    timeline: [{ date: timestamp, type: 'medication', title: `Registro de ${name} corregido`, detail: `${dose} · ${frequency}.` }, ...(current.timeline || [])],
+  }));
+  return { data: next, medicationId: previous.id };
+}
+
 export function changeMedicationDose(data, patientId, draft) {
   const newDoseValue = numberOrNull(draft.newDoseValue);
   if (newDoseValue === null || newDoseValue <= 0) throw new Error('Escribe una dosis nueva mayor que cero.');
@@ -576,7 +634,7 @@ export function recordAssessment(data, patientId, draft) {
   const date = clinicalDateIso(draft.date);
   const patient = data.patients.find(item => item.id === patientId);
   const existingScale = patient?.assessments?.find(item => item.code === scale.code);
-  const previousPoints = existingScale?.points ? sortedByDate(existingScale.points) : [];
+  const previousPoints = existingScale?.points ? sortedByDate(existingScale.points.filter(point => !point.archivedAt)) : [];
   const previous = previousPoints.at(-1)?.value;
   const adherence = numberOrNull(draft.adherence);
   const functioningChange = numberOrNull(draft.functioningChange);
@@ -588,11 +646,22 @@ export function recordAssessment(data, patientId, draft) {
   let next = updatePatient(data, patientId, current => {
     const assessments = [...(current.assessments || [])];
     const index = assessments.findIndex(item => item.code === scale.code);
+    const priorPoints = index >= 0 ? assessments[index].points : [];
+    let pointFound = !draft.editing;
+    const correctedPoints = draft.editing
+      ? priorPoints.map(point => {
+        const matches = (draft.pointId && point.id === draft.pointId) || (!draft.pointId && point.date === draft.originalDate);
+        if (!matches) return point;
+        pointFound = true;
+        return { ...point, id: point.id || uid('assessment'), date, value: score, correctedAt: nowIso(), correctedBy: data.settings?.activeUserId || null };
+      })
+      : [...priorPoints, { id: uid('assessment'), date, value: score }];
+    if (!pointFound) throw new Error('La medición ya no está disponible para editarse.');
     const updatedScale = {
       code: scale.code,
       label: scale.label,
       direction: scale.direction,
-      points: sortedByDate([...(index >= 0 ? assessments[index].points : []), { date, value: score }]),
+      points: sortedByDate(correctedPoints),
     };
     if (index >= 0) assessments[index] = updatedScale;
     else assessments.unshift(updatedScale);
@@ -610,7 +679,7 @@ export function recordAssessment(data, patientId, draft) {
         {
           date,
           type: 'assessment',
-          title: `${scale.code}: ${score}`,
+          title: `${scale.code}: ${score}${draft.editing ? ' (corregido)' : ''}`,
           detail: `${scale.label}.${draft.note ? ` ${cleanText(draft.note)}` : ''}`,
         },
       ],
@@ -677,8 +746,11 @@ export function recordVitals(data, patientId, draft) {
   const baselineWeight = numberOrNull(patient?.vitals?.baselineWeight) ?? effectiveWeight;
   const bmi = calculateBMI(effectiveWeight, effectiveHeight) ?? numberOrNull(patient?.vitals?.bmi);
   const bp = systolic !== null && diastolic !== null ? `${systolic}/${diastolic}` : patient?.vitals?.bp || 'Sin registrar';
+  const previousRecord = draft.id ? patient?.vitalsHistory?.find(item => item.id === draft.id) : null;
+  if (draft.id && (!previousRecord || previousRecord.archivedAt)) throw new Error('El control físico ya no está disponible para editarse.');
   const record = {
-    id: uid('vital'), date, baselineWeight,
+    ...previousRecord,
+    id: previousRecord?.id || uid('vital'), date, baselineWeight,
     weight: effectiveWeight,
     height: effectiveHeight,
     bmi,
@@ -687,28 +759,37 @@ export function recordVitals(data, patientId, draft) {
     sleepCurrent: sleepCurrent ?? patient?.sleepCurrent ?? null,
     appetite: draft.appetite || patient?.appetite || 'No registrado',
     notes: cleanText(draft.notes),
+    correctedAt: previousRecord ? nowIso() : null,
+    correctedBy: previousRecord ? data.settings?.activeUserId || null : null,
+    versions: previousRecord ? [...(previousRecord.versions || []), { ...previousRecord, archivedAt: nowIso() }] : [],
   };
 
-  let next = updatePatient(data, patientId, current => ({
-    ...current,
-    vitals: record,
-    vitalsHistory: sortedByDate([...(current.vitalsHistory || []), record]),
-    sleepCurrent: sleepCurrent ?? current.sleepCurrent,
-    appetite: draft.appetite || current.appetite,
-    timeline: [
-      ...(current.timeline || []),
-      {
-        date,
-        type: 'vital',
-        title: 'Control físico registrado',
-        detail: [
-          record.weight !== null ? `Peso ${record.weight} kg` : null,
-          bp !== 'Sin registrar' ? `presión ${bp}` : null,
-          record.pulse !== null ? `pulso ${record.pulse} bpm` : null,
-        ].filter(Boolean).join(' · ') || 'Datos de seguimiento físico actualizados.',
-      },
-    ],
-  }));
+  let next = updatePatient(data, patientId, current => {
+    const vitalsHistory = sortedByDate(previousRecord
+      ? (current.vitalsHistory || []).map(item => item.id === previousRecord.id ? record : item)
+      : [...(current.vitalsHistory || []), record]);
+    const latest = [...vitalsHistory].filter(item => !item.archivedAt).at(-1) || {};
+    return {
+      ...current,
+      vitals: latest,
+      vitalsHistory,
+      sleepCurrent: latest.sleepCurrent ?? current.sleepCurrent,
+      appetite: latest.appetite || current.appetite,
+      timeline: [
+        ...(current.timeline || []),
+        {
+          date,
+          type: 'vital',
+          title: previousRecord ? 'Control físico corregido' : 'Control físico registrado',
+          detail: [
+            record.weight !== null ? `Peso ${record.weight} kg` : null,
+            bp !== 'Sin registrar' ? `presión ${bp}` : null,
+            record.pulse !== null ? `pulso ${record.pulse} bpm` : null,
+          ].filter(Boolean).join(' · ') || 'Datos de seguimiento físico actualizados.',
+        },
+      ],
+    };
+  });
 
   if (baselineWeight && record.weight && ((record.weight - baselineWeight) / baselineWeight) * 100 >= 5) {
     next = appendAlert(next, {
@@ -727,8 +808,13 @@ export function recordAdverseEvent(data, patientId, draft) {
   const name = draft.name === 'Otro' ? cleanText(draft.customName) : cleanText(draft.name);
   if (!name) throw new Error('Escribe el efecto observado.');
   const date = clinicalDateIso(draft.onset);
+  const patient = data.patients.find(item => item.id === patientId);
+  const previous = draft.id ? patient?.adverseEvents?.find(item => item.id === draft.id) : null;
+  if (draft.id && (!previous || previous.archivedAt)) throw new Error('El efecto ya no está disponible para editarse.');
+  const timestamp = nowIso();
   const event = {
-    id: uid('adverse'),
+    ...previous,
+    id: previous?.id || uid('adverse'),
     medicationId: draft.medicationId || null,
     name,
     severity: draft.severity || 'mild',
@@ -736,16 +822,23 @@ export function recordAdverseEvent(data, patientId, draft) {
     status: draft.status || 'active',
     relation: cleanText(draft.relation) || 'Relación temporal todavía no evaluada.',
     actionTaken: cleanText(draft.actionTaken),
+    createdAt: previous?.createdAt || timestamp,
+    createdBy: previous?.createdBy || data.settings?.activeUserId || null,
+    correctedAt: previous ? timestamp : null,
+    correctedBy: previous ? data.settings?.activeUserId || null : null,
+    versions: previous ? [...(previous.versions || []), { ...previous, archivedAt: timestamp }] : [],
   };
   let next = updatePatient(data, patientId, patient => ({
     ...patient,
-    adverseEvents: [event, ...(patient.adverseEvents || [])],
+    adverseEvents: previous
+      ? (patient.adverseEvents || []).map(item => item.id === previous.id ? event : item)
+      : [event, ...(patient.adverseEvents || [])],
     timeline: [
       ...(patient.timeline || []),
       {
         date,
         type: 'alert',
-        title: `Efecto observado: ${name}`,
+        title: `${previous ? 'Efecto corregido' : 'Efecto observado'}: ${name}`,
         detail: `${event.relation}${event.actionTaken ? ` Acción registrada: ${event.actionTaken}.` : ''}`,
       },
     ],
@@ -793,8 +886,13 @@ export function recordLab(data, patientId, draft) {
   if (!name) throw new Error('Escribe el nombre de la prueba.');
   if (draft.value === '') throw new Error('Escribe el resultado.');
   const date = clinicalDateIso(draft.date);
+  const patient = data.patients.find(item => item.id === patientId);
+  const previous = draft.id ? patient?.labs?.find(item => item.id === draft.id) : null;
+  if (draft.id && (!previous || previous.archivedAt)) throw new Error('El resultado ya no está disponible para editarse.');
+  const timestamp = nowIso();
   const lab = {
-    id: uid('lab'),
+    ...previous,
+    id: previous?.id || uid('lab'),
     name,
     value: cleanText(draft.value),
     unit: cleanText(draft.unit),
@@ -802,16 +900,23 @@ export function recordLab(data, patientId, draft) {
     date,
     reference: cleanText(draft.reference),
     notes: cleanText(draft.notes),
+    createdAt: previous?.createdAt || timestamp,
+    createdBy: previous?.createdBy || data.settings?.activeUserId || null,
+    correctedAt: previous ? timestamp : null,
+    correctedBy: previous ? data.settings?.activeUserId || null : null,
+    versions: previous ? [...(previous.versions || []), { ...previous, archivedAt: timestamp }] : [],
   };
   let next = updatePatient(data, patientId, patient => ({
     ...patient,
-    labs: [lab, ...(patient.labs || [])],
+    labs: previous
+      ? (patient.labs || []).map(item => item.id === previous.id ? lab : item)
+      : [lab, ...(patient.labs || [])],
     timeline: [
       ...(patient.timeline || []),
       {
         date,
         type: 'lab',
-        title: `${name}: ${lab.value}${lab.unit ? ` ${lab.unit}` : ''}`,
+        title: `${name}: ${lab.value}${lab.unit ? ` ${lab.unit}` : ''}${previous ? ' (corregido)' : ''}`,
         detail: `${lab.status === 'normal' ? 'Registrado dentro del rango indicado.' : 'Marcado para revisión clínica.'}${lab.notes ? ` ${lab.notes}` : ''}`,
       },
     ],
@@ -827,6 +932,131 @@ export function recordLab(data, patientId, draft) {
     });
   }
   return { data: next };
+}
+
+export function updatePatientDocumentMetadata(data, patientId, draft) {
+  const patient = data.patients.find(item => item.id === patientId);
+  const previous = patient?.documents?.find(item => item.id === draft.id);
+  if (!previous || previous.archived) throw new Error('El documento ya no está disponible para editarse.');
+  const name = cleanText(draft.name);
+  if (!name) throw new Error('Escribe el nombre del documento.');
+  const timestamp = nowIso();
+  const actor = data.settings?.activeUserId || null;
+  const document = {
+    ...previous,
+    name,
+    category: draft.category || 'Otro',
+    clinicalDate: clinicalDateIso(draft.clinicalDate),
+    description: cleanText(draft.description),
+    confidentiality: draft.confidentiality || 'Clínico',
+    correctedAt: timestamp,
+    correctedBy: actor,
+    versions: [...(previous.versions || []), {
+      at: timestamp,
+      by: actor,
+      name: previous.name,
+      category: previous.category,
+      clinicalDate: previous.clinicalDate,
+      description: previous.description,
+      confidentiality: previous.confidentiality,
+    }],
+    updatedAt: timestamp,
+  };
+  return {
+    data: updatePatient(data, patientId, current => ({
+      ...current,
+      documents: (current.documents || []).map(item => item.id === previous.id ? document : item),
+      timeline: [{ date: timestamp, type: 'document', title: `Documento corregido: ${name}`, detail: document.description || 'Metadatos del documento actualizados.' }, ...(current.timeline || [])],
+    })),
+    document,
+  };
+}
+
+export function archiveClinicalRecord(data, patientId, resource, recordId, reason) {
+  const archiveReason = cleanText(reason);
+  if (archiveReason.length < 3) throw new Error('Escribe un motivo de al menos 3 caracteres.');
+  const patient = data.patients.find(item => item.id === patientId);
+  if (!patient) throw new Error('El paciente ya no está disponible.');
+  const timestamp = nowIso();
+  const actor = data.settings?.activeUserId || null;
+  const audit = { archivedAt: timestamp, archivedBy: actor, archiveReason };
+  let label = 'Registro';
+  const next = updatePatient(data, patientId, current => {
+    const patch = {};
+    if (resource === 'adverseEvent') {
+      const target = (current.adverseEvents || []).find(item => item.id === recordId && !item.archivedAt);
+      if (!target) throw new Error('El efecto ya no está disponible.');
+      label = `Efecto ${target.name}`;
+      patch.adverseEvents = current.adverseEvents.map(item => item.id === recordId ? { ...item, ...audit } : item);
+    } else if (resource === 'lab') {
+      const target = (current.labs || []).find(item => item.id === recordId && !item.archivedAt);
+      if (!target) throw new Error('El resultado ya no está disponible.');
+      label = `Laboratorio ${target.name}`;
+      patch.labs = current.labs.map(item => item.id === recordId ? { ...item, ...audit } : item);
+    } else if (resource === 'vital') {
+      const target = (current.vitalsHistory || []).find(item => item.id === recordId && !item.archivedAt);
+      if (!target) throw new Error('El control físico ya no está disponible.');
+      label = 'Control físico';
+      patch.vitalsHistory = current.vitalsHistory.map(item => item.id === recordId ? { ...item, ...audit } : item);
+      patch.vitals = [...patch.vitalsHistory].filter(item => !item.archivedAt).sort((left, right) => new Date(right.date) - new Date(left.date))[0] || {};
+    } else if (resource === 'assessment') {
+      const separator = String(recordId).indexOf('|');
+      const code = separator >= 0 ? String(recordId).slice(0, separator) : '';
+      const pointKey = separator >= 0 ? String(recordId).slice(separator + 1) : '';
+      let found = false;
+      patch.assessments = (current.assessments || []).map(assessment => assessment.code !== code ? assessment : {
+        ...assessment,
+        points: (assessment.points || []).map(point => {
+          if (!found && !point.archivedAt && (point.id === pointKey || (!point.id && point.date === pointKey))) {
+            found = true;
+            return { ...point, ...audit };
+          }
+          return point;
+        }),
+      });
+      if (!found) throw new Error('La medición ya no está disponible.');
+      label = `Medición ${code}`;
+    } else if (resource === 'document') {
+      const target = (current.documents || []).find(item => item.id === recordId && !item.archived);
+      if (!target) throw new Error('El documento ya no está disponible.');
+      label = `Documento ${target.name}`;
+      patch.documents = current.documents.map(item => item.id === recordId ? { ...item, archived: true, ...audit } : item);
+    } else if (resource === 'consultation') {
+      const target = (current.consultations || []).find(item => item.id === recordId);
+      if (!target) throw new Error('La consulta ya no está disponible.');
+      const signed = Boolean(target.signedAt) || ['completed', 'signed'].includes(String(target.status || '').toLowerCase());
+      label = `Consulta ${target.title || ''}`.trim();
+      if (signed) {
+        if ((current.consultationRetractions || []).some(item => item.resourceId === recordId)) throw new Error('La consulta ya fue anulada.');
+        patch.consultationRetractions = [{ id: uid('retraction'), resourceId: recordId, ...audit }, ...(current.consultationRetractions || [])];
+      } else {
+        if (target.archivedAt) throw new Error('El borrador ya fue retirado.');
+        patch.consultations = current.consultations.map(item => item.id === recordId ? { ...item, ...audit } : item);
+      }
+    } else {
+      throw new Error('Tipo de registro no compatible.');
+    }
+    return {
+      ...current,
+      ...patch,
+      timeline: [{ date: timestamp, type: 'correction', title: `${label} retirado`, detail: `Motivo: ${archiveReason}.` }, ...(current.timeline || [])],
+    };
+  });
+  return { data: next, archivedAt: timestamp };
+}
+
+export function setPatientArchived(data, patientId, reason) {
+  const archiveReason = cleanText(reason);
+  if (archiveReason.length < 3) throw new Error('Escribe un motivo de al menos 3 caracteres.');
+  const timestamp = nowIso();
+  const actor = data.settings?.activeUserId || null;
+  const patient = data.patients.find(item => item.id === patientId);
+  if (!patient) throw new Error('El paciente ya no está disponible.');
+  return {
+    ...data,
+    patients: data.patients.map(item => item.id === patientId ? { ...item, archived: true, archivedAt: timestamp, archivedBy: actor, archiveReason, updatedAt: timestamp } : item),
+    appointments: data.appointments.map(item => item.patientId === patientId && !['completed', 'cancelled', 'no_show'].includes(item.status) ? { ...item, status: 'cancelled', updatedAt: timestamp } : item),
+  };
 }
 
 export function saveAppointment(data, draft) {
@@ -897,9 +1127,9 @@ export function updateAlertStatus(data, alertId, status) {
 }
 
 export function analyticsRows(data) {
-  return data.patients.map(patient => {
-    const primary = patient.assessments?.[0];
-    const points = sortedByDate(primary?.points || []);
+  return data.patients.filter(patient => !patient.archived).map(patient => {
+    const primary = patient.assessments?.find(item => item.points?.some(point => !point.archivedAt));
+    const points = sortedByDate((primary?.points || []).filter(point => !point.archivedAt));
     const baseline = numberOrNull(points[0]?.value);
     const current = numberOrNull(points.at(-1)?.value);
     const improvement = baseline && current !== null
@@ -923,8 +1153,8 @@ export function analyticsRows(data) {
 
 export function buildPatientReport(patient, alerts = []) {
   const medication = activePrimaryMedication(patient);
-  const primary = patient.assessments?.[0];
-  const points = sortedByDate(primary?.points || []);
+  const primary = patient.assessments?.find(item => item.points?.some(point => !point.archivedAt));
+  const points = sortedByDate((primary?.points || []).filter(point => !point.archivedAt));
   const baseline = numberOrNull(points[0]?.value);
   const current = numberOrNull(points.at(-1)?.value);
   const improvement = baseline && current !== null
@@ -938,7 +1168,7 @@ export function buildPatientReport(patient, alerts = []) {
     current,
     improvement,
     openAlerts: alerts.filter(item => item.patientId === patient.id && item.status === 'open'),
-    activeAdverse: patient.adverseEvents.filter(item => item.status === 'active'),
+    activeAdverse: patient.adverseEvents.filter(item => !item.archivedAt && item.status === 'active'),
     generatedAt: nowIso(),
   };
 }
