@@ -29,10 +29,10 @@ export function projectRecords(data, clinical = false) {
   }
   for (const patient of data.patients || []) {
     if(can('patientsCreate') || can('patientsEdit')) add('patient_admin',patient.id,pick(patient,can('patientsEdit')?ADMIN_PATIENT_KEYS:ADMIN_PATIENT_KEYS.filter(k=>k!=='updatedAt')));
-    if(['clinicalEdit','medicationsManage','documentsManage','prescriptionsCreate','consultationsManage'].some(can)) {
+    if(['clinicalEdit','medicationsManage','documentsManage','prescriptionsCreate','prescriptionsEdit','consultationsManage'].some(can)) {
       const privateFields=Object.fromEntries(Object.entries(patient).filter(([k])=>!ADMIN_PATIENT_KEYS.includes(k) && !k.startsWith('__')));
       const special={medications:'medicationsManage',medication:'medicationsManage',medicationEvents:'medicationsManage',documents:'documentsManage',prescriptions:'prescriptionsCreate',consultations:'consultationsManage'};
-      add('patient_clinical',patient.id,Object.fromEntries(Object.entries(privateFields).filter(([key])=>can(special[key]||'clinicalEdit'))));
+      add('patient_clinical',patient.id,Object.fromEntries(Object.entries(privateFields).filter(([key])=>key==='prescriptions' ? can('prescriptionsCreate')||can('prescriptionsEdit') : can(special[key]||'clinicalEdit'))));
     }
   }
   for (const a of data.appointments || []) {

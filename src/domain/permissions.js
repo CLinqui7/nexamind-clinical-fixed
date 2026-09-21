@@ -1,7 +1,7 @@
 // Keep this contract aligned with linkare_permission_v3; the database is authoritative.
-export const PERMISSION_KEYS = Object.freeze(["patientsView", "patientsCreate", "patientsEdit", "appointmentsManage", "remindersManage", "clinicalView", "clinicalEdit", "medicationsManage", "prescriptionsCreate", "documentsView", "documentsManage", "consultationsManage", "postmortemExport", "alertsView", "analyticsView", "exportsManage", "settingsManage", "usersManage"]);
+export const PERMISSION_KEYS = Object.freeze(["patientsView", "patientsCreate", "patientsEdit", "appointmentsManage", "remindersManage", "clinicalView", "clinicalEdit", "medicationsManage", "prescriptionsCreate", "prescriptionsEdit", "documentsView", "documentsManage", "consultationsManage", "postmortemExport", "alertsView", "analyticsView", "exportsManage", "settingsManage", "usersManage"]);
 export const OWNER_ONLY = Object.freeze(['settingsManage','usersManage','billingManage','accessManage']);
-export const ADMIN_PERMISSIONS = Object.freeze(['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage']);
+export const ADMIN_PERMISSIONS = Object.freeze(['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage','prescriptionsEdit']);
 export const ROLE_LABELS = Object.freeze({owner:'Propietario / Admin',doctor:'Doctor',nurse:'Enfermería',secretary:'Secretaría'});
 export function uiRole(role) { return ({psychiatrist:'doctor',clinical_assistant:'nurse'})[role] || role; }
 export function permissionAllowed(member, permission) {
@@ -13,7 +13,7 @@ export function permissionAllowed(member, permission) {
  if (member.permissions?.[permission] !== true) return false;
  if (['clinicalEdit','medicationsManage','prescriptionsCreate','consultationsManage','postmortemExport','analyticsView'].includes(permission) && member.permissions?.clinicalView !== true) return false;
  if (permission==='documentsManage' && member.permissions?.documentsView !== true) return false;
- if (['clinicalView','clinicalEdit','medicationsManage','prescriptionsCreate','consultationsManage','postmortemExport','analyticsView','documentsView','documentsManage','patientsEdit'].includes(permission) && member.permissions?.patientsView !== true) return false;
+ if (['clinicalView','clinicalEdit','medicationsManage','prescriptionsCreate','consultationsManage','postmortemExport','analyticsView','documentsView','documentsManage','patientsEdit','prescriptionsEdit'].includes(permission) && member.permissions?.patientsView !== true) return false;
  return true;
 }
 export function defaultPermissions(role='secretary') {
@@ -22,7 +22,7 @@ export function defaultPermissions(role='secretary') {
 export function changePermission(permissions,key,value) {
  const next={...permissions,[key]:value};
  const clinical=['clinicalEdit','medicationsManage','prescriptionsCreate','consultationsManage','postmortemExport','analyticsView'];
- const patient=['clinicalView',...clinical,'documentsView','documentsManage','patientsEdit'];
+ const patient=['clinicalView',...clinical,'documentsView','documentsManage','patientsEdit','prescriptionsEdit'];
  if(value){
   if(patient.includes(key))next.patientsView=true;
   if(clinical.includes(key))next.clinicalView=true;

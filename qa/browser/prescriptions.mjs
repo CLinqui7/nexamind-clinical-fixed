@@ -1,0 +1,24 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:process.env.LINKARE_BROWSER||'msedge',headless:true});
+const page=await browser.newPage();page.setDefaultTimeout(12000);
+const checks=[],name='QA Prescription '+Date.now();
+const login=async role=>{await page.locator('input[type=email]').fill(role+'@example.invalid');await page.locator('input[type=password]').fill('qa-password-123');await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).click();await page.getByRole('button',{name:'Pacientes',exact:true}).waitFor();};
+const logout=async()=>{await page.locator('.profile-chip-button').click();await page.getByRole('button',{name:'Cerrar sesión',exact:true}).click();await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).waitFor();};
+const patient=async()=>{await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByText(name,{exact:true}).click();};
+const state=()=>page.evaluate(async()=>{const s=JSON.parse(localStorage.getItem('linkare-isolated-qa-session'));const rpc=async(name,args)=>(await(await fetch('/__qa',{method:'POST',body:JSON.stringify({user:s.user.id,name,args})})).json()).data;return rpc('linkare_load_state_v3',{org:await rpc('linkare_bootstrap_v3',{})});});
+try{
+ await page.goto('http://127.0.0.1:4173');await login('owner');await page.getByRole('button',{name:'Nuevo paciente',exact:true}).first().click();await page.getByLabel('Nombre completo').fill(name);await page.getByRole('spinbutton',{name:'Edad',exact:true}).fill('30');await page.getByLabel('Diagnóstico principal').fill('SYNTHETIC_PRIVATE_CHART');await page.getByRole('button',{name:'Crear paciente',exact:true}).click();await page.getByText('Paciente registrado correctamente.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Nueva receta',exact:true}).click();await page.getByRole('textbox',{name:/^Medicamento/}).fill('Synthetic QA medication');await page.getByLabel('Cómo tomarlo').fill('Original synthetic text');await page.getByRole('button',{name:'Guardar y abrir receta',exact:true}).click();await page.getByText('Receta guardada y abierta para impresión.',{exact:true}).waitFor();
+ const original=(await state()).payload.patients.find(p=>p.name===name).prescriptions[0];
+ // Correct immediately, without reload: server metadata must not cause identity conflicts.
+ await page.getByRole('button',{name:'Editar receta',exact:true}).click();await page.getByLabel('Cómo tomarlo').fill('Owner correction');await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();checks.push('owner can correct immediately after creation without duplicate');await logout();
+ for(const [role,text] of [['secretary','Secretary correction'],['doctor','Doctor correction']]){
+  await login(role);await patient();if(role==='doctor')await page.getByRole('tab',{name:'Recetas',exact:true}).click();
+  if(role==='secretary'){const p=(await state()).payload.patients.find(p=>p.name===name);assert.equal(p.diagnosis,undefined);assert.equal(p.medications,undefined);assert.equal(await page.getByRole('button',{name:'Nueva receta',exact:true}).count(),0);}
+  await page.getByRole('button',{name:'Editar receta',exact:true}).click();await page.getByLabel('Cómo tomarlo').fill(text);await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();await page.reload();await patient();
+  const recipes=(await state()).payload.patients.find(p=>p.name===name).prescriptions;assert.equal(recipes.length,1);assert.equal(recipes[0].id,original.id);assert.equal(recipes[0].number,original.number);assert.equal(recipes[0].items[0].directions,text);checks.push(role+' correction persists after reload and preserves identity');await logout();
+ }
+ await login('owner');const rx=(await state()).payload.patients.find(p=>p.name===name).prescriptions[0];assert.equal(rx.history.length,3);assert.equal(rx.history[1].correctedBy,'10000000-0000-4000-8000-000000000005');assert.equal(rx.history[0].previous.items[0].directions,'Original synthetic text');checks.push('database retains all three corrections with their authenticated authors');
+ console.log(JSON.stringify({passed:checks.length,checks,scope:'Isolated browser + PostgreSQL; synthetic prescriptions, no production writes'},null,2));
+}finally{await browser.close();}

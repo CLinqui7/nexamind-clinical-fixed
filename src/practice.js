@@ -18,6 +18,7 @@ export const PERMISSION_CATALOG = [
   { key: 'clinicalView', group: 'Información clínica', label: 'Ver información clínica', description: 'Consultar diagnósticos, escalas, tratamiento y controles.' },
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },
   { key: 'medicationsManage', group: 'Información clínica', label: 'Gestionar medicamentos', description: 'Agregar, pausar, finalizar y cambiar dosis.' },
+  { key: 'prescriptionsEdit', group: 'Recetas', label: 'Corregir recetas existentes', description: 'Editar e imprimir recetas guardadas, con historial de cambios.' },
   { key: 'prescriptionsCreate', group: 'Documentos', label: 'Generar recetas', description: 'Crear e imprimir recetas membretadas.' },
   { key: 'documentsView', group: 'Documentos', label: 'Ver archivos clínicos', description: 'Consultar documentos adjuntos al expediente.' },
   { key: 'documentsManage', group: 'Documentos', label: 'Subir y archivar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
@@ -42,6 +43,7 @@ export const DEFAULT_SECRETARY_PERMISSIONS = {
   clinicalEdit: false,
   medicationsManage: false,
   prescriptionsCreate: false,
+  prescriptionsEdit: true,
   documentsView: false,
   documentsManage: false,
   consultationsManage: false,
@@ -204,6 +206,10 @@ export function savePatientPhoto(data, patientId, photo) {
 export function savePrescription(data, patientId, draft) {
   const patient = data.patients.find(item => item.id === patientId);
   if (!patient) throw new Error('El paciente ya no está disponible.');
+  const previous=draft.id ? (patient.prescriptions||[]).find(p=>p.id===draft.id) : null;
+  if(draft.id&&!previous)throw new Error('La receta ya no está disponible.');
+  if(!hasPermission(data,previous?'prescriptionsEdit':'prescriptionsCreate'))throw new Error('No tiene permiso para guardar esta receta.');
+  const timestamp=nowIso();
   const items = (draft.items || []).map(item => ({
     id: item.id || uid('rxitem'),
     medication: clean(item.medication),
@@ -218,23 +224,25 @@ export function savePrescription(data, patientId, draft) {
   const existing = data.patients.flatMap(item => item.prescriptions || []).length;
   const date = draft.date || new Date().toISOString().slice(0, 10);
   const prescription = {
-    id: uid('rx'),
-    number: `RX-${date.slice(0, 4)}-${String(existing + 1).padStart(4, '0')}`,
+    ...previous,
+    id: previous?.id || uid('rx'),
+    number: previous?.number || `RX-${date.slice(0, 4)}-${String(existing + 1).padStart(4, '0')}`,
     date: new Date(`${date}T12:00:00`).toISOString(),
     diagnosis: clean(draft.diagnosis),
     generalInstructions: clean(draft.generalInstructions),
     observations: clean(draft.observations),
     items,
     doctorName: clean(draft.doctorName) || data.organization?.clinician || patient.clinician,
-    createdBy: getActiveUser(data)?.id || null,
-    createdAt: nowIso(),
+    createdBy: previous ? previous.createdBy : getActiveUser(data)?.id || null,
+    createdAt: previous ? previous.createdAt : timestamp,
+    updatedAt: timestamp,updatedBy:getActiveUser(data)?.id || null,
   };
   const next = {
     ...data,
     patients: data.patients.map(item => item.id === patientId ? {
       ...item,
-      prescriptions: [prescription, ...(item.prescriptions || [])],
-      timeline: [{ date: prescription.createdAt, type: 'document', title: `Receta ${prescription.number} generada`, detail: `${items.length} indicación(es) registradas para impresión y firma.` }, ...(item.timeline || [])],
+      prescriptions: previous ? item.prescriptions.map(p=>p.id===previous.id?prescription:p) : [prescription, ...(item.prescriptions || [])],
+      timeline: [{ date: prescription.createdAt, type: 'document', title: `Receta ${prescription.number} ${previous?'corregida':'generada'}`, detail: `${items.length} indicación(es) registradas para impresión y firma.` }, ...(item.timeline || [])],
       updatedAt: nowIso(),
     } : item),
   };
