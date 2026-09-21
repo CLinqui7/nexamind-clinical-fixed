@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  await actor('other');otherOrg=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
@@ -95,4 +95,11 @@ test('DB: appointment confirmation and administrative review metadata are server
  await permissions('secretary',{patientsView:true,appointmentsManage:true});
  await save([{kind:'appointment',id:'appointment',expectedRevision:1,payload:{patientId:'patient',start:'2026-10-01T12:00:00Z',end:'2026-10-01T12:30:00Z',status:'confirmed',adminReviewStatus:'reviewed',confirmedAt:'2000-01-01',confirmedBy:ids.other,reviewedAt:'2000-01-01',reviewedBy:ids.other}}]);
  const appointment=(await load()).payload.appointments.find(a=>a.id==='appointment');assert.equal(appointment.status,'confirmed');assert.equal(appointment.adminReviewStatus,'reviewed');assert.equal(appointment.confirmedBy,ids.secretary);assert.equal(appointment.reviewedBy,ids.secretary);assert.notEqual(appointment.confirmedAt,'2000-01-01');assert.notEqual(appointment.reviewedAt,'2000-01-01');assert.equal(appointment.notes,undefined);
+});
+
+test('DB: daily agenda uses the requested date, current medication, tenant and clinical permission',async()=>{
+ await permissions('doctor',{patientsView:true,clinicalView:true,appointmentsManage:true});let agenda=(await db.query('select public.linkare_daily_agenda_v1($1,$2::date) data',[org,'2026-10-01'])).rows[0].data;assert.equal(agenda.date,'2026-10-01');assert.equal(agenda.items.length,1);assert.equal(agenda.items[0].patientName,'Synthetic QA');assert.equal(agenda.items[0].currentMedication.name,'Medicamento informado');
+ agenda=(await db.query('select public.linkare_daily_agenda_v1($1,$2::date) data',[org,'2026-10-02'])).rows[0].data;assert.equal(agenda.items.length,0);
+ await permissions('secretary',{patientsView:true,appointmentsManage:true});await denied(()=>db.query('select public.linkare_daily_agenda_v1($1,$2::date)',[org,'2026-10-01']));
+ await actor('other');await denied(()=>db.query('select public.linkare_daily_agenda_v1($1,$2::date)',[org,'2026-10-01']));
 });

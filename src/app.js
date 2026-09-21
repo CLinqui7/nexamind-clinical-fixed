@@ -102,6 +102,7 @@ import {
   signOutProduction,
   bootstrapAndLoadState,
   captureReportedMedication,
+  loadDailyAgenda,
   saveProductionState,
   setPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
@@ -356,6 +357,7 @@ class App extends React.Component {
       modal:null,modalError:'',appointmentDetails:null,appointmentPrompt:null,promptDismissedFor:null,
       activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
+      dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       tutorialIntro:false,tourActive:false,tourMode:'quick',tourIndex:0,tourPreviewRole:null,
     };
@@ -379,8 +381,22 @@ class App extends React.Component {
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
-        this.loadIntegrationStatus();this.checkConsultationPrompt();
+        this.loadIntegrationStatus();this.refreshDailyAgenda();this.checkConsultationPrompt();
       });
+  };
+
+  refreshDailyAgenda = async (date=toDateInput(new Date())) => {
+    if(!this.state.remoteOrganizationId||!this.can('clinicalView')||!this.can('appointmentsManage'))return;
+    const epoch=this.authEpoch;this.setState({dailyAgendaLoading:true});
+    try{const agenda=await loadDailyAgenda(this.state.remoteOrganizationId,date);if(epoch===this.authEpoch)this.setState({dailyAgenda:agenda,dailyAgendaLoading:false});}
+    catch(_){if(epoch===this.authEpoch)this.setState({dailyAgendaLoading:false});}
+  };
+
+  printDailyAgenda = () => {
+    const agenda=this.state.dailyAgenda||{items:[]};const popup=window.open('','_blank','width=900,height=980');
+    if(!popup)return this.notify('El navegador bloqueó la ventana de impresión.','danger');popup.opener=null;
+    const rows=(agenda.items||[]).map(item=>`<tr><td>${formatTime(item.start)}</td><td>${String(item.patientName||'').replace(/[<>&]/g,'')}</td><td>${item.currentMedication?`${String(item.currentMedication.name||'').replace(/[<>&]/g,'')} ${String(item.currentMedication.dose||'').replace(/[<>&]/g,'')}`:'Sin tratamiento activo'}</td><td>${String(item.relevantNote||'Sin cambio reciente').replace(/[<>&]/g,'')}</td></tr>`).join('');
+    popup.document.write(`<!doctype html><html lang="es"><meta charset="utf-8"><title>Agenda del día</title><style>body{font:14px Arial;color:#17324d;padding:30px}h1{color:#05316e}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #ccd8e3;text-align:left}th{background:#05316e;color:#fff}</style><h1>Agenda del día</h1><p>${formatLongDate(agenda.date)}</p><table><thead><tr><th>Hora</th><th>Paciente</th><th>Medicamento actual</th><th>Último cambio relevante</th></tr></thead><tbody>${rows}</tbody></table><script>print()</script></html>`);popup.document.close();
   };
 
   restoreProductionSession = async () => {
@@ -1645,12 +1661,12 @@ class App extends React.Component {
           <${LineChart} series=${[{ label: 'Síntomas relativos', points: symptomPoints }]}/>
           <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Muestra cambios registrados durante el tratamiento. No demuestra que un medicamento sea la causa del cambio.</div>
         </${Card}>
-        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda de hoy" action=${html`<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button>`}>
+        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div><button className="text-button" onClick=${this.printDailyAgenda}>Imprimir</button><button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="date-hero"><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'long' }).format(new Date())}</span><strong>${new Date().getDate()}</strong><small>${new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' }).format(new Date())}</small></div>
           <div className="today-list">
-            ${todayAppointments.length ? todayAppointments.map(appointment => {
-              const patient = patients.find(item => item.id === appointment.patientId);
-              return html`<button key=${appointment.id} className="today-item" onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}</time><span className="event-line"></span><div><b>${appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Avatar} patient=${patient} size="sm"/></button>`;
+            ${this.state.dailyAgendaLoading?html`<p>Cargando agenda segura…</p>`:(this.state.dailyAgenda?.items||[]).length ? this.state.dailyAgenda.items.map(item => {
+              const appointment=appointments.find(value=>value.id===item.appointmentId);
+              return html`<button key=${item.appointmentId} className="today-item" onClick=${() => appointment&&this.setState({appointmentDetails:appointment})}><time>${formatTime(item.start)}</time><span className="event-line"></span><div><b>${item.patientName}</b><small>${item.currentMedication?`${item.currentMedication.name} ${item.currentMedication.dose||''}`:'Sin tratamiento activo'}</small><small>${item.relevantNote||'Sin cambio reciente'}</small></div></button>`;
             }) : html`<${EmptyState} icon="calendar" title="Sin citas hoy" text="Puede crear una cita desde aquí." action=${html`<${Button} tone="soft" icon="plus" onClick=${() => this.openNewAppointment()}>Agregar cita</${Button}>`}/>`}
           </div>
           ${todayAppointments.length ? html`<${Button} tone="soft" icon="plus" onClick=${() => this.openNewAppointment()}>Agregar cita</${Button}>` : null}
