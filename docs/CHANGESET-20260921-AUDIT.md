@@ -63,7 +63,7 @@ Los mensajes a pacientes contendrán únicamente fecha/hora y datos operativos. 
 - Las tablas públicas actuales tienen RLS habilitado.
 - `linkare_load_state_v3`, `linkare_save_changes_v3` y los helpers v3 usan `search_path=''`.
 - `linkare_set_updated_at` y helpers históricos conservan `search_path=public`; se corregirá el trigger seguro sin cambiar su comportamiento.
-- La protección de contraseñas filtradas es una configuración externa de Auth; se documentará y no se cambiará desde una migración SQL.
+- La protección de contraseñas filtradas es una configuración externa de Auth. Al 21 de septiembre de 2026, la CLI y las respuestas administrativas disponibles no exponen su estado, por lo que queda **no verificada**; no se cambió desde SQL ni se afirma que esté activa. Debe comprobarse en Supabase Dashboard → Authentication → Security cuando una persona con acceso al panel pueda revisarla.
 - El bucket `patient-documents` es privado y no contiene objetos en producción.
 - Las tablas clínicas heredadas enumeradas en el requisito no existen. Las tablas v1/v2 presentes están vacías, con RLS y sin permisos de escritura del cliente.
 
