@@ -111,7 +111,10 @@ function normalizeMedication(medication, patient, index = 0) {
     reportedNotes: medication?.reportedNotes || '',
     source: medication?.source || 'clinical',
     createdBy: medication?.createdBy || null,
-    createdAt: medication?.createdAt || medication?.startDate || patient.lastVisit || null,
+    // createdAt is server-owned medication identity. Legacy records may not
+    // have it, so never synthesize it from a clinical date during hydration:
+    // sending that fallback back would look like an identity rewrite.
+    createdAt: medication?.createdAt ?? null,
     reviewedBy: medication?.reviewedBy || null,
     reviewedAt: medication?.reviewedAt || null,
     events: Array.isArray(medication?.events) ? medication.events : [],
