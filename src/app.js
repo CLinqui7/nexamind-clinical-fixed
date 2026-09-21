@@ -64,6 +64,7 @@ import {
   vitalsFormDefaults,
 } from './clinical.js';
 import {
+  archivePrescription,
   PERMISSION_CATALOG,
   REMINDER_OPTIONS,
   buildPrescriptionPrintHtml,
@@ -688,6 +689,17 @@ class App extends React.Component {
   editPrescription = (patient,prescription) => {
     if(!this.can('prescriptionsEdit'))return this.permissionDenied();
     this.setState({modal:{type:'prescription',patientId:patient.id,draft:{...prescription,date:String(prescription.date||'').slice(0,10),items:prescription.items.map(item=>({...item}))}},modalError:''});
+  };
+
+  deletePrescription = async (patient, prescription) => {
+    if (!this.can('prescriptionsEdit')) return this.permissionDenied();
+    if (!window.confirm(`¿Borrar la receta ${prescription.number}? Dejará de mostrarse, pero Linkare conservará su historial de auditoría.`)) return;
+    try {
+      const result = archivePrescription(this.state.data, patient.id, prescription.id);
+      await this.persistDataUpdate({ data: result.data, patientTab: 'prescriptions' }, 'Receta borrada del expediente.');
+    } catch (error) {
+      this.notify(error.message || 'No se pudo borrar la receta.', 'danger');
+    }
   };
 
   openClinicProfile = () => {
@@ -1383,6 +1395,7 @@ class App extends React.Component {
   printPrescription = (prescription, patientId = this.state.selectedPatientId) => {
     const patient = this.state.data.patients.find(item => item.id === patientId);
     if (!patient || !prescription) return this.notify('No se encontró la receta para imprimir.', 'danger');
+    if (prescription.archivedAt) return this.notify('La receta fue borrada y ya no puede imprimirse.', 'danger');
     const printWindow = window.open('', '_blank', 'width=920,height=980');
     if (!printWindow) return this.notify('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes.', 'danger');
     printWindow.opener = null;
@@ -1829,9 +1842,10 @@ class App extends React.Component {
   }
 
   renderPrescriptionsTab(patient) {
+    const prescriptions = (patient.prescriptions || []).filter(prescription => !prescription.archivedAt);
     return html`<div className="dashboard-grid prescriptions-view">
         <${Card} tour="prescriptions-section" className="span-12" title="Recetas del paciente" subtitle="Genere una receta membretada, guárdela en el expediente y ábrala para imprimir o guardar como PDF." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="prescription" onClick=${() => this.openPrescription(patient)}>Nueva receta</${Button}>` : null}>
-          ${(patient.prescriptions || []).length ? html`<div className="prescription-list">${patient.prescriptions.map(prescription => html`<article key=${prescription.id} className="prescription-card"><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small></div><div className="prescription-card-items">${prescription.items.slice(0, 3).map(item => html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}>` : null}<${Button} tone="secondary" icon="print" onClick=${() => this.printPrescription(prescription, patient.id)}>Imprimir</${Button}></article>`)}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
+          ${prescriptions.length ? html`<div className="prescription-list">${prescriptions.map(prescription => html`<article key=${prescription.id} className="prescription-card"><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small></div><div className="prescription-card-items">${prescription.items.slice(0, 3).map(item => html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.deletePrescription(patient,prescription)}><${Icon} name="trash" size=${16}/> Borrar receta</button>` : null}<${Button} tone="secondary" icon="print" onClick=${() => this.printPrescription(prescription, patient.id)}>Imprimir</${Button}></article>`)}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
         </${Card}>
       </div>`;
   }

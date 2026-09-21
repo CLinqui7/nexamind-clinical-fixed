@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  await actor('other');otherOrg=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
@@ -75,4 +75,13 @@ test('DB: secretary sees and corrects prescriptions without receiving the privat
 test('DB: doctor correction preserves prior history and revocation removes secretary access',async()=>{
  await permissions('doctor',{patientsView:true,clinicalView:true,prescriptionsEdit:true});const rx=(await load()).payload.patients.find(p=>p.id==='patient').prescriptions[0];await save([{kind:'patient_clinical',id:'patient',expectedRevision:4,payload:{prescriptions:[{...rx,observations:'Doctor correction',history:[]}]}}]);const saved=(await load()).payload.patients.find(p=>p.id==='patient').prescriptions[0];assert.equal(saved.history.length,2);assert.equal(saved.updatedBy,ids.doctor);
  await permissions('secretary',{patientsView:true,prescriptionsEdit:false});assert.equal((await load()).payload.patients.find(p=>p.id==='patient').prescriptions,undefined);await denied(()=>save([{kind:'patient_clinical',id:'patient',expectedRevision:5,payload:{prescriptions:[{...saved,observations:'Blocked'}]}}]));
+});
+test('DB: secretary archives a prescription with server-owned audit metadata and cannot restore it',async()=>{
+ await permissions('secretary',{patientsView:true,prescriptionsEdit:true});const rx=(await load()).payload.patients.find(p=>p.id==='patient').prescriptions[0];
+ await save([{kind:'patient_clinical',id:'patient',expectedRevision:5,payload:{prescriptions:[{...rx,archivedAt:'2000-01-01T00:00:00Z',archivedBy:ids.other}]}}]);
+ const archived=(await load()).payload.patients.find(p=>p.id==='patient').prescriptions[0];assert.notEqual(archived.archivedAt,'2000-01-01T00:00:00Z');assert.equal(archived.archivedBy,ids.secretary);assert.equal(archived.history.length,3);
+ const {archivedAt,archivedBy,...restored}=archived;await assert.rejects(()=>save([{kind:'patient_clinical',id:'patient',expectedRevision:6,payload:{prescriptions:[restored]}}]),/PRESCRIPTION_ARCHIVED/);
+ await assert.rejects(()=>save([{kind:'patient_clinical',id:'patient',expectedRevision:6,payload:{prescriptions:[{...archived,observations:'forged'}]}}]),/PRESCRIPTION_ARCHIVED/);
+ await assert.rejects(()=>save([{kind:'patient_clinical',id:'patient',expectedRevision:6,payload:{prescriptions:[]}}]),/PRESCRIPTION_DELETE_DISABLED/);
+ await actor('owner');assert.equal((await load()).payload.patients.find(p=>p.id==='patient').consultations[0].freeNotes,'IMMUTABLE');
 });

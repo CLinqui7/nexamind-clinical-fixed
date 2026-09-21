@@ -18,7 +18,7 @@ export const PERMISSION_CATALOG = [
   { key: 'clinicalView', group: 'Información clínica', label: 'Ver información clínica', description: 'Consultar diagnósticos, escalas, tratamiento y controles.' },
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },
   { key: 'medicationsManage', group: 'Información clínica', label: 'Gestionar medicamentos', description: 'Agregar, pausar, finalizar y cambiar dosis.' },
-  { key: 'prescriptionsEdit', group: 'Recetas', label: 'Corregir recetas existentes', description: 'Editar e imprimir recetas guardadas, con historial de cambios.' },
+  { key: 'prescriptionsEdit', group: 'Recetas', label: 'Editar y borrar recetas', description: 'Corregir o retirar recetas guardadas, con historial de auditoría.' },
   { key: 'prescriptionsCreate', group: 'Documentos', label: 'Generar recetas', description: 'Crear e imprimir recetas membretadas.' },
   { key: 'documentsView', group: 'Documentos', label: 'Ver archivos clínicos', description: 'Consultar documentos adjuntos al expediente.' },
   { key: 'documentsManage', group: 'Documentos', label: 'Subir y archivar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
@@ -208,6 +208,7 @@ export function savePrescription(data, patientId, draft) {
   if (!patient) throw new Error('El paciente ya no está disponible.');
   const previous=draft.id ? (patient.prescriptions||[]).find(p=>p.id===draft.id) : null;
   if(draft.id&&!previous)throw new Error('La receta ya no está disponible.');
+  if(previous?.archivedAt)throw new Error('La receta fue borrada y ya no puede modificarse.');
   if(!hasPermission(data,previous?'prescriptionsEdit':'prescriptionsCreate'))throw new Error('No tiene permiso para guardar esta receta.');
   const timestamp=nowIso();
   const items = (draft.items || []).map(item => ({
@@ -247,6 +248,31 @@ export function savePrescription(data, patientId, draft) {
     } : item),
   };
   return { data: next, prescription };
+}
+
+export function archivePrescription(data, patientId, prescriptionId) {
+  const patient = data.patients.find(item => item.id === patientId);
+  if (!patient) throw new Error('El paciente ya no está disponible.');
+  const previous = (patient.prescriptions || []).find(item => item.id === prescriptionId);
+  if (!previous || previous.archivedAt) throw new Error('La receta ya no está disponible.');
+  if (!hasPermission(data, 'prescriptionsEdit')) throw new Error('No tiene permiso para borrar esta receta.');
+  const timestamp = nowIso();
+  const prescription = {
+    ...previous,
+    archivedAt: timestamp,
+    archivedBy: getActiveUser(data)?.id || null,
+    updatedAt: timestamp,
+    updatedBy: getActiveUser(data)?.id || null,
+  };
+  return {
+    prescription,
+    data: {
+      ...data,
+      patients: data.patients.map(item => item.id === patientId
+        ? { ...item, prescriptions: (item.prescriptions || []).map(value => value.id === prescriptionId ? prescription : value) }
+        : item),
+    },
+  };
 }
 
 export function getReminderQueue(data, now = new Date()) {

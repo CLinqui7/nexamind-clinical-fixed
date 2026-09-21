@@ -16,7 +16,7 @@ Cerrar sesión intenta guardar, llama a Supabase Auth, limpia datos, organizaci�
 | Lectura clínica | Sí | `clinicalView` | `clinicalView` | Nunca |
 | Evolución, controles, resultados | Sí | Permiso correspondiente | Permiso correspondiente | Nunca |
 | Medicamentos, nuevas recetas, consultas | Sí | Cada permiso por separado | Cada permiso por separado | Nunca |
-| Corregir recetas existentes | Sí | `prescriptionsEdit` | `prescriptionsEdit` | `prescriptionsEdit` |
+| Editar y borrar recetas existentes | Sí | `prescriptionsEdit` | `prescriptionsEdit` | `prescriptionsEdit` |
 | Firmar nota médica | Sí | `consultationsManage`, autor autenticado | Nunca | Nunca |
 | Documentos | Sí | Ver/gestionar por separado | Ver/gestionar por separado | Nunca |
 | Equipo, plan, clínica y acceso gratis | Sí | No | No | No |
@@ -36,8 +36,9 @@ Orden de estas migraciones:
 1. `20260921163356_enable_free_access.sql`: agrega acceso gratuito a suscripciones existentes y futuras, redefine entitlement y expone el estado gratuito.
 2. `20260921170106_free_access_and_team_permissions.sql`: agrega rol, teléfono y cargo a invitaciones; convierte permisos de médicos existentes; redefine RPC, políticas, acceso documental y autorización de facturación. Agrega verificación de acceso y provisión administrativa.
 3. `20260921170933_secretary_prescription_corrections.sql`: excepción solicitada posteriormente por el usuario para que Secretaría pueda corregir recetas existentes. Activa `prescriptionsEdit` en secretarías y doctores existentes/invitados, y en enfermería con creación de recetas; incorpora filtrado y validación de correcciones. El propietario puede revocar el permiso desde Equipo.
+4. `20260921182203_archive_prescriptions.sql`: permite retirar recetas de la interfaz con `prescriptionsEdit`. El servidor fija quién y cuándo hizo el borrado, preserva el registro y bloquea su restauración, edición o eliminación física.
 
-La receta conserva ID, número, fecha de creación y autor original. SQL registra revisiones, autor autenticado y contenido previo de cada corrección, aunque el cliente intente borrar ese historial. No permite eliminar recetas ni que el permiso de corrección cree una nueva. Secretaría recibe el contenido de la receta (que puede incluir su diagnóstico e indicaciones), pero no el resto del JSON clínico, notas de consulta ni tratamientos fuera de ella. Las notas médicas firmadas continúan inmutables.
+La receta conserva ID, número, fecha de creación y autor original. SQL registra revisiones, autor autenticado y contenido previo de cada corrección, aunque el cliente intente borrar ese historial. El borrado la oculta mediante archivo, pero no destruye el registro; una receta archivada no se puede restaurar, editar ni imprimir. El permiso tampoco permite crear una receta nueva. Secretaría recibe el contenido de la receta (que puede incluir su diagnóstico e indicaciones), pero no el resto del JSON clínico, notas de consulta ni tratamientos fuera de ella. Las notas médicas firmadas continúan inmutables.
 
 No reescriben expedientes clínicos ni eliminan tablas, personas, pagos o documentos. Tablas cuyos datos/esquema cambian: `linkare_subscriptions_v3`, `linkare_invites_v3`, `organization_members`. Políticas actualizadas en `linkare_records` y `patient_document_audit`; los helpers existentes mantienen las políticas Storage.
 
