@@ -344,7 +344,7 @@ class App extends React.Component {
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       passwordDraft:{password:'',confirmPassword:''},authNotice:'',loginError:'',loginBusy:false,
       productionLoading:true,loadingSlow:false,networkOffline:!navigator.onLine,
-      remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,remoteSaveStatus:'waiting',saveError:'',
+      remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',saveError:'',
       wompiBusy:false,wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},billingError:'',billingLoading:false,
       teamInvites:[],teamBusy:false,view:'dashboard',selectedPatientId:null,patientTab:'overview',patientFilter:'all',search:'',mobileNav:false,
       modal:null,modalError:'',appointmentDetails:null,appointmentPrompt:null,promptDismissedFor:null,
@@ -367,7 +367,7 @@ class App extends React.Component {
     data.settings.activeUserId=user.id;
     setPersistenceBaseline(remote.organizationId,data,remote.revisions,user.role==='doctor');
     clearTimeout(this.loadingTimer);
-    this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,remoteSaveStatus:'saved',saveError:'',
+    this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
@@ -521,7 +521,7 @@ class App extends React.Component {
     {title:'Pacientes',text:'Busque un paciente o registre uno nuevo. La secretaría utiliza únicamente los datos administrativos autorizados.'},
     ...(this.can('clinicalView')?[{title:'Expediente',text:'Medicamentos, dosis, evolución, documentos y consultas están reunidos en la ficha. Las notas firmadas se abren con Ver nota.'},{title:'Libreta',text:'Durante la consulta, escriba sus anotaciones. Compruebe el estado de guardado antes de cerrar. Una nota firmada no puede reemplazarse.'}]:[]),
     {title:'Agenda',text:'Cree, confirme o reprograme citas. Prepare recordatorios según las preferencias autorizadas por el paciente.'},
-    ...(this.can('settingsManage')?[{title:'Equipo y plan',text:'Invite a secretaría desde Configuración. En Mi plan elija pago mensual, semestral o anual.'}]:[])
+    ...(this.can('settingsManage')?[{title:'Equipo y plan',text:'Invite a su equipo desde Configuración. El plan gratuito permite usar todos los módulos según los permisos asignados.'}]:[])
   ];
 
   startTour = () => this.openHelp();
@@ -1029,7 +1029,7 @@ class App extends React.Component {
   loadSubscriptionInvoices = async () => {
     if(!this.state.remoteOrganizationId||!this.can('settingsManage'))return;
     this.setState({billingLoading:true,billingError:''});
-    try{const billingData=await fetchBilling(this.state.remoteOrganizationId);this.setState({billingData,billingLoading:false,subscriptionWritable:subscriptionView(billingData.subscription).active});}
+    try{const billingData=await fetchBilling(this.state.remoteOrganizationId);this.setState({billingData,billingLoading:false,subscriptionWritable:subscriptionView(billingData.subscription).active,complimentaryAccess:billingData.subscription?.complimentary_access===true});}
     catch(e){this.setState({billingError:readableError(e),billingLoading:false});}
   };
 
@@ -1941,6 +1941,7 @@ class App extends React.Component {
   renderPayments() {
     if(!this.can('settingsManage'))return html`<${EmptyState} icon="lock" title="Acceso restringido" text="La suscripción corresponde al médico responsable."/>`;
     const {plans,subscription,orders}=this.state.billingData;const status=subscriptionView(subscription);
+    if(this.state.complimentaryAccess||status.free)return html`<div className="view-enter"><${PageHeader} title="Mi plan" subtitle="Acceso completo habilitado"/><section className="subscription-hero"><div className="subscription-plan-copy"><span className="eyebrow">Plan actual</span><h2>Plan gratuito</h2><p>Expedientes, consultas, agenda, documentos y equipo del consultorio.</p><${Badge} tone="success">Acceso completo</${Badge}></div><div className="subscription-status-card"><span>Precio</span><b>US$0</b><small>Todos los módulos disponibles según los permisos de su cuenta.</small></div></section></div>`;
     const current=plans.find(p=>p.code===subscription?.plan_code);const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
     const pending=orders.find(o=>['pending','creating','review'].includes(o.status));const ws=this.state.wompiStatus;
     return html`<div className="view-enter"><${PageHeader} title="Mi plan Linkare" subtitle="El mismo consultorio, con la modalidad de pago que mejor le convenga." actions=${html`<${Button} tone="secondary" onClick=${this.loadSubscriptionInvoices} disabled=${this.state.billingLoading}>Actualizar estado</${Button}>`}/>
@@ -2210,6 +2211,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     if(this.state.networkOffline)return html`<div className="sync-banner warning" role="status">Sin conexión. No cierre esta ventana si tiene anotaciones pendientes.</div>`;
     if(state==='error')return html`<div className="sync-banner error" role="alert"><span>${this.state.saveError||'No se pudo guardar.'}</span><button onClick=${()=>this.flushChanges().catch(()=>{})}>Reintentar</button></div>`;
     if(['dirty','saving'].includes(state))return html`<div className="sync-banner" role="status"><span className="mini-spinner"></span> Guardando cambios…</div>`;
+    if(this.state.remoteReady&&this.state.complimentaryAccess)return html`<div className="sync-banner" role="status">Plan gratuito · Acceso completo habilitado</div>`;
     if(this.state.remoteReady&&!this.state.subscriptionWritable)return html`<div className="sync-banner warning" role="status"><span>El consultorio no tiene un periodo de pago vigente. Puede leer los registros existentes. Para guardar cambios, ${this.activeUser()?.role==='doctor'?'elija un plan en Mi plan.':'solicite la renovación al médico.'}</span>${this.activeUser()?.role==='doctor'?html`<button onClick=${()=>this.setView('payments')}>Ver planes</button>`:null}</div>`;
     return null;
   }
@@ -2270,7 +2272,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   clearSessionView = () => {
     this.authEpoch++;clearTimeout(this.persistTimer);clearInterval(this.encounterTimer);resetPersistence();
-    this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,remoteSaveStatus:'waiting',
+    this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
       teamInvites:[],billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };

@@ -12,7 +12,7 @@ export async function fetchBilling(organizationId){
  const client=assertSupabaseConfigured();
  const [plans,subscription,orders]=await Promise.all([
   client.from('linkare_plans_v3').select('code,name,amount_cents,months,currency').eq('active',true).order('months'),
-  client.from('linkare_subscriptions_v3').select('plan_code,current_period_start,current_period_end').eq('organization_id',organizationId).maybeSingle(),
+  client.from('linkare_subscriptions_v3').select('plan_code,current_period_start,current_period_end,complimentary_access').eq('organization_id',organizationId).maybeSingle(),
   client.from('linkare_orders_v3').select('id,plan_code,plan_name,amount_cents,months,status,payment_url,is_test,paid_at,period_start,period_end,created_at,external_reference').eq('organization_id',organizationId).order('created_at',{ascending:false}).limit(100),
  ]);
  for(const result of [plans,subscription,orders])if(result.error)throw new Error('No se pudo cargar su suscripción. Revise la conexión o la migración de la base.');
