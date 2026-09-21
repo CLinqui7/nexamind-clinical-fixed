@@ -117,3 +117,9 @@ No se hizo durante esta entrega. Requiere decisión comercial explícita: modifi
 El canary real verifica Supabase Auth, bootstrap, lectura gratuita, logout y cuatro endpoints autenticados, sin escribir pacientes. La entrega de invitaciones/recuperación depende de SMTP; no se enviaron correos a personas para probar. Google OAuth requiere la cuenta y consentimiento del titular; sin conexión es opcional y no bloquea el dashboard. Apple/ICS y recordatorios conservan sus permisos. No se ejecutó un pago real, checkout productivo, mensaje automático ni callback externo de Google.
 
 El postcheck reporta usuarios sin membership: los dos encontrados son cuentas con correo todavía sin confirmar, no registros huérfanos de pacientes. No se borraron. Los avisos heredados del asesor de Supabase se documentan en el informe de despliegue; los RPC `SECURITY DEFINER` son puntos de entrada explícitos con comprobación de miembro/permiso.
+
+## Captura administrativa de medicamentos
+
+`medicationsCapture` permite a Secretaría registrar únicamente medicamentos informados por el paciente. La captura queda pendiente de revisión médica y no concede `clinicalView`, `clinicalEdit`, `medicationsManage` ni `prescriptionsCreate`. La aplicación y la base de datos aplican el mismo requisito de `patientsView` y la misma lista cerrada de permisos administrativos.
+
+La modalidad gratuita habilitada para todas las organizaciones también admite esta captura, las correcciones y anulaciones de recetas, y la gestión de citas. Las RPC siguen validando membresía activa y permisos; el acceso gratuito no elimina el aislamiento por organización ni las reglas clínicas.

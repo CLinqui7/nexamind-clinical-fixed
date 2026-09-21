@@ -37,12 +37,14 @@ import {
 } from './utils.js';
 import {
   addMedication,
+  approveCapturedMedication,
   adverseFormDefaults,
   analyticsRows,
   appointmentFormDefaults,
   assessmentFormDefaults,
   buildPatientReport,
   changeAppointmentStatus,
+  changeAppointmentReviewStatus,
   changeMedicationDose,
   createPatient,
   doseFormDefaults,
@@ -64,7 +66,6 @@ import {
   vitalsFormDefaults,
 } from './clinical.js';
 import {
-  archivePrescription,
   PERMISSION_CATALOG,
   REMINDER_OPTIONS,
   buildPrescriptionPrintHtml,
@@ -77,6 +78,7 @@ import {
   markReminderSent,
   optimizeImageFile,
   prescriptionFormDefaults,
+  prescriptionItemFromMedication,
   reminderLabel,
   savePatientPhoto,
   savePracticeProfile,
@@ -84,6 +86,7 @@ import {
   secretaryFormDefaults,
   smsReminderUrl,
   whatsappReminderUrl,
+  voidPrescription,
 } from './practice.js';
 import {
   createWompiPaymentLink,
@@ -98,6 +101,7 @@ import {
   getProductionSession,
   signOutProduction,
   bootstrapAndLoadState,
+  captureReportedMedication,
   saveProductionState,
   setPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
@@ -352,7 +356,7 @@ class App extends React.Component {
       modal:null,modalError:'',appointmentDetails:null,appointmentPrompt:null,promptDismissedFor:null,
       activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
-      calendarDate:new Date(),calendarView:'month',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
+      calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       tutorialIntro:false,tourActive:false,tourMode:'quick',tourIndex:0,tourPreviewRole:null,
     };
   }
@@ -635,7 +639,7 @@ class App extends React.Component {
   };
 
   openMedication = patient => {
-    if (!this.can('medicationsManage')) return this.permissionDenied();
+    if (!this.can('medicationsManage') && !this.can('medicationsCapture')) return this.permissionDenied();
     this.setState({ modal: { type: 'medication', patientId: patient.id, draft: medicationFormDefaults(patient) }, modalError: '' });
   };
 
@@ -688,17 +692,24 @@ class App extends React.Component {
 
   editPrescription = (patient,prescription) => {
     if(!this.can('prescriptionsEdit'))return this.permissionDenied();
+    if(prescription.status==='voided'||prescription.archivedAt)return this.notify('La receta anulada permanece en el historial y no puede editarse.','danger');
     this.setState({modal:{type:'prescription',patientId:patient.id,draft:{...prescription,date:String(prescription.date||'').slice(0,10),items:prescription.items.map(item=>({...item}))}},modalError:''});
   };
 
-  deletePrescription = async (patient, prescription) => {
+  openVoidPrescription = (patient, prescription) => {
     if (!this.can('prescriptionsEdit')) return this.permissionDenied();
-    if (!window.confirm(`¿Borrar la receta ${prescription.number}? Dejará de mostrarse, pero Linkare conservará su historial de auditoría.`)) return;
+    if(prescription.status==='voided'||prescription.archivedAt)return;
+    this.setState({modal:{type:'prescriptionVoid',patientId:patient.id,prescriptionId:prescription.id,draft:{reason:''}},modalError:''});
+  };
+
+  saveVoidPrescription = async event => {
+    event.preventDefault();
     try {
-      const result = archivePrescription(this.state.data, patient.id, prescription.id);
-      await this.persistDataUpdate({ data: result.data, patientTab: 'prescriptions' }, 'Receta borrada del expediente.');
+      const {patientId,prescriptionId,draft}=this.state.modal;
+      const result = voidPrescription(this.state.data, patientId, prescriptionId, draft.reason);
+      await this.persistDataUpdate({ data: result.data, patientTab: 'prescriptions', modal:null, modalError:'' }, 'Receta anulada y conservada en el historial.');
     } catch (error) {
-      this.notify(error.message || 'No se pudo borrar la receta.', 'danger');
+      this.handleFormError(error);
     }
   };
 
@@ -1194,8 +1205,15 @@ class App extends React.Component {
 
   addPrescriptionItem = () => {
     this.setState(prev => ({
-      modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, items: [...(prev.modal.draft.items || []), { id: `rxitem_${Date.now()}`, medication: '', strength: '', directions: '', quantity: '', duration: '', notes: '' }] } } : null,
+      modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, items: [...(prev.modal.draft.items || []), { id: `rxitem_${Date.now()}`, medication: '', strength: '', directions: '', quantity: '', duration: '', notes: '', sourceMedicationId:null, addToTreatment:false }] } } : null,
     }));
+  };
+
+  addCurrentMedicationToPrescription = medicationId => {
+    const patient=this.state.data.patients.find(item=>item.id===this.state.modal?.patientId);
+    const medication=(patient?.medications||[]).find(item=>item.id===medicationId&&item.status==='active');
+    if(!medication)return;
+    this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,items:[...(prev.modal.draft.items||[]),prescriptionItemFromMedication(medication)]}}}));
   };
 
   removePrescriptionItem = itemId => {
@@ -1244,13 +1262,30 @@ class App extends React.Component {
     } catch (error) { this.handleFormError(error); }
   };
 
-  saveMedicationForm = event => {
+  saveMedicationForm = async event => {
     event.preventDefault();
     try {
       const patientId = this.state.modal.patientId;
+      if (!this.can('medicationsManage') && this.can('medicationsCapture')) {
+        this.setState({formSaving:true,modalError:''});
+        await captureReportedMedication(this.state.remoteOrganizationId,patientId,this.state.modal.draft);
+        const session=await getProductionSession();
+        await this.applyProductionSession(session);
+        this.setState({view:'patient',selectedPatientId:patientId,patientTab:'medications',formSaving:false,modal:null});
+        this.notify('Medicamento registrado como pendiente de revisión médica.');
+        return;
+      }
       const result = addMedication(this.state.data, patientId, this.state.modal.draft);
       this.persistDataUpdate({ data: result.data, patientTab: 'medications', modal: null, modalError: '' }, 'Medicamento agregado al tratamiento.');
-    } catch (error) { this.handleFormError(error); }
+    } catch (error) { this.setState({formSaving:false});this.handleFormError(error); }
+  };
+
+  approveMedication = (patient, medication) => {
+    if(!this.can('medicationsManage'))return this.permissionDenied();
+    try{
+      const result=approveCapturedMedication(this.state.data,patient.id,medication.id);
+      this.persistDataUpdate({data:result.data,patientTab:'medications'},'Medicamento revisado y activado.');
+    }catch(error){this.notify(error.message||'No se pudo aprobar el medicamento.','danger');}
   };
 
   saveDoseForm = event => {
@@ -1312,7 +1347,7 @@ class App extends React.Component {
     try {
       const { patientId, draft } = this.state.modal;
       const result = setMedicationStatus(this.state.data, patientId, draft.medicationId, draft.status, draft.reason);
-      const label = draft.status === 'held' ? 'puesto en pausa' : draft.status === 'active' ? 'reactivado' : 'finalizado';
+      const label = draft.status === 'suspended' ? 'suspendido' : draft.status === 'active' ? 'reactivado' : draft.status === 'completed' ? 'completado' : 'descontinuado';
       this.persistDataUpdate({ data: result.data, patientTab: 'medications', modal: null, modalError: '' }, `Medicamento ${label}.`);
     } catch (error) { this.handleFormError(error); }
   };
@@ -1395,7 +1430,6 @@ class App extends React.Component {
   printPrescription = (prescription, patientId = this.state.selectedPatientId) => {
     const patient = this.state.data.patients.find(item => item.id === patientId);
     if (!patient || !prescription) return this.notify('No se encontró la receta para imprimir.', 'danger');
-    if (prescription.archivedAt) return this.notify('La receta fue borrada y ya no puede imprimirse.', 'danger');
     const printWindow = window.open('', '_blank', 'width=920,height=980');
     if (!printWindow) return this.notify('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes.', 'danger');
     printWindow.opener = null;
@@ -1411,6 +1445,12 @@ class App extends React.Component {
       data: next,
       appointmentDetails: this.state.appointmentDetails?.id === appointmentId ? { ...this.state.appointmentDetails, status } : this.state.appointmentDetails,
     }, `Cita marcada como ${statusLabel(status).toLowerCase()}.`);
+  };
+
+  updateAppointmentReview = (appointmentId, adminReviewStatus) => {
+    if (!this.can('appointmentsManage')) return this.permissionDenied();
+    const next=changeAppointmentReviewStatus(this.state.data,appointmentId,adminReviewStatus);
+    this.persistDataUpdate({data:next,appointmentDetails:this.state.appointmentDetails?.id===appointmentId?{...this.state.appointmentDetails,adminReviewStatus}:this.state.appointmentDetails},adminReviewStatus==='reviewed'?'Cita marcada como revisada.':'Cita marcada por revisar.');
   };
 
   deleteAppointment = appointmentId => {
@@ -1699,6 +1739,9 @@ class App extends React.Component {
         <${Card} className="span-5" title="Recordatorios próximos">
           ${reminders.length ? html`<div className="reminder-mini-list">${reminders.map(reminder => html`<div key=${reminder.id} className=${`reminder-mini reminder-${reminder.status}`}><span><${Icon} name="message" size=${16}/></span><div><b>${reminderLabel(reminder.hours)}</b><small>${formatDateTime(reminder.appointment.start)}</small></div>${this.can('remindersManage') && reminder.status === 'due' ? html`<button className="text-button" onClick=${() => this.sendReminderWhatsApp(reminder)}>Enviar</button>` : null}</div>`)}</div>` : html`<${EmptyState} icon="check" title="Sin recordatorios pendientes" text="Se crearán según la configuración de la clínica."/>`}
         </${Card}>
+        ${this.can('medicationsCapture')?html`<${Card} className="span-12" title="Medicamentos informados" subtitle="Secretaría puede registrar lo que informa el paciente. El médico debe revisarlo antes de activarlo." action=${html`<${Button} icon="plus" onClick=${()=>this.openMedication(patient)}>Registrar medicamento informado</${Button}>`}>
+          ${(patient.medications||[]).length?html`<div className="admin-appointment-list">${patient.medications.map(medication=>html`<div key=${medication.id}><div><b>${medication.name}</b><small>${medication.dose||'Dosis no indicada'} · ${medication.frequency||'Frecuencia no indicada'}</small>${medication.reportedNotes?html`<small>${medication.reportedNotes}</small>`:null}</div><${Badge} tone="warning">Pendiente de revisión médica</${Badge}></div>`)}</div>`:html`<${EmptyState} icon="medication" title="Sin medicamentos informados" text="Registre aquí el medicamento que comunique el paciente."/>`}
+        </${Card}>`:null}
       </div>
       ${this.can('documentsView') ? this.renderDocumentsTab(patient) : null}
       ${this.can('prescriptionsEdit') ? this.renderPrescriptionsTab(patient) : null}
@@ -1797,8 +1840,12 @@ class App extends React.Component {
       </div>` : null}
 
       ${this.state.patientTab === 'medications' ? html`<div className="dashboard-grid" data-tour="medication-section">
-        <${Card} className="span-12" title="Medicamentos del paciente" subtitle="Agregue tratamientos, registre cambios de dosis o marque un medicamento como pausado o finalizado." action=${html`<${Button} icon="plus" onClick=${() => this.openMedication(patient)}>Agregar medicamento</${Button}>`}>
-          ${patient.medications.length ? html`<div className="medication-list">${patient.medications.map(medication => html`<article key=${medication.id} className=${`medication-card ${medication.status !== 'active' ? 'medication-inactive' : ''}`}><div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">${medication.class}</span><h3>${medication.name}</h3><p>${medication.indication}</p></div></div><div>${medication.isPrimary ? html`<${Badge} tone="purple">Principal</${Badge}>` : null}<${Badge} tone=${medication.status === 'active' ? 'success' : medication.status === 'held' ? 'warning' : 'neutral'} dot=${true}>${medication.status === 'active' ? 'Activo' : medication.status === 'held' ? 'En pausa' : 'Finalizado'}</${Badge}></div></div><div className="medication-main-dose"><span>Dosis actual</span><strong>${medication.dose}</strong><small>${medication.frequency} · vía ${medication.route}</small></div><div className="medication-info-grid"><div><span>Inicio</span><b>${formatDate(medication.startDate)}</b></div><div><span>Días registrados</span><b>${daysBetween(medication.startDate)}</b></div><div><span>Uso según necesidad</span><b>${medication.isPrn ? 'Sí' : 'No'}</b></div><div><span>Cambios de dosis</span><b>${medication.doseHistory?.length || 0}</b></div></div><div className="dose-history-mini"><span>Historial de dosis</span><div>${[...(medication.doseHistory || [])].sort((left, right) => new Date(left.date) - new Date(right.date)).map(item => html`<div key=${item.id}><time>${formatDate(item.date)}</time><b>${item.dose}</b><small>${item.reason}</small></div>`)}</div></div><div className="medication-actions" data-tour="medication-status">${medication.status === 'active' ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openDose(patient, medication.id)}>Cambiar dosis</${Button}><${Button} tone="soft" onClick=${() => this.changeMedicationStatus(patient, medication, 'held')}>Pausar</${Button}><${Button} tone="secondary" onClick=${() => this.changeMedicationStatus(patient, medication, 'stopped')}>Finalizar</${Button}>` : medication.status === 'held' ? html`<${Button} tone="secondary" icon="refresh" onClick=${() => this.changeMedicationStatus(patient, medication, 'active')}>Reactivar</${Button}><${Button} tone="secondary" onClick=${() => this.changeMedicationStatus(patient, medication, 'stopped')}>Finalizar</${Button}>` : null}</div></article>`)}</div>` : html`<${EmptyState} icon="medication" title="Sin medicamentos registrados" text="Agregue el primer medicamento para comenzar a relacionar dosis, evolución y controles." action=${html`<${Button} icon="plus" onClick=${() => this.openMedication(patient)}>Agregar medicamento</${Button}>`}/>`}
+        <${Card} className="span-12" title="Medicamentos del paciente" subtitle="Cada medicamento conserva su estado, cambios y notas para revisión clínica." action=${this.can('medicationsManage')?html`<${Button} icon="plus" onClick=${()=>this.openMedication(patient)}>Agregar medicamento</${Button}>`:null}>
+          ${patient.medications.length ? html`<div className="medication-list">${patient.medications.map(medication => {
+            const status=medication.status==='held'?'suspended':medication.status==='stopped'?'discontinued':medication.status;
+            const labels={pending_review:'Pendiente de revisión',active:'Activo',suspended:'Suspendido',discontinued:'Descontinuado',completed:'Completado'};
+            return html`<article key=${medication.id} className=${`medication-card ${status!=='active'?'medication-inactive':''}`}><div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">${medication.class||'Medicamento informado'}</span><h3>${medication.name}</h3><p>${medication.indication||medication.reportedNotes||'Pendiente de valoración médica'}</p></div></div><div>${medication.isPrimary?html`<${Badge} tone="purple">Principal</${Badge}>`:null}<${Badge} tone=${status==='active'?'success':status==='pending_review'?'warning':'neutral'} dot=${true}>${labels[status]||status}</${Badge}></div></div><div className="medication-main-dose"><span>Dosis actual</span><strong>${medication.dose}</strong><small>${medication.frequency} · vía ${medication.route}</small></div>${medication.reportedNotes?html`<div className="notes-box"><span>Nota informada</span><p>${medication.reportedNotes}</p></div>`:null}${medication.clinicalNotes?html`<div className="notes-box"><span>Nota clínica</span><p>${medication.clinicalNotes}</p></div>`:null}<div className="medication-info-grid"><div><span>Inicio</span><b>${formatDate(medication.startDate)}</b></div><div><span>Días registrados</span><b>${daysBetween(medication.startDate)}</b></div><div><span>Uso según necesidad</span><b>${medication.isPrn?'Sí':'No'}</b></div><div><span>Eventos</span><b>${medication.events?.length||medication.doseHistory?.length||0}</b></div></div><div className="dose-history-mini"><span>Historial de dosis</span><div>${[...(medication.doseHistory||[])].sort((left,right)=>new Date(left.date)-new Date(right.date)).map(item=>html`<div key=${item.id}><time>${formatDate(item.date)}</time><b>${item.dose}</b><small>${item.reason}</small></div>`)}</div></div>${this.can('medicationsManage')?html`<div className="medication-actions" data-tour="medication-status">${status==='pending_review'?html`<${Button} tone="soft" icon="check" onClick=${()=>this.approveMedication(patient,medication)}>Revisar y activar</${Button}>`:status==='active'?html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.openDose(patient,medication.id)}>Cambiar dosis</${Button}><${Button} tone="soft" onClick=${()=>this.changeMedicationStatus(patient,medication,'suspended')}>Suspender</${Button}><${Button} tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}><${Button} tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'completed')}>Completar</${Button}>`:status==='suspended'?html`<${Button} tone="secondary" icon="refresh" onClick=${()=>this.changeMedicationStatus(patient,medication,'active')}>Reactivar</${Button}><${Button} tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}>`:null}</div>`:null}</article>`;
+          })}</div>` : html`<${EmptyState} icon="medication" title="Sin medicamentos registrados" text="Agregue el primer medicamento para comenzar el historial de tratamiento." action=${this.can('medicationsManage')?html`<${Button} icon="plus" onClick=${()=>this.openMedication(patient)}>Agregar medicamento</${Button}>`:null}/>`}
         </${Card}>
         <${Card} className="span-7" title="Cambio de dosis del medicamento principal" subtitle="Cada cambio conserva la dosis anterior, la fecha y el motivo."><${LineChart} series=${doseSeries}/></${Card}>
         <${Card} className="span-5" title="Cómo leer esta sección"><div className="glossary compact"><div><b>Dosis actual</b><p>La cantidad que el paciente tiene indicada en este momento.</p></div><div><b>Historial de dosis</b><p>Permite ver cuándo se inició, aumentó, redujo, pausó o finalizó un tratamiento.</p></div><div><b>Medicamento principal</b><p>Es el tratamiento que el dashboard usa como referencia visual principal. Puede haber otros medicamentos activos.</p></div></div></${Card}>
@@ -1842,22 +1889,33 @@ class App extends React.Component {
   }
 
   renderPrescriptionsTab(patient) {
-    const prescriptions = (patient.prescriptions || []).filter(prescription => !prescription.archivedAt);
+    const prescriptions = [...(patient.prescriptions || [])].sort((left,right)=>new Date(right.date||right.createdAt)-new Date(left.date||left.createdAt));
     return html`<div className="dashboard-grid prescriptions-view">
-        <${Card} tour="prescriptions-section" className="span-12" title="Recetas del paciente" subtitle="Genere una receta membretada, guárdela en el expediente y ábrala para imprimir o guardar como PDF." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="prescription" onClick=${() => this.openPrescription(patient)}>Nueva receta</${Button}>` : null}>
-          ${prescriptions.length ? html`<div className="prescription-list">${prescriptions.map(prescription => html`<article key=${prescription.id} className="prescription-card"><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small></div><div className="prescription-card-items">${prescription.items.slice(0, 3).map(item => html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.deletePrescription(patient,prescription)}><${Icon} name="trash" size=${16}/> Borrar receta</button>` : null}<${Button} tone="secondary" icon="print" onClick=${() => this.printPrescription(prescription, patient.id)}>Imprimir</${Button}></article>`)}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
+        <${Card} tour="prescriptions-section" className="span-12" title="Recetas del paciente" subtitle="Las recetas se conservan en el expediente. Si existe un error, anúlela con el motivo correspondiente." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="prescription" onClick=${() => this.openPrescription(patient)}>Nueva receta</${Button}>` : null}>
+          ${prescriptions.length ? html`<div className="prescription-list">${prescriptions.map(prescription => {
+            const voided=prescription.status==='voided'||Boolean(prescription.archivedAt);
+            const reason=prescription.voidReason||prescription.archiveReason||'Anulación histórica';
+            return html`<article key=${prescription.id} className=${`prescription-card ${voided?'prescription-voided':''}`}><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small>${voided?html`<p><${Badge} tone="danger">Receta anulada</${Badge}></p><small>Motivo: ${reason}${prescription.voidedAt||prescription.archivedAt?` · ${formatDateTime(prescription.voidedAt||prescription.archivedAt)}`:''}</small>`:null}</div><div className="prescription-card-items">${prescription.items.slice(0,3).map(item=>html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit')&&!voided?html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.openVoidPrescription(patient,prescription)}><${Icon} name="alert" size=${16}/> Anular receta</button>`:null}<${Button} tone="secondary" icon="print" onClick=${()=>this.printPrescription(prescription,patient.id)}>Imprimir</${Button}></article>`;
+          })}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
         </${Card}>
       </div>`;
   }
 
   renderPatientTimeline(patient, patientAppointments) {
+    const prescriptionEvents=(patient.prescriptions||[]).flatMap(prescription=>{
+      const events=[{date:prescription.createdAt||prescription.date,type:'prescription',title:`Receta ${prescription.number||''} creada`,detail:`${prescription.items?.length||0} indicación(es).`}];
+      if(prescription.updatedAt&&prescription.updatedAt!==prescription.createdAt)events.push({date:prescription.updatedAt,type:'prescription',title:`Receta ${prescription.number||''} corregida`,detail:'Se conservó la misma receta con sus cambios registrados.'});
+      if(prescription.status==='voided'||prescription.archivedAt)events.push({date:prescription.voidedAt||prescription.archivedAt||prescription.updatedAt,type:'prescription',title:`Receta ${prescription.number||''} anulada`,detail:`Motivo: ${prescription.voidReason||prescription.archiveReason||'Anulación histórica'}.`});
+      return events;
+    });
     const allEvents = [
       ...(patient.timeline || []),
       ...patientAppointments.map(appointment => ({ date: appointment.start, type: 'appointment', title: `Consulta ${statusLabel(appointment.status).toLowerCase()}`, detail: `${appointment.type} · ${appointment.modality}. ${appointment.notes || ''}` })),
+      ...prescriptionEvents,
     ].sort((left, right) => new Date(right.date) - new Date(left.date));
-    const filterMap = { medications: 'medication', assessments: 'assessment', effects: 'alert', vitals: 'vital', labs: 'lab', documents: 'document', consultations: 'consultation', appointments: 'appointment' };
+    const filterMap = { medications: 'medication', assessments: 'assessment', effects: 'alert', vitals: 'vital', labs: 'lab', documents: 'document', prescriptions:'prescription', consultations: 'consultation', appointments: 'appointment' };
     const filtered = this.state.timelineFilter === 'all' ? allEvents : allEvents.filter(item => item.type === filterMap[this.state.timelineFilter]);
-    const filters = [['all', 'Todo'], ['medications', 'Medicamentos'], ['assessments', 'Escalas'], ['effects', 'Efectos'], ['vitals', 'Controles'], ['labs', 'Laboratorios'], ['documents', 'Documentos'], ['consultations', 'Consultas'], ['appointments', 'Citas']];
+    const filters = [['all', 'Todo'], ['medications', 'Medicamentos'], ['prescriptions','Recetas'], ['assessments', 'Escalas'], ['effects', 'Efectos'], ['vitals', 'Controles'], ['labs', 'Laboratorios'], ['documents', 'Documentos'], ['consultations', 'Consultas'], ['appointments', 'Citas']];
     return html`<${Card} tour="timeline-section" className="timeline-full" title="Historial completo" subtitle="Una sola secuencia con medicamentos, mediciones, laboratorios, efectos y citas." action=${html`<div className="segmented small timeline-filter">${filters.map(([key, label]) => html`<button key=${key} className=${this.state.timelineFilter === key ? 'active' : ''} onClick=${() => this.setState({ timelineFilter: key })}>${label}</button>`)}</div>`}><div className="timeline-list large">${filtered.length ? filtered.map((item, index) => html`<div key=${`${item.date}_${index}`} className="timeline-row"><time>${formatDate(item.date)}<small>${formatTime(item.date)}</small></time><span className=${`timeline-icon timeline-${item.type}`}><${Icon} name=${item.type === 'medication' ? 'medication' : item.type === 'assessment' ? 'analytics' : item.type === 'lab' ? 'file' : item.type === 'appointment' ? 'calendar' : item.type === 'document' ? 'prescription' : item.type === 'vital' ? 'activity' : 'alert'} size=${18}/></span><div><b>${item.title}</b><p>${item.detail}</p></div></div>`) : html`<${EmptyState} icon="file" title="Sin eventos en este filtro" text="Seleccione “Todo” para ver el historial completo."/>`}</div></${Card}>`;
   }
 
@@ -1872,7 +1930,9 @@ class App extends React.Component {
     const cursor = new Date(this.state.calendarDate);
     const view = this.state.calendarView;
     const now = new Date();
-    const upcoming = appointments
+    const appointmentFilter=this.state.appointmentFilter||'all';
+    const filteredAppointments=appointments.filter(item=>appointmentFilter==='all'||(appointmentFilter==='review'?item.adminReviewStatus==='pending':item.status===appointmentFilter));
+    const upcoming = filteredAppointments
       .filter(item => new Date(item.start) >= now && item.status !== 'cancelled')
       .sort((left, right) => new Date(left.start) - new Date(right.start))
       .slice(0, 8);
@@ -1902,13 +1962,14 @@ class App extends React.Component {
         subtitle="Organice consultas y prepare recordatorios desde una sola pantalla."
         actions=${html`<div className="tour-actions-group">${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadAllICS(appointments.filter(item => item.status !== 'cancelled'))}>Exportar agenda</${Button}>` : null}<${Button} icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Nueva cita</${Button}></div>`}
       />
+      <div className="patients-toolbar"><div className="segmented" aria-label="Filtrar citas">${[['all','Todas'],['pending','Pendientes'],['confirmed','Confirmadas'],['review','Por revisar'],['cancelled','Canceladas']].map(([key,label])=>html`<button key=${key} className=${appointmentFilter===key?'active':''} onClick=${()=>this.setState({appointmentFilter:key})}>${label}</button>`)}</div></div>
       <div className="calendar-layout">
         <${Card} tour="agenda-calendar" className="calendar-main">
           <div className="calendar-toolbar">
             <div className="calendar-nav" data-tour="agenda-views"><button className="icon-button" aria-label="Periodo anterior" onClick=${() => move(-1)}><${Icon} name="chevronLeft"/></button><button className="today-button" onClick=${() => this.setState({ calendarDate: new Date() })}>Hoy</button><button className="icon-button" aria-label="Periodo siguiente" onClick=${() => move(1)}><${Icon} name="chevronRight"/></button><h2>${heading}</h2></div>
             <div className="segmented">${[['month', 'Mes'], ['week', 'Semana'], ['day', 'Día']].map(([key, label]) => html`<button key=${key} className=${view === key ? 'active' : ''} onClick=${() => this.setState({ calendarView: key })}>${label}</button>`)}</div>
           </div>
-          ${view === 'month' ? this.renderMonthCalendar(cursor, appointments) : view === 'week' ? this.renderWeekCalendar(cursor, appointments) : this.renderDayCalendar(cursor, appointments)}
+          ${view === 'month' ? this.renderMonthCalendar(cursor, filteredAppointments) : view === 'week' ? this.renderWeekCalendar(cursor, filteredAppointments) : this.renderDayCalendar(cursor, filteredAppointments)}
           <div className="calendar-tip"><${Icon} name="help" size=${16}/><span>Seleccione un día para crear una cita. Abra una cita para editarla, cambiar su estado o preparar el recordatorio.</span></div>
         </${Card}>
         <${Card} className="upcoming-card" title="Próximas citas" action=${html`<${Badge} tone="blue">${upcoming.length}</${Badge}>`}>
@@ -2077,6 +2138,7 @@ class App extends React.Component {
     if (modal.type === 'documentUpload') return this.renderDocumentUploadModal();
     if (modal.type === 'planCompare') return this.renderPlanCompareModal();
     if (modal.type === 'prescription') return this.renderPrescriptionModal();
+    if (modal.type === 'prescriptionVoid') return this.renderPrescriptionVoidModal();
     if (modal.type === 'medication') return this.renderMedicationFormModal();
     if (modal.type === 'dose') return this.renderDoseFormModal();
     if (modal.type === 'medicationStatus') return this.renderMedicationStatusFormModal();
@@ -2088,6 +2150,13 @@ class App extends React.Component {
     if (modal.type === 'report') return this.renderReportModal();
     if (modal.type === 'help') return this.renderHelpModal();
     return null;
+  }
+
+  renderPrescriptionVoidModal() {
+    const {patientId,prescriptionId,draft}=this.state.modal;
+    const patient=this.state.data.patients.find(item=>item.id===patientId);
+    const prescription=patient?.prescriptions?.find(item=>item.id===prescriptionId);
+    return html`<${Modal} title="Anular receta" subtitle=${prescription?`${prescription.number} · ${patient?.name||''}`:'La receta se conservará en el expediente.'} onClose=${this.closeModal} size="md"><form className="clinical-form" onSubmit=${this.saveVoidPrescription}>${this.renderModalError()}<div className="form-information"><${Icon} name="shield" size=${18}/><div><b>La receta no se borrará</b><p>Quedará visible en el historial y cualquier impresión mostrará “RECETA ANULADA”. Ya no podrá editarse.</p></div></div><${FormField} label="Motivo de anulación" required=${true} hint="Explique brevemente el error o la razón administrativa."><textarea autoFocus rows="4" minLength="3" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} required></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Anular y conservar receta"/></form></${Modal}>`;
   }
 
   renderPaymentRequestModal() {
@@ -2195,13 +2264,15 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     const { draft, patientId } = this.state.modal;
     const patient = this.state.data.patients.find(item => item.id === patientId);
     const items = draft.items || [];
-    return html`<${Modal} title=${draft.id?'Editar receta':'Nueva receta'} subtitle=${`Paciente: ${patient?.name || ''}. Se guardará en el expediente y se abrirá para imprimir o guardar como PDF.`} onClose=${this.closeModal} size="xl"><form className="clinical-form prescription-form" onSubmit=${this.savePrescriptionForm}>${this.renderModalError()}<div className="prescription-form-head" data-tour="prescription-form-header"><div className="prescription-patient"><${Avatar} patient=${patient} size="lg"/><div><span>Paciente</span><b>${patient?.name}</b><small>${patient?.age} años · ${patient?.diagnosis}</small></div></div><div className="letterhead-mini">${this.state.data.organization.clinicLogo ? html`<img src=${this.state.data.organization.clinicLogo} alt="Logo"/>` : html`<${Icon} name="building" size=${23}/>`}<div><b>${this.state.data.organization.name}</b><small>${this.state.data.organization.clinician}</small></div></div></div><div className="form-grid" data-tour="prescription-form-header"><${FormField} label="Fecha" required=${true}><input type="date" value=${draft.date} onChange=${event => this.updateDraft('date', event.target.value)} required/></${FormField}><${FormField} label="Diagnóstico"><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)}/></${FormField}></div><${FormField} label="Profesional que emite"><input value=${draft.doctorName} onChange=${event => this.updateDraft('doctorName', event.target.value)} required/></${FormField}><fieldset className="prescription-items-fieldset" data-tour="prescription-form-items"><legend>Medicamentos e indicaciones</legend><div className="prescription-item-list">${items.map((item, index) => html`<article key=${item.id} className="prescription-item-editor"><header><span>${index + 1}</span><b>Indicación</b>${items.length > 1 ? html`<button type="button" aria-label="Quitar medicamento" onClick=${() => this.removePrescriptionItem(item.id)}><${Icon} name="trash" size=${16}/></button>` : null}</header><div className="form-grid" data-tour="prescription-form-item-identity"><${FormField} label="Medicamento" required=${true}><input value=${item.medication} onChange=${event => this.updatePrescriptionItem(item.id, 'medication', event.target.value)} placeholder="Ej. Sertralina" required/></${FormField}><${FormField} label="Presentación o dosis"><input value=${item.strength} onChange=${event => this.updatePrescriptionItem(item.id, 'strength', event.target.value)} placeholder="Ej. 50 mg"/></${FormField}></div><div className="form-grid"><${FormField} label="Cómo tomarlo" required=${true}><input value=${item.directions} onChange=${event => this.updatePrescriptionItem(item.id, 'directions', event.target.value)} placeholder="Ej. 1 tableta cada mañana" required/></${FormField}><${FormField} label="Cantidad"><input value=${item.quantity} onChange=${event => this.updatePrescriptionItem(item.id, 'quantity', event.target.value)} placeholder="Ej. 30 tabletas"/></${FormField}></div><div className="form-grid"><${FormField} label="Duración"><input value=${item.duration} onChange=${event => this.updatePrescriptionItem(item.id, 'duration', event.target.value)} placeholder="Ej. 30 días"/></${FormField}><${FormField} label="Nota de la indicación"><input value=${item.notes} onChange=${event => this.updatePrescriptionItem(item.id, 'notes', event.target.value)} placeholder="Ej. tomar con alimentos"/></${FormField}></div></article>`)}</div><div data-tour="prescription-form-more"><${Button} tone="secondary" icon="plus" onClick=${this.addPrescriptionItem}>Agregar otro medicamento</${Button}></div></fieldset><div data-tour="prescription-form-observations"><${FormField} label="Indicaciones generales"><textarea rows="3" value=${draft.generalInstructions} onChange=${event => this.updateDraft('generalInstructions', event.target.value)} placeholder="Recomendaciones generales para el paciente"></textarea></${FormField}><${FormField} label="Observaciones"><textarea rows="2" value=${draft.observations} onChange=${event => this.updateDraft('observations', event.target.value)} placeholder="Información adicional para la receta"></textarea></${FormField}></div><div className="form-information"><${Icon} name="print" size=${19}/><div><b>Lista para papel membretado</b><p>Al guardar se abrirá la hoja A4. Desde el cuadro de impresión puede seleccionar “Guardar como PDF”. Revise, firme y selle antes de entregar.</p></div></div><div data-tour="prescription-form-save"><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id?'Guardar corrección y abrir receta':'Guardar y abrir receta'}/></div></form></${Modal}>`;
+    const activeMedications=(patient?.medications||[]).filter(item=>item.status==='active');
+    return html`<${Modal} title=${draft.id?'Editar receta':'Nueva receta'} subtitle=${`Paciente: ${patient?.name || ''}. La receta se guarda como snapshot y no cambia si el tratamiento cambia después.`} onClose=${this.closeModal} size="xl"><form className="clinical-form prescription-form" onSubmit=${this.savePrescriptionForm}>${this.renderModalError()}<div className="prescription-form-head" data-tour="prescription-form-header"><div className="prescription-patient"><${Avatar} patient=${patient} size="lg"/><div><span>Paciente</span><b>${patient?.name}</b><small>${patient?.age} años · ${patient?.diagnosis}</small></div></div><div className="letterhead-mini">${this.state.data.organization.clinicLogo ? html`<img src=${this.state.data.organization.clinicLogo} alt="Logo"/>` : html`<${Icon} name="building" size=${23}/>`}<div><b>${this.state.data.organization.name}</b><small>${this.state.data.organization.clinician}</small></div></div></div>${!draft.id&&activeMedications.length?html`<${FormField} label="Copiar medicamento del tratamiento actual"><select value="" onChange=${event=>{this.addCurrentMedicationToPrescription(event.target.value);event.target.value='';}}><option value="">Seleccione un medicamento…</option>${activeMedications.map(medication=>html`<option key=${medication.id} value=${medication.id}>${medication.name} · ${medication.dose} · ${medication.frequency}</option>`)}</select></${FormField}>`:null}<div className="form-grid" data-tour="prescription-form-header"><${FormField} label="Fecha" required=${true}><input type="date" value=${draft.date} onChange=${event => this.updateDraft('date', event.target.value)} required/></${FormField}><${FormField} label="Diagnóstico"><input value=${draft.diagnosis} onChange=${event => this.updateDraft('diagnosis', event.target.value)}/></${FormField}></div><${FormField} label="Profesional que emite"><input value=${draft.doctorName} onChange=${event => this.updateDraft('doctorName', event.target.value)} required/></${FormField}><fieldset className="prescription-items-fieldset" data-tour="prescription-form-items"><legend>Medicamentos e indicaciones</legend><div className="prescription-item-list">${items.map((item, index) => html`<article key=${item.id} className="prescription-item-editor"><header><span>${index + 1}</span><b>Indicación</b>${items.length > 1 ? html`<button type="button" aria-label="Quitar medicamento" onClick=${() => this.removePrescriptionItem(item.id)}><${Icon} name="trash" size=${16}/></button>` : null}</header><div className="form-grid" data-tour="prescription-form-item-identity"><${FormField} label="Medicamento" required=${true}><input value=${item.medication} onChange=${event => this.updatePrescriptionItem(item.id, 'medication', event.target.value)} placeholder="Ej. Sertralina" required/></${FormField}><${FormField} label="Presentación o dosis"><input value=${item.strength} onChange=${event => this.updatePrescriptionItem(item.id, 'strength', event.target.value)} placeholder="Ej. 50 mg"/></${FormField}></div><div className="form-grid"><${FormField} label="Cómo tomarlo" required=${true}><input value=${item.directions} onChange=${event => this.updatePrescriptionItem(item.id, 'directions', event.target.value)} placeholder="Ej. 1 tableta cada mañana" required/></${FormField}><${FormField} label="Cantidad"><input value=${item.quantity} onChange=${event => this.updatePrescriptionItem(item.id, 'quantity', event.target.value)} placeholder="Ej. 30 tabletas"/></${FormField}></div><div className="form-grid"><${FormField} label="Duración"><input value=${item.duration} onChange=${event => this.updatePrescriptionItem(item.id, 'duration', event.target.value)} placeholder="Ej. 30 días"/></${FormField}><${FormField} label="Nota para el paciente"><input value=${item.notes} onChange=${event => this.updatePrescriptionItem(item.id, 'notes', event.target.value)} placeholder="Ej. tomar con alimentos"/></${FormField}></div>${!draft.id&&!item.sourceMedicationId&&this.can('medicationsManage')?html`<label className="check-row"><input type="checkbox" checked=${Boolean(item.addToTreatment)} onChange=${event=>this.updatePrescriptionItem(item.id,'addToTreatment',event.target.checked)}/><span><b>Agregar también al tratamiento activo</b><small>Requiere una decisión clínica explícita. La receta seguirá siendo un snapshot independiente.</small></span></label>`:null}</article>`)}</div><div data-tour="prescription-form-more"><${Button} tone="secondary" icon="plus" onClick=${this.addPrescriptionItem}>Agregar otro medicamento</${Button}></div></fieldset><div data-tour="prescription-form-observations"><${FormField} label="Indicaciones generales"><textarea rows="3" value=${draft.generalInstructions} onChange=${event => this.updateDraft('generalInstructions', event.target.value)} placeholder="Recomendaciones que sí aparecerán en la receta"></textarea></${FormField}><${FormField} label="Observaciones internas"><textarea rows="2" value=${draft.observations} onChange=${event => this.updateDraft('observations', event.target.value)} placeholder="Uso interno; no se imprime"></textarea></${FormField}></div><div className="form-information"><${Icon} name="print" size=${19}/><div><b>Lista para papel membretado</b><p>La impresión incluye clínica, licencia, paciente, indicaciones y espacio para firma y sello. Las observaciones internas no se imprimen.</p></div></div><div data-tour="prescription-form-save"><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id?'Guardar corrección y abrir receta':'Guardar y abrir receta'}/></div></form></${Modal}>`;
   }
 
   renderMedicationFormModal() {
     const draft = this.state.modal.draft;
     const patient = this.state.data.patients.find(item => item.id === this.state.modal.patientId);
-    return html`<${Modal} title="Agregar medicamento" subtitle=${`Paciente: ${patient?.name || ''}`} onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveMedicationForm}>${this.renderModalError()}<div data-tour="medication-form-identity"><div className="form-grid"><${FormField} label="Medicamento" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Sertralina" required/></${FormField}><${FormField} label="Clase"><select value=${draft.class} onChange=${event => this.updateDraft('class', event.target.value)}>${MEDICATION_CLASSES.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><${FormField} label="Indicación"><input value=${draft.indication} onChange=${event => this.updateDraft('indication', event.target.value)} placeholder="Motivo clínico del tratamiento"/></${FormField}></div><div className="form-grid form-grid-three" data-tour="medication-form-dose"><${FormField} label="Dosis" required=${true}><input type="number" min="0" step="0.01" value=${draft.doseValue} onChange=${event => this.updateDraft('doseValue', event.target.value)} required/></${FormField}><${FormField} label="Unidad"><select value=${draft.doseUnit} onChange=${event => this.updateDraft('doseUnit', event.target.value)}><option>mg</option><option>mcg</option><option>g</option><option>mL</option><option>tableta(s)</option><option>gota(s)</option></select></${FormField}><${FormField} label="Frecuencia"><select value=${draft.frequency} onChange=${event => this.updateDraft('frequency', event.target.value)}>${FREQUENCIES.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid" data-tour="medication-form-start"><${FormField} label="Vía"><select value=${draft.route} onChange=${event => this.updateDraft('route', event.target.value)}><option>oral</option><option>sublingual</option><option>intramuscular</option><option>transdérmica</option><option>otra</option></select></${FormField}><${FormField} label="Fecha de inicio"><input type="date" value=${draft.startDate} onChange=${event => this.updateDraft('startDate', event.target.value)} required/></${FormField}></div><div className="check-grid" data-tour="medication-form-start"><label><input type="checkbox" checked=${Boolean(draft.isPrimary)} onChange=${event => this.updateDraft('isPrimary', event.target.checked)}/><span><b>Medicamento principal</b><small>Se mostrará como referencia principal del dashboard.</small></span></label><label><input type="checkbox" checked=${Boolean(draft.isPrn)} onChange=${event => this.updateDraft('isPrn', event.target.checked)}/><span><b>Uso según necesidad</b><small>Marque si la indicación es PRN.</small></span></label></div><${FormField} label="Notas"><textarea rows="3" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)}></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Agregar medicamento"/></form></${Modal}>`;
+    const clinicalMode=this.can('medicationsManage');
+    return html`<${Modal} title=${clinicalMode?'Agregar medicamento':'Registrar medicamento informado'} subtitle=${clinicalMode?`Paciente: ${patient?.name || ''}`:'Quedará pendiente de revisión médica y no modificará el tratamiento activo.'} onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveMedicationForm}>${this.renderModalError()}<div data-tour="medication-form-identity"><div className="form-grid"><${FormField} label="Medicamento" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Sertralina" required/></${FormField}>${clinicalMode?html`<${FormField} label="Clase"><select value=${draft.class} onChange=${event => this.updateDraft('class', event.target.value)}>${MEDICATION_CLASSES.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}>`:null}</div>${clinicalMode?html`<${FormField} label="Indicación clínica"><input value=${draft.indication} onChange=${event => this.updateDraft('indication', event.target.value)} placeholder="Motivo clínico del tratamiento"/></${FormField}>`:null}</div><div className="form-grid form-grid-three" data-tour="medication-form-dose"><${FormField} label="Dosis" required=${true}><input type="number" min="0" step="0.01" value=${draft.doseValue} onChange=${event => this.updateDraft('doseValue', event.target.value)} required/></${FormField}><${FormField} label="Unidad"><select value=${draft.doseUnit} onChange=${event => this.updateDraft('doseUnit', event.target.value)}><option>mg</option><option>mcg</option><option>g</option><option>mL</option><option>tableta(s)</option><option>gota(s)</option></select></${FormField}><${FormField} label="Frecuencia"><select value=${draft.frequency} onChange=${event => this.updateDraft('frequency', event.target.value)}>${FREQUENCIES.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div>${draft.frequency==='otra'?html`<${FormField} label="Frecuencia personalizada" required=${true}><input value=${draft.customFrequency} onChange=${event=>this.updateDraft('customFrequency',event.target.value)} placeholder="Describa cuándo lo toma" required/></${FormField}>`:null}<div className="form-grid" data-tour="medication-form-start"><${FormField} label="Vía"><select value=${draft.route} onChange=${event => this.updateDraft('route', event.target.value)}><option>oral</option><option>sublingual</option><option>intramuscular</option><option>transdérmica</option><option>otra</option></select></${FormField}><${FormField} label=${clinicalMode?'Fecha de inicio':'Fecha informada'}><input type="date" value=${draft.startDate} onChange=${event => this.updateDraft('startDate', event.target.value)} required/></${FormField}></div>${clinicalMode?html`<div className="check-grid" data-tour="medication-form-start"><label><input type="checkbox" checked=${Boolean(draft.isPrimary)} onChange=${event => this.updateDraft('isPrimary', event.target.checked)}/><span><b>Medicamento principal</b><small>Se mostrará como referencia principal del dashboard.</small></span></label><label><input type="checkbox" checked=${Boolean(draft.isPrn)} onChange=${event => this.updateDraft('isPrn', event.target.checked)}/><span><b>Uso según necesidad</b><small>Marque si la indicación es PRN.</small></span></label></div>`:null}<${FormField} label=${clinicalMode?'Notas clínicas':'Nota de captura'}><textarea rows="3" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder=${clinicalMode?'Contexto clínico del medicamento':'Fuente o aclaración administrativa; no escriba diagnóstico.'}></textarea></${FormField}>${!clinicalMode?html`<div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Pendiente de revisión</b><p>Este registro no prescribe, activa, suspende ni cambia un tratamiento. El médico debe revisarlo.</p></div></div>`:null}<${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${clinicalMode?'Agregar medicamento':'Enviar a revisión'}/></form></${Modal}>`;
   }
 
   renderDoseFormModal() {
@@ -2214,9 +2285,9 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   renderMedicationStatusFormModal() {
     const draft = this.state.modal.draft;
-    const action = draft.status === 'held' ? 'Pausar medicamento' : draft.status === 'active' ? 'Reactivar medicamento' : 'Finalizar medicamento';
-    const explanation = draft.status === 'held'
-      ? 'La pausa queda registrada y el medicamento podrá reactivarse después.'
+    const action = draft.status === 'suspended' ? 'Suspender medicamento' : draft.status === 'active' ? 'Reactivar medicamento' : draft.status==='completed'?'Completar medicamento':'Descontinuar medicamento';
+    const explanation = draft.status === 'suspended'
+      ? 'La suspensión queda registrada y el medicamento podrá reactivarse después.'
       : draft.status === 'active'
         ? 'El medicamento volverá a mostrarse como activo.'
         : 'El medicamento quedará en el historial, pero dejará de mostrarse como tratamiento activo.';
@@ -2249,7 +2320,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   renderAppointmentFormModal() {
     const draft = this.state.modal.draft;
     const patients = this.state.data.patients;
-    return html`<${Modal} title=${draft.id ? 'Editar cita' : 'Nueva cita'} subtitle="La cita se guardará en la agenda del consultorio." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<div data-tour="appointment-form-who-when"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)}>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name} · ${patient.diagnosis}</option>`)}</select></${FormField}><div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}><option>Seguimiento</option><option>Primera consulta</option><option>Prioritaria</option><option>Seguridad</option><option>Laboratorios</option></select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmada</option><option value="pending">Pendiente</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></${FormField}></div><${FormField} label="Notas de preparación"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}></div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear cita'}/></form></${Modal}>`;
+    return html`<${Modal} title=${draft.id ? 'Editar cita' : 'Nueva cita'} subtitle="La cita se guardará en la agenda del consultorio." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<div data-tour="appointment-form-who-when"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)}>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name} · ${patient.diagnosis}</option>`)}</select></${FormField}><div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}><option>Seguimiento</option><option>Primera consulta</option><option>Prioritaria</option><option>Seguridad</option><option>Laboratorios</option></select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmada</option><option value="pending">Pendiente</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></${FormField}></div><${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus||'none'} onChange=${event=>this.updateDraft('adminReviewStatus',event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>${this.can('clinicalView')?html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>`:null}</div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear cita'}/></form></${Modal}>`;
   }
 
   renderReportModal() {
@@ -2277,12 +2348,12 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     return html`<${Modal} title="Detalle de la cita" subtitle="Revise datos, recordatorios, calendarios y notas de preparación." onClose=${() => this.setState({ appointmentDetails: null })} size="xl"><div className="appointment-detail-hero"><${Avatar} patient=${patient} size="lg"/><div><span className="eyebrow">${appointment.type}</span><h3>${appointment.title}</h3><p>${this.can('clinicalView') ? patient?.diagnosis || '' : patient?.phone || 'Sin teléfono registrado'}</p></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></div>
       <div className="appointment-info"><div><${Icon} name="calendar"/><span>Fecha</span><b>${formatLongDate(appointment.start)}</b></div><div><${Icon} name="clock"/><span>Hora</span><b>${formatTime(appointment.start)} – ${formatTime(appointment.end)}</b></div><div><${Icon} name="activity"/><span>Modalidad</span><b>${appointment.modality}</b></div><div><${Icon} name="insurance"/><span>Cobertura</span><b>${insurance.hasInsurance ? insurance.provider || 'Seguro médico' : 'Particular'}</b></div></div>
       ${insurance.hasInsurance && insurance.authorizationRequired ? html`<div className="appointment-insurance-warning"><${Icon} name="insurance" size=${18}/><div><b>Autorización de seguro requerida</b><p>${insurance.plan || 'Plan sin registrar'}${insurance.memberId ? ` · Afiliado ${insurance.memberId}` : ''}${insurance.copay ? ` · Copago ${insurance.copay}` : ''}</p></div></div>` : null}
-      <div className="notes-box"><span>Notas de preparación</span><p>${appointment.notes || 'Sin notas.'}</p></div>
+      ${this.can('clinicalView')?html`<div className="notes-box"><span>Notas de preparación clínica</span><p>${appointment.notes || 'Sin notas.'}</p></div>`:null}
       ${canStart ? html`<section className="start-consultation-card"><span><${Icon} name="notebook" size=${24}/></span><div><b>¿Ya está con el paciente?</b><p>Abra la libreta virtual para tomar notas con guardado automático durante la consulta.</p></div><${Button} icon="play" onClick=${() => this.startConsultation(appointment)}>Iniciar consulta</${Button}></section>` : null}
       <section className="appointment-reminder-section"><header><div><span className="eyebrow">Confirmación de cita</span><h3>Recordatorios</h3></div><div>${reminders.map(reminder => html`<${Badge} key=${reminder.id} tone=${reminder.status === 'sent' ? 'success' : reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminderLabel(reminder.hours)} · ${reminder.status === 'sent' ? 'Enviado' : reminder.status === 'due' ? 'Listo' : reminder.status === 'overdue' ? 'Pendiente' : 'Programado'}</${Badge}>`)}</div></header>${this.can('remindersManage') ? html`<div className="appointment-reminder-actions">${reminders.filter(reminder => reminder.status !== 'sent').slice(0, 3).map(reminder => html`<div key=${reminder.id}><span>${reminderLabel(reminder.hours)}</span>${(reminder.channels || patient?.notificationPreferences?.channels || ['whatsapp']).map(channel => html`<${Button} key=${channel} tone=${channel === 'whatsapp' ? 'soft' : 'secondary'} icon=${channel === 'email' ? 'mail' : 'message'} onClick=${() => this.sendReminderChannel(reminder, channel)}>${reminderChannelLabel(channel)}</${Button}>`)}<${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}></div>`)}</div>` : null}</section>
       <section className="calendar-actions-card"><div><span className="eyebrow">Calendarios</span><h3>Conservar la cita en sus dispositivos</h3><p>Google Calendar puede sincronizarse. Apple Calendar puede importar esta cita o suscribirse al calendario privado de Linkare.</p></div><div>${this.state.calendarStatus?.google?.connected ? html`<${Button} tone="secondary" icon="calendar" onClick=${() => this.syncGoogleAppointment(appointment)}>Sincronizar con Google</${Button}>` : html`<a className="button button-secondary" href=${googleCalendarUrl(appointment)} target="_blank" rel="noreferrer"><${Icon} name="external" size=${18}/><span>Agregar a Google</span></a>`}${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadICS(appointment)}>Agregar a Apple / ICS</${Button}>` : null}</div></section>
       <div className="appointment-actions-grid">${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditAppointment(appointment)}>Editar cita</${Button}>` : null}<${Button} tone="soft" onClick=${() => this.openPatient(appointment.patientId)}>Abrir paciente</${Button}></div>
-      ${this.can('appointmentsManage') ? html`<div className="status-actions"><span>Cambiar estado:</span>${[['confirmed', 'Confirmada'], ['pending', 'Pendiente'], ['completed', 'Completada'], ['cancelled', 'Cancelada'], ['no_show', 'No asistió']].map(([key, label]) => html`<button key=${key} className=${appointment.status === key ? 'active' : ''} onClick=${() => this.updateAppointmentStatus(appointment.id, key)}>${label}</button>`)}</div><div className="danger-zone"><button onClick=${() => this.deleteAppointment(appointment.id)}><${Icon} name="trash" size=${17}/> Eliminar cita</button></div>` : null}
+      ${this.can('appointmentsManage') ? html`<div className="status-actions"><span>Cambiar estado:</span>${[['confirmed', 'Confirmada'], ['pending', 'Pendiente'], ['completed', 'Completada'], ['cancelled', 'Cancelada'], ['no_show', 'No asistió']].map(([key, label]) => html`<button key=${key} className=${appointment.status === key ? 'active' : ''} onClick=${() => this.updateAppointmentStatus(appointment.id, key)}>${label}</button>`)}</div><div className="status-actions"><span>Revisión administrativa:</span>${[['none','Sin marca'],['pending','Por revisar'],['reviewed','Revisada']].map(([key,label])=>html`<button key=${key} className=${(appointment.adminReviewStatus||'none')===key?'active':''} onClick=${()=>this.updateAppointmentReview(appointment.id,key)}>${label}</button>`)}</div><div className="danger-zone"><button onClick=${() => this.deleteAppointment(appointment.id)}><${Icon} name="trash" size=${17}/> Eliminar cita</button></div>` : null}
     </${Modal}>`;
   }
 
@@ -2391,3 +2462,4 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 export { App };
 
 createRoot(document.getElementById('root')).render(html`<${AppErrorBoundary}><${App}/></${AppErrorBoundary}>`);
+

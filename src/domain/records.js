@@ -5,11 +5,12 @@ export const ADMIN_PATIENT_KEYS = Object.freeze([
 ]);
 export const APPOINTMENT_KEYS = Object.freeze([
   'id', 'patientId', 'title', 'start', 'end', 'type', 'modality', 'status',
-  'reminderLog', 'googleEventId', 'googleEventUrl', 'createdAt', 'updatedAt',
+  'adminReviewStatus', 'confirmedAt', 'confirmedBy', 'cancelledAt', 'cancelledBy',
+  'reviewedAt', 'reviewedBy', 'reminderLog', 'googleEventId', 'googleEventUrl', 'createdAt', 'updatedAt',
 ]);
 export const PROFILE_KEYS = Object.freeze(['name','clinician','specialty','professionalLicense','address','phone','email','website','clinicLogo','doctorPhoto','prescriptionFooter','updatedAt']);
 export const SETTINGS_KEYS = Object.freeze(['largeText','reducedMotion','simpleMode','theme','reminderHours','reminderChannels','palette']);
-export const SECRETARY_PERMISSIONS = Object.freeze(['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage']);
+export const SECRETARY_PERMISSIONS = Object.freeze(['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage','medicationsCapture','prescriptionsEdit']);
 export function pick(value, keys) {
   return Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
 }

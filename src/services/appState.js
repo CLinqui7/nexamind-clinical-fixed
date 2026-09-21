@@ -72,5 +72,8 @@ export function saveProductionState(organizationId,payload){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
   return writer.save(payload);
 }
+export function captureReportedMedication(organizationId,patientId,draft){
+  return rpc('linkare_capture_medication_v1',{org:organizationId,patient_id:patientId,input:draft});
+}
 // Billing prices and validity are exclusively maintained by server functions.
 export async function savePlatformBillingSettings(){throw new Error('El precio se define por el plan elegido. No puede modificarse desde el consultorio.');}

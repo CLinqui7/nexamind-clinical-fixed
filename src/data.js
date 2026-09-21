@@ -21,7 +21,7 @@ export const MEDICATION_CLASSES = [
 ];
 
 export const FREQUENCIES = [
-  'cada mañana', 'cada noche', 'cada 12 horas', 'cada 8 horas', 'una vez al día',
+  'cada mañana', 'al mediodía', 'cada tarde', 'cada noche', 'cada 12 horas', 'cada 8 horas', 'una vez al día',
   'dos veces al día', 'según necesidad (PRN)', 'otra',
 ];
 
@@ -96,14 +96,25 @@ function normalizeMedication(medication, patient, index = 0) {
     doseValue: medication?.doseValue ?? parsed.value,
     doseUnit: medication?.doseUnit || parsed.unit,
     frequency: medication?.frequency || 'una vez al día',
+    frequencySlots: Array.isArray(medication?.frequencySlots) ? medication.frequencySlots : [],
+    customFrequency: medication?.customFrequency || '',
     route: medication?.route || 'oral',
     indication: medication?.indication || patient.diagnosis || 'Sin indicación registrada',
     startDate: medication?.startDate || patient.lastVisit || new Date().toISOString(),
     endDate: medication?.endDate || null,
-    status: medication?.status || 'active',
+    status: ({held:'suspended',stopped:'discontinued'})[medication?.status] || medication?.status || 'active',
     isPrimary: medication?.isPrimary ?? index === 0,
     isPrn: medication?.isPrn ?? /PRN|necesidad/i.test(currentDose + ' ' + (medication?.frequency || '')),
-    notes: medication?.notes || '',
+    notes: medication?.notes || medication?.clinicalNotes || medication?.reportedNotes || '',
+    clinicalNotes: medication?.clinicalNotes || medication?.notes || '',
+    internalNotes: medication?.internalNotes || '',
+    reportedNotes: medication?.reportedNotes || '',
+    source: medication?.source || 'clinical',
+    createdBy: medication?.createdBy || null,
+    createdAt: medication?.createdAt || medication?.startDate || patient.lastVisit || null,
+    reviewedBy: medication?.reviewedBy || null,
+    reviewedAt: medication?.reviewedAt || null,
+    events: Array.isArray(medication?.events) ? medication.events : [],
     doseHistory,
   };
 }

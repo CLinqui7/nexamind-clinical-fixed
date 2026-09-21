@@ -116,8 +116,18 @@ export function medicationFormDefaults(patient) {
   return {
     patientId: patient?.id || '', name: '', class: 'ISRS', indication: patient?.diagnosis || '',
     doseValue: '', doseUnit: 'mg', frequency: 'una vez al día', route: 'oral',
-    startDate: new Date().toISOString().slice(0, 10), isPrimary: true, isPrn: false, notes: '',
+    customFrequency: '', frequencySlots: [], startDate: new Date().toISOString().slice(0, 10), isPrimary: true, isPrn: false, notes: '',
   };
+}
+
+export function frequencySlotsFor(value, custom = '') {
+  const normalized = cleanText(value).toLowerCase();
+  if (normalized === 'cada mañana') return ['morning'];
+  if (normalized === 'al mediodía') return ['noon'];
+  if (normalized === 'cada tarde') return ['afternoon'];
+  if (normalized === 'cada noche') return ['night'];
+  if (normalized === 'cada 12 horas' || normalized === 'dos veces al día') return ['morning', 'night'];
+  return normalized === 'otra' && cleanText(custom) ? ['custom'] : [];
 }
 
 export function doseFormDefaults(patient, medicationId = null) {
@@ -174,7 +184,7 @@ export function appointmentFormDefaults(data, date = new Date(), appointment = n
       start: appointment.start ? new Date(new Date(appointment.start).getTime() - new Date(appointment.start).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
       duration: Math.max(15, Math.round((new Date(appointment.end) - new Date(appointment.start)) / 60_000)),
       type: appointment.type || 'Seguimiento', modality: appointment.modality || 'Presencial',
-      status: appointment.status || 'confirmed', notes: appointment.notes || '',
+      status: appointment.status || 'pending', adminReviewStatus: appointment.adminReviewStatus || 'none', notes: appointment.notes || '',
     };
   }
   const start = new Date(date);
@@ -186,7 +196,7 @@ export function appointmentFormDefaults(data, date = new Date(), appointment = n
     patientId: patientId || data.patients[0]?.id || '',
     start: local,
     duration: 45,
-    type: 'Seguimiento', modality: 'Presencial', status: 'confirmed', notes: '',
+    type: 'Seguimiento', modality: 'Presencial', status: 'pending', adminReviewStatus: 'none', notes: '',
   };
 }
 
@@ -294,7 +304,7 @@ export function createPatient(data, draft) {
         ...next.appointments,
         {
           id: uid('appointment'), patientId, title: name, start, end: addMinutes(start, 45),
-          type: 'Primera consulta', modality: 'Presencial', status: 'confirmed', notes: 'Cita creada durante el alta del paciente.',
+          type: 'Primera consulta', modality: 'Presencial', status: 'pending', adminReviewStatus: 'none', notes: 'Cita creada durante el alta del paciente.',
           reminderLog: [], createdAt: timestamp, updatedAt: timestamp,
         },
       ],
@@ -414,6 +424,8 @@ export function addMedication(data, patientId, draft) {
   const date = clinicalDateIso(draft.startDate);
   const doseUnit = cleanText(draft.doseUnit) || 'mg';
   const medicationId = uid('medication');
+  const actor = data.settings?.activeUserId || null;
+  const frequency = draft.frequency === 'otra' ? cleanText(draft.customFrequency) : draft.frequency || 'una vez al día';
   const medication = {
     id: medicationId,
     name,
@@ -421,15 +433,26 @@ export function addMedication(data, patientId, draft) {
     doseValue,
     doseUnit,
     dose: `${doseValue} ${doseUnit}`,
-    frequency: draft.frequency || 'una vez al día',
+    frequency,
+    frequencySlots: frequencySlotsFor(draft.frequency, draft.customFrequency),
+    customFrequency: draft.frequency === 'otra' ? cleanText(draft.customFrequency) : '',
     route: draft.route || 'oral',
     indication: cleanText(draft.indication) || 'Sin indicación registrada',
     startDate: date,
     endDate: null,
     status: 'active',
+    source: draft.source || 'clinical',
+    createdBy: actor,
+    createdAt: nowIso(),
+    reviewedBy: actor,
+    reviewedAt: nowIso(),
     isPrimary: Boolean(draft.isPrimary),
     isPrn: Boolean(draft.isPrn),
     notes: cleanText(draft.notes),
+    clinicalNotes: cleanText(draft.notes),
+    internalNotes: '',
+    reportedNotes: '',
+    events: [{ id: uid('medevent'), type: 'created', date, actorId: actor, reason: 'Inicio del medicamento' }],
     doseHistory: [{
       id: uid('dose'), date, doseValue, doseUnit, dose: `${doseValue} ${doseUnit}`,
       reason: 'Inicio del medicamento', notes: cleanText(draft.notes),
@@ -469,6 +492,8 @@ export function changeMedicationDose(data, patientId, draft) {
   const reason = cleanText(draft.reason) || 'Ajuste clínico registrado';
   const direction = previousValue === null ? 'Cambio' : newDoseValue > previousValue ? 'Aumento' : newDoseValue < previousValue ? 'Reducción' : 'Confirmación';
   const newDose = `${newDoseValue} ${unit}`;
+  const actor = data.settings?.activeUserId || null;
+  const frequency = draft.frequency === 'otra' ? cleanText(draft.customFrequency) : draft.frequency || existing.frequency;
 
   const next = updatePatient(data, patientId, current => {
     const medications = current.medications.map(item => {
@@ -478,7 +503,10 @@ export function changeMedicationDose(data, patientId, draft) {
         doseValue: newDoseValue,
         doseUnit: unit,
         dose: newDose,
-        frequency: draft.frequency || item.frequency,
+        frequency,
+        frequencySlots: frequencySlotsFor(draft.frequency, draft.customFrequency),
+        customFrequency: draft.frequency === 'otra' ? cleanText(draft.customFrequency) : '',
+        events: [...(item.events || []), { id: uid('medevent'), type: newDose === existing.dose ? 'frequency_changed' : 'dose_changed', date: effectiveDate, actorId: actor, reason }],
         doseHistory: sortedByDate([
           ...(item.doseHistory || []),
           {
@@ -507,11 +535,13 @@ export function changeMedicationDose(data, patientId, draft) {
 
 export function setMedicationStatus(data, patientId, medicationId, status, reason = '') {
   const date = nowIso();
+  const normalizedStatus = ({held:'suspended',stopped:'discontinued'})[status] || status;
+  const actor = data.settings?.activeUserId || null;
   const next = updatePatient(data, patientId, patient => {
     const target = patient.medications.find(item => item.id === medicationId);
     if (!target) return patient;
     const medications = patient.medications.map(item => item.id === medicationId
-      ? { ...item, status, endDate: status === 'stopped' || status === 'completed' ? date : item.endDate }
+      ? { ...item, status: normalizedStatus, endDate: ['discontinued','completed'].includes(normalizedStatus) ? date : normalizedStatus === 'active' ? null : item.endDate, events: [...(item.events || []), { id: uid('medevent'), type: normalizedStatus === 'active' ? 'resumed' : normalizedStatus, date, actorId: actor, reason: cleanText(reason) || 'Estado actualizado por el profesional.' }] }
       : item);
     return {
       ...patient,
@@ -521,13 +551,20 @@ export function setMedicationStatus(data, patientId, medicationId, status, reaso
         {
           date,
           type: 'medication',
-          title: `${status === 'held' ? 'Pausa' : status === 'active' ? 'Reinicio' : 'Finalización'} de ${target.name}`,
+          title: `${normalizedStatus === 'suspended' ? 'Suspensión' : normalizedStatus === 'active' ? 'Reinicio' : normalizedStatus === 'completed' ? 'Finalización' : 'Descontinuación'} de ${target.name}`,
           detail: cleanText(reason) || 'Estado actualizado por el profesional.',
         },
       ],
     };
   });
   return { data: next };
+}
+
+export function approveCapturedMedication(data, patientId, medicationId, reason = '') {
+  const patient = data.patients.find(item => item.id === patientId);
+  const medication = patient?.medications?.find(item => item.id === medicationId);
+  if (!medication || medication.status !== 'pending_review') throw new Error('El medicamento ya no está pendiente de revisión.');
+  return setMedicationStatus(data, patientId, medicationId, 'active', reason || 'Revisado y activado por el médico.');
 }
 
 export function recordAssessment(data, patientId, draft) {
@@ -807,7 +844,8 @@ export function saveAppointment(data, draft) {
     end: addMinutes(start, duration),
     type: draft.type || 'Seguimiento',
     modality: draft.modality || 'Presencial',
-    status: draft.status || 'confirmed',
+    status: draft.status || 'pending',
+    adminReviewStatus: draft.adminReviewStatus || previousAppointment?.adminReviewStatus || 'none',
     notes: cleanText(draft.notes),
     reminderLog: Array.isArray(previousAppointment?.reminderLog) ? previousAppointment.reminderLog : [],
     createdAt: previousAppointment?.createdAt || nowIso(),
@@ -830,10 +868,18 @@ export function changeAppointmentStatus(data, appointmentId, status) {
   const appointment = data.appointments.find(item => item.id === appointmentId);
   let next = {
     ...data,
-    appointments: data.appointments.map(item => item.id === appointmentId ? { ...item, status } : item),
+    appointments: data.appointments.map(item => item.id === appointmentId ? { ...item, status, updatedAt: nowIso() } : item),
   };
   if (appointment?.patientId) next = updateNextVisit(next, appointment.patientId);
   return next;
+}
+
+export function changeAppointmentReviewStatus(data, appointmentId, adminReviewStatus) {
+  if (!['none','pending','reviewed'].includes(adminReviewStatus)) throw new Error('Estado de revisión no válido.');
+  return {
+    ...data,
+    appointments: data.appointments.map(item => item.id === appointmentId ? { ...item, adminReviewStatus, updatedAt: nowIso() } : item),
+  };
 }
 
 export function removeAppointment(data, appointmentId) {
