@@ -1,0 +1,29 @@
+import {serveAction} from '../_shared/http.ts';
+import {ApiError,publicKey,requireMember,limitAction} from '../_shared/auth.ts';
+import {permissionAllowed} from '../_shared/permissions.ts';
+
+const safe=(v:unknown,max=500)=>String(v??'').trim().slice(0,max);
+const ascii=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E\n]/g,'?');
+function pdfBytes(title:string,content:string,doctor:string,license:string){
+ const esc=(v:string)=>ascii(v).replace(/([\\()])/g,'\\$1');const wrap=(text:string,width=82)=>text.split(/\r?\n/).flatMap(line=>{const words=line.split(/\s+/);const out:string[]=[];let current='';for(const word of words){if((current+' '+word).trim().length>width){out.push(current);current=word;}else current=(current+' '+word).trim();}out.push(current);return out;});
+ const lines=[title,'',...wrap(content),'','','________________________________','Firma y sello',doctor,license].slice(0,46);let stream='BT /F1 12 Tf 54 760 Td 16 TL ';for(const line of lines)stream+=`(${esc(line)}) Tj T* `;stream+='ET';
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];let pdf='%PDF-1.4\n';const offsets=[0];objects.forEach((obj,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${obj}\nendobj\n`;});const xref=pdf.length;pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n${offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n ').join('\n')}\ntrailer << /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;return new TextEncoder().encode(pdf);
+}
+async function userRpc(request:Request,name:string,args:any){const base=(Deno.env.get('SUPABASE_URL')||'').replace(/\/$/,'');const response=await fetch(`${base}/rest/v1/rpc/${name}`,{method:'POST',headers:{Authorization:request.headers.get('Authorization')||'',apikey:publicKey(),'Content-Type':'application/json'},body:JSON.stringify(args)});const body=await response.json().catch(()=>null);if(!response.ok)throw new ApiError(response.status===409?409:400,body?.message||body?.hint||'No se pudo guardar el documento.');return body;}
+serveAction('document-templates',async(request,input)=>{
+ const {user,member,db}=await requireMember(request,input.organizationId,'patientsView');
+ const canAdmin=permissionAllowed(member,'documentsGenerateAdministrative'),canClinical=permissionAllowed(member,'documentsGenerateClinical');if(!canAdmin&&!canClinical)throw new ApiError(403,'No tiene permiso para generar documentos.');
+ const {data:templates,error}=await db.from('linkare_document_templates_v1').select('id,template_key,version,name,classification,body,variables').or(`organization_id.is.null,organization_id.eq.${input.organizationId}`).eq('active',true).order('name');if(error)throw error;
+ const allowed=(templates||[]).filter((t:any)=>t.classification==='clinical'?canClinical:canAdmin);
+ if(input.action!=='generate')return {ok:true,templates:allowed.map(({body,...t}:any)=>t)};
+ await limitAction(db,'document-generate',user.id,30);const template=allowed.find((t:any)=>t.id===input.templateId);if(!template)throw new ApiError(403,'Plantilla no disponible.');
+ const {data:admin}=await db.from('linkare_records').select('payload').eq('organization_id',input.organizationId).eq('kind','patient_admin').eq('id',input.patientId).eq('deleted',false).maybeSingle();if(!admin)throw new ApiError(404,'Paciente no encontrado.');
+ let diagnosis='';if(template.classification==='clinical'){const {data:clinical}=await db.from('linkare_records').select('payload').eq('organization_id',input.organizationId).eq('kind','patient_clinical').eq('id',input.patientId).eq('deleted',false).maybeSingle();diagnosis=safe(clinical?.payload?.diagnosis,300);}
+ const {data:profile}=await db.from('linkare_records').select('payload').eq('organization_id',input.organizationId).eq('kind','profile').eq('id','clinic').maybeSingle();const vars:any={nombre_paciente:safe(admin.payload.name,180),fecha:new Date().toISOString().slice(0,10),diagnostico:diagnosis,medico:safe(profile?.payload?.clinician,180),numero_junta:safe(profile?.payload?.professionalLicense,100)};for(const [key,value] of Object.entries(input.variables||{}))if((template.variables||[]).includes(key)&&key!=='diagnostico'&&key!=='nombre_paciente')vars[key]=safe(value,1500);
+ let snapshot=template.body;for(const key of template.variables||[])snapshot=snapshot.replaceAll(`{${key}}`,safe(vars[key],1500));if(/\{[^}]+\}/.test(snapshot))throw new ApiError(400,'Complete todos los campos de la plantilla.');
+ const id=crypto.randomUUID(),title=safe(input.title||template.name,180),bytes=pdfBytes(title,snapshot,vars.medico,vars.numero_junta),path=`${input.organizationId}/${input.patientId}/${id}.pdf`;
+ const {error:uploadError}=await db.storage.from('patient-documents').upload(path,bytes,{contentType:'application/pdf',upsert:false,cacheControl:'0'});if(uploadError)throw new ApiError(503,'No se pudo guardar el PDF privado.');
+ const {data:record}=await db.from('linkare_records').select('revision').eq('organization_id',input.organizationId).eq('kind','patient_clinical').eq('id',input.patientId).eq('deleted',false).maybeSingle();
+ try{const saved=await userRpc(request,'linkare_attach_generated_document_v1',{org:input.organizationId,patient_id:input.patientId,expected_revision:record?.revision||0,generated_id:id,template_id:template.id,title,variables:vars,content_snapshot:snapshot,storage_path:path,file_size:bytes.length});const {data:signed}=await db.storage.from('patient-documents').createSignedUrl(path,60);return {ok:true,document:saved.document||saved,url:signed?.signedUrl||'',snapshot};}
+ catch(error){await db.storage.from('patient-documents').remove([path]);throw error;}
+});

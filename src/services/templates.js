@@ -1,0 +1,4 @@
+import {invokeAuthedFunction} from '../lib/supabase.js';
+async function message(error,fallback){try{if(error?.context instanceof Response){const p=await error.context.clone().json();return p?.message||fallback;}}catch{}return error?.message||fallback;}
+export async function listDocumentTemplates(organizationId){const {data,error}=await invokeAuthedFunction('document-templates',{organizationId,action:'list'});if(error)throw new Error(await message(error,'No se pudieron cargar las plantillas.'));return data?.templates||[];}
+export async function generateDocumentFromTemplate(payload){const {data,error}=await invokeAuthedFunction('document-templates',{...payload,action:'generate'});if(error)throw new Error(await message(error,'No se pudo generar el documento.'));if(!data?.ok)throw new Error(data?.message||'No se pudo generar el documento.');return data;}

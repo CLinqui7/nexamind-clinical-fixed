@@ -1,6 +1,6 @@
 import {supabaseAdmin} from './supabase-admin.ts';
 import {ApiError,limitAction} from './auth.ts';
-async function sendEmail(destination: string, subject: string, message: string) {
+export async function sendEmail(destination: string, subject: string, message: string) {
   const key = Deno.env.get('RESEND_API_KEY')?.trim();
   const from = Deno.env.get('REMINDER_EMAIL_FROM')?.trim();
   if (!key || !from) throw new Error('Correo automático no configurado. Agregue RESEND_API_KEY y REMINDER_EMAIL_FROM.');

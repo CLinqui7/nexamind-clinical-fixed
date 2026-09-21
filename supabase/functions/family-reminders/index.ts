@@ -1,0 +1,9 @@
+import {serveAction} from '../_shared/http.ts';
+import {ApiError,requireMember,limitAction} from '../_shared/auth.ts';
+serveAction('family-reminders',async(request,input)=>{
+ const {organizationId,action}=input;const {db,user,doctor}=await requireMember(request,organizationId,'appointmentsManage');if(!doctor)throw new ApiError(403,'Solo el médico puede configurar contactos personales.');await limitAction(db,'family-reminders',user.id,40);
+ if(action==='list'){const {data,error}=await db.from('linkare_personal_reminder_recipients_v1').select('id,name,destination,channel,enabled,created_at,updated_at').eq('organization_id',organizationId).order('created_at');if(error)throw error;return {ok:true,recipients:data||[]};}
+ if(action==='remove'){const {error}=await db.from('linkare_personal_reminder_recipients_v1').delete().eq('organization_id',organizationId).eq('id',input.id);if(error)throw error;return {ok:true};}
+ const name=String(input.name||'').trim().slice(0,120),destination=String(input.destination||'').trim().slice(0,180),channel=String(input.channel||'whatsapp');if(!name||!['whatsapp','email'].includes(channel))throw new ApiError(400,'Revise el contacto y el canal.');if(channel==='email'?!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination):!/^\+[1-9]\d{7,14}$/.test(destination.replace(/[ ()-]/g,'')))throw new ApiError(400,'Use un correo válido o un teléfono internacional, por ejemplo +50370000000.');
+ const row={organization_id:organizationId,name,destination,channel,enabled:input.enabled!==false,created_by:user.id,updated_at:new Date().toISOString()};const result=input.id?await db.from('linkare_personal_reminder_recipients_v1').update(row).eq('organization_id',organizationId).eq('id',input.id).select('id').single():await db.from('linkare_personal_reminder_recipients_v1').insert(row).select('id').single();if(result.error)throw result.error;return {ok:true,id:result.data.id};
+});

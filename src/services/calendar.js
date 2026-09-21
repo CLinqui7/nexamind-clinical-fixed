@@ -33,7 +33,12 @@ export async function syncAppointmentToGoogle(organizationId, appointment) {
   return await unwrap(data, error, 'No se pudo sincronizar la cita con Google Calendar.');
 }
 
-export async function createAppleCalendarFeed(organizationId) {
-  const { data, error } = await invokeAuthedFunction('calendar-feed-token', { organizationId });
+export async function createAppleCalendarFeed(organizationId,scope='staff_busy',patientId=null,action='create',tokenId=null) {
+  const { data, error } = await invokeAuthedFunction('calendar-feed-token', { organizationId,scope,patientId,action,tokenId });
   return await unwrap(data, error, 'No se pudo crear el enlace de Apple Calendar.');
+}
+
+export async function listCalendarFeeds(organizationId) {
+  const {data,error}=await invokeAuthedFunction('calendar-feed-token',{organizationId,action:'list'});
+  return (await unwrap(data,error,'No se pudieron consultar los calendarios compartidos.')).feeds||[];
 }
