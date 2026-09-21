@@ -19,7 +19,7 @@ export const PERMISSION_CATALOG = [
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },
   { key: 'medicationsCapture', group: 'Información clínica', label: 'Capturar medicamentos informados', description: 'Registrar medicamentos pendientes de revisión médica, sin prescribir ni modificar tratamientos.' },
   { key: 'medicationsManage', group: 'Información clínica', label: 'Gestionar medicamentos', description: 'Agregar, pausar, finalizar y cambiar dosis.' },
-  { key: 'prescriptionsEdit', group: 'Recetas', label: 'Editar y borrar recetas', description: 'Corregir o retirar recetas guardadas, con historial de auditoría.' },
+  { key: 'prescriptionsEdit', group: 'Recetas', label: 'Editar y anular recetas', description: 'Corregir o anular recetas guardadas, conservando el historial de auditoría.' },
   { key: 'prescriptionsCreate', group: 'Documentos', label: 'Generar recetas', description: 'Crear e imprimir recetas membretadas.' },
   { key: 'documentsView', group: 'Documentos', label: 'Ver archivos clínicos', description: 'Consultar documentos adjuntos al expediente.' },
   { key: 'documentsManage', group: 'Documentos', label: 'Subir y archivar archivos', description: 'Gestionar recetas externas, cartas, informes y otros documentos.' },
