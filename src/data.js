@@ -1,4 +1,5 @@
 import { normalizePatientV2 } from './v2features.js';
+import { normalizePracticePhones } from './practice.js';
 const defaultClinicLogo = '/assets/linkare-logo.jpg';
 const runtimeEnv = import.meta.env ?? {};
 const DAY = 24 * 60 * 60 * 1000;
@@ -216,6 +217,7 @@ export function normalizeData(input = {}) {
       professionalLicense: input.organization?.professionalLicense || '',
       address: input.organization?.address || '',
       phone: input.organization?.phone || '',
+      phones: normalizePracticePhones(input.organization || {}),
       email: input.organization?.email || '',
       website: input.organization?.website || '',
       clinicLogo: input.organization?.clinicLogo || defaultClinicLogo,

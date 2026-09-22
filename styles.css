@@ -3173,6 +3173,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .topbar .nav-pill.nav-open button span { display: inline !important; white-space: normal; }
 }
 .autosave-state.error { color: #9f253c; background: #fff0f2; }
+.clinic-phone-fieldset{display:grid;gap:12px}.clinic-phone-list{display:grid;gap:10px}.clinic-phone-row{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(180px,1fr) auto;gap:10px;align-items:center}.clinic-phone-row input{width:100%}.clinic-phone-row .text-danger-button{white-space:nowrap}
+@media(max-width:700px){.clinic-phone-row{grid-template-columns:1fr}.clinic-phone-row .text-danger-button{justify-self:start}}
 
 /* Solid surfaces avoid repeated large backdrop compositing. */
 .app-frame,.topbar,.modal-backdrop {backdrop-filter:none;}

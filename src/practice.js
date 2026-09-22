@@ -4,6 +4,51 @@ import { permissionAllowed } from './domain/permissions.js';
 const nowIso = () => new Date().toISOString();
 const clean = value => String(value ?? '').trim();
 
+const DEFAULT_PHONE_LABELS = ['Teléfono clínica', 'Celular clínica', 'Teléfono doctor'];
+
+export function normalizePracticePhones(organization = {}, includeSuggested = false) {
+  const source = Array.isArray(organization.phones) ? organization.phones : [];
+  const phones = source.map((item, index) => ({
+    id: clean(item?.id) || `phone_${index + 1}`,
+    label: clean(item?.label) || 'Teléfono',
+    number: clean(item?.number),
+  })).filter(item => includeSuggested || item.number);
+  if (!source.length && clean(organization.phone)) phones.push({ id: 'phone_legacy', label: DEFAULT_PHONE_LABELS[0], number: clean(organization.phone) });
+  if (includeSuggested) {
+    for (const label of DEFAULT_PHONE_LABELS) {
+      if (!phones.some(item => item.label.toLocaleLowerCase('es') === label.toLocaleLowerCase('es'))) {
+        phones.push({ id: `phone_${label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\W+/g, '_')}`, label, number: '' });
+      }
+    }
+  }
+  return phones.slice(0, 10);
+}
+
+function intakeRank(item = {}) {
+  const text = clean(item.directions || item.frequency || item.customFrequency).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/ayunas|al despertar/.test(text)) return 5;
+  if (/manana|desayuno/.test(text)) return 10;
+  if (/mediodia|almuerzo/.test(text)) return 20;
+  if (/tarde/.test(text)) return 30;
+  if (/noche|cena/.test(text)) return 40;
+  if (/dormir|acostar/.test(text)) return 50;
+  if (/segun necesidad|\bprn\b/.test(text)) return 90;
+  const slots = Array.isArray(item.frequencySlots) ? item.frequencySlots : [];
+  const slotRanks = { morning: 10, noon: 20, afternoon: 30, night: 40, bedtime: 50, custom: 60 };
+  const explicit = slots.map(slot => slotRanks[slot]).filter(Number.isFinite);
+  if (explicit.length) return Math.min(...explicit);
+  return 60;
+}
+
+function stableIntakeSort(items) {
+  return (items || []).map((item, index) => ({ item, index, rank: intakeRank(item) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(entry => entry.item);
+}
+
+export const sortPrescriptionItemsBySchedule = items => stableIntakeSort(items);
+export const sortMedicationsBySchedule = medications => stableIntakeSort((medications || []).map(item => ({ ...item, directions: item.frequency })));
+
 
 
 
@@ -82,6 +127,7 @@ export function clinicProfileDefaults(data) {
     professionalLicense: organization.professionalLicense || '',
     address: organization.address || '',
     phone: organization.phone || '',
+    phones: normalizePracticePhones(organization, true),
     email: organization.email || '',
     website: organization.website || '',
     clinicLogo: organization.clinicLogo || '',
@@ -166,6 +212,7 @@ export function savePracticeProfile(data, draft) {
   const clinician = clean(draft.clinician);
   if (!name) throw new Error('Escriba el nombre de la clínica o consultorio.');
   if (!clinician) throw new Error('Escriba el nombre del profesional.');
+  const phones = normalizePracticePhones({ phones: draft.phones });
   return {
     ...data,
     organization: {
@@ -175,7 +222,8 @@ export function savePracticeProfile(data, draft) {
       specialty: clean(draft.specialty) || 'Psiquiatría',
       professionalLicense: clean(draft.professionalLicense),
       address: clean(draft.address),
-      phone: clean(draft.phone),
+      phone: phones[0]?.number || '',
+      phones,
       email: clean(draft.email),
       website: clean(draft.website),
       clinicLogo: draft.clinicLogo || '',
@@ -219,7 +267,7 @@ export function savePrescription(data, patientId, draft) {
   if(previous?.archivedAt||previous?.status==='voided')throw new Error('La receta fue anulada y ya no puede modificarse.');
   if(!hasPermission(data,previous?'prescriptionsEdit':'prescriptionsCreate'))throw new Error('No tiene permiso para guardar esta receta.');
   const timestamp=nowIso();
-  const items = (draft.items || []).map(item => ({
+  const items = sortPrescriptionItemsBySchedule((draft.items || []).map(item => ({
     id: item.id || uid('rxitem'),
     medication: clean(item.medication),
     strength: clean(item.strength),
@@ -227,9 +275,10 @@ export function savePrescription(data, patientId, draft) {
     quantity: clean(item.quantity),
     duration: clean(item.duration),
     notes: clean(item.notes),
+    frequencySlots: Array.isArray(item.frequencySlots) ? [...item.frequencySlots] : [],
     sourceMedicationId: item.sourceMedicationId || null,
     addToTreatment: Boolean(item.addToTreatment),
-  })).filter(item => item.medication || item.directions);
+  })).filter(item => item.medication || item.directions));
   if (!items.length) throw new Error('Agregue al menos un medicamento o indicación.');
   if (items.some(item => !item.medication || !item.directions)) throw new Error('Cada línea debe incluir medicamento e indicaciones.');
   const existing = data.patients.flatMap(item => item.prescriptions || []).length;
@@ -274,7 +323,7 @@ export function savePrescription(data, patientId, draft) {
 export function prescriptionItemFromMedication(medication) {
   return {
     id: uid('rxitem'), medication: medication?.name || '', strength: medication?.dose || '',
-    directions: medication?.frequency || '', quantity: '', duration: '',
+    directions: medication?.frequency || '', quantity: '', duration: '', frequencySlots: [...(medication?.frequencySlots || [])],
     notes: medication?.notes || medication?.clinicalNotes || '', sourceMedicationId: medication?.id || null,
     addToTreatment: false,
   };
@@ -412,8 +461,10 @@ function safeImage(value) {
 export function buildPrescriptionPrintHtml(data, patient, prescription) {
   const organization = data.organization || {};
   const logo = safeImage(organization.clinicLogo);
+  const phones = normalizePracticePhones(organization);
+  const phoneLine = phones.map(item => `${item.label}: ${item.number}`).join(' · ');
   const voided = prescription.status === 'voided' || Boolean(prescription.archivedAt);
-  const items = (prescription.items || []).map((item, index) => `
+  const items = sortPrescriptionItemsBySchedule(prescription.items || []).map((item, index) => `
     <tr>
       <td>${index + 1}</td>
       <td><strong>${escapeHtml(item.medication)}</strong>${item.strength ? `<div>${escapeHtml(item.strength)}</div>` : ''}</td>
@@ -421,6 +472,6 @@ export function buildPrescriptionPrintHtml(data, patient, prescription) {
       <td>${escapeHtml(item.quantity || '—')}</td>
     </tr>`).join('');
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(prescription.number)}</title><style>
-    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#05316E;margin:0;background:#fff}.sheet{min-height:267mm;border:1px solid #d7e1eb;padding:20mm 16mm 15mm;position:relative}.voided{border:5px solid #a32626;color:#a32626;font-size:30px;font-weight:800;letter-spacing:3px;margin:0 0 18px;padding:10px;text-align:center;transform:rotate(-2deg)}.void-reason{font-size:10px;letter-spacing:0;margin-top:5px}.header{display:flex;align-items:center;gap:18px;border-bottom:3px solid #05316E;padding-bottom:16px}.logo{width:84px;height:64px;object-fit:contain}.clinic{flex:1}.clinic h1{font-size:24px;margin:0 0 4px}.clinic p{margin:2px 0;color:#52677d;font-size:11px}.rx-meta{text-align:right}.rx-meta strong{display:block;font-size:17px}.rx-meta span{font-size:11px;color:#52677d}.patient{margin:20px 0 15px;padding:14px;background:#FCFDF6;border:1px solid #d8e3ed;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px 25px}.patient div{font-size:11px;color:#52677d}.patient b{display:block;color:#05316E;font-size:13px;margin-top:2px}.rx{font-size:35px;font-weight:700;margin:10px 0;color:#05316E}table{width:100%;border-collapse:collapse}th{background:#05316E;color:white;text-align:left;padding:10px;font-size:11px}td{border-bottom:1px solid #d8e3ed;padding:12px 10px;vertical-align:top;font-size:12px;line-height:1.45}td:first-child{width:35px}td:last-child{width:80px}.muted{color:#64788c;font-size:10px;margin-top:4px}.instructions{margin-top:18px;border-left:4px solid #8FACCB;padding:10px 14px;background:#f4f8fb}.instructions h3{font-size:12px;margin:0 0 6px}.instructions p{font-size:11px;white-space:pre-wrap;margin:0;line-height:1.5}.signature{margin-top:55px;display:flex;justify-content:flex-end}.signature-box{width:260px;text-align:center;border-top:1px solid #05316E;padding-top:8px}.signature-box strong{display:block}.signature-box span{font-size:10px;color:#52677d}.footer{position:absolute;left:16mm;right:16mm;bottom:12mm;border-top:1px solid #d8e3ed;padding-top:8px;font-size:9px;color:#65798c;display:flex;justify-content:space-between;gap:15px}.footer span:last-child{text-align:right}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.sheet{border:0;padding:8mm 4mm 2mm;min-height:auto}.footer{left:4mm;right:4mm;bottom:0}}
-  </style></head><body><section class="sheet">${voided ? `<div class="voided">RECETA ANULADA<div class="void-reason">${escapeHtml(prescription.voidReason || 'Anulada en el expediente')}</div></div>` : ''}<header class="header">${logo ? `<img class="logo" src="${logo}" alt="Logo">` : ''}<div class="clinic"><h1>${escapeHtml(organization.name || 'Consultorio de Psiquiatría')}</h1><p><strong>${escapeHtml(organization.clinician || prescription.doctorName || '')}</strong> · ${escapeHtml(organization.specialty || 'Psiquiatría')}</p><p>${escapeHtml([organization.professionalLicense, organization.address].filter(Boolean).join(' · '))}</p><p>${escapeHtml([organization.phone, organization.email].filter(Boolean).join(' · '))}</p></div><div class="rx-meta"><strong>${escapeHtml(prescription.number)}</strong><span>${new Intl.DateTimeFormat('es-SV', { dateStyle: 'long' }).format(new Date(prescription.date))}</span></div></header><section class="patient"><div>Paciente<b>${escapeHtml(patient.name)}</b></div><div>Edad<b>${escapeHtml(patient.age)} años</b></div><div>Diagnóstico<b>${escapeHtml(prescription.diagnosis || patient.diagnosis || 'No consignado')}</b></div><div>Seguro médico<b>${patient.insurance?.hasInsurance ? escapeHtml(patient.insurance.provider || 'Sí') : 'No registrado'}</b></div></section><div class="rx">℞</div><table><thead><tr><th>#</th><th>Medicamento</th><th>Indicación</th><th>Cantidad</th></tr></thead><tbody>${items}</tbody></table>${prescription.generalInstructions ? `<section class="instructions"><h3>Indicaciones generales</h3><p>${escapeHtml(prescription.generalInstructions)}</p></section>` : ''}<div class="signature"><div class="signature-box"><strong>${escapeHtml(prescription.doctorName || organization.clinician || '')}</strong><span>${escapeHtml([organization.specialty, organization.professionalLicense].filter(Boolean).join(' · '))}</span><span>Firma y sello</span></div></div><footer class="footer"><span>${escapeHtml(organization.prescriptionFooter || 'Documento para revisión y firma del profesional tratante.')}</span><span>${escapeHtml(organization.name || '')}</span></footer></section><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script></body></html>`;
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#05316E;margin:0;background:#fff}.sheet{min-height:267mm;border:1px solid #d7e1eb;padding:20mm 16mm 15mm;position:relative}.voided{border:5px solid #a32626;color:#a32626;font-size:30px;font-weight:800;letter-spacing:3px;margin:0 0 18px;padding:10px;text-align:center;transform:rotate(-2deg)}.void-reason{font-size:10px;letter-spacing:0;margin-top:5px}.header{display:flex;align-items:center;gap:18px;border-bottom:3px solid #05316E;padding-bottom:16px}.logo{width:84px;height:64px;object-fit:contain}.clinic{flex:1}.clinic h1{font-size:24px;margin:0 0 4px}.clinic p{margin:2px 0;color:#52677d;font-size:11px;line-height:1.35}.rx-meta{text-align:right}.rx-meta strong{display:block;font-size:17px}.rx-meta span{font-size:11px;color:#52677d}.patient{margin:20px 0 15px;padding:14px;background:#FCFDF6;border:1px solid #d8e3ed;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px 25px}.patient div{font-size:11px;color:#52677d}.patient b{display:block;color:#05316E;font-size:13px;margin-top:2px}.rx{font-size:35px;font-weight:700;margin:10px 0;color:#05316E}table{width:100%;border-collapse:collapse}th{background:#05316E;color:white;text-align:left;padding:10px;font-size:11px}td{border-bottom:1px solid #d8e3ed;padding:12px 10px;vertical-align:top;font-size:12px;line-height:1.45}td:first-child{width:35px}td:last-child{width:80px}.muted{color:#64788c;font-size:10px;margin-top:4px}.instructions{margin-top:18px;border-left:4px solid #8FACCB;padding:10px 14px;background:#f4f8fb}.instructions h3{font-size:12px;margin:0 0 6px}.instructions p{font-size:11px;white-space:pre-wrap;margin:0;line-height:1.5}.signature{margin-top:55px;display:flex;justify-content:flex-end}.signature-box{width:260px;text-align:center;border-top:1px solid #05316E;padding-top:8px}.signature-box strong,.signature-box span{display:block}.signature-box span{font-size:10px;color:#52677d;margin-top:3px}.footer{position:absolute;left:16mm;right:16mm;bottom:12mm;border-top:1px solid #d8e3ed;padding-top:8px;font-size:9px;color:#65798c;display:flex;justify-content:space-between;gap:15px}.footer span:last-child{text-align:right}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.sheet{border:0;padding:8mm 4mm 2mm;min-height:auto}.footer{left:4mm;right:4mm;bottom:0}}
+  </style></head><body><section class="sheet">${voided ? `<div class="voided">RECETA ANULADA<div class="void-reason">${escapeHtml(prescription.voidReason || 'Anulada en el expediente')}</div></div>` : ''}<header class="header">${logo ? `<img class="logo" src="${logo}" alt="Logo">` : ''}<div class="clinic"><h1>${escapeHtml(organization.name || 'Consultorio de Psiquiatría')}</h1><p><strong>${escapeHtml(organization.clinician || prescription.doctorName || '')}</strong> · ${escapeHtml(organization.specialty || 'Psiquiatría')}</p><p>${escapeHtml([organization.professionalLicense, organization.address].filter(Boolean).join(' · '))}</p>${phoneLine ? `<p>${escapeHtml(phoneLine)}</p>` : ''}${organization.email ? `<p>${escapeHtml(organization.email)}</p>` : ''}</div><div class="rx-meta"><strong>${escapeHtml(prescription.number)}</strong><span>${new Intl.DateTimeFormat('es-SV', { dateStyle: 'long' }).format(new Date(prescription.date))}</span></div></header><section class="patient"><div>Paciente<b>${escapeHtml(patient.name)}</b></div><div>Edad<b>${escapeHtml(patient.age)} años</b></div><div>Diagnóstico<b>${escapeHtml(prescription.diagnosis || patient.diagnosis || 'No consignado')}</b></div><div>Seguro médico<b>${patient.insurance?.hasInsurance ? escapeHtml(patient.insurance.provider || 'Sí') : 'No registrado'}</b></div></section><div class="rx">℞</div><table><thead><tr><th>#</th><th>Medicamento</th><th>Indicación</th><th>Cantidad</th></tr></thead><tbody>${items}</tbody></table>${prescription.generalInstructions ? `<section class="instructions"><h3>Indicaciones generales</h3><p>${escapeHtml(prescription.generalInstructions)}</p></section>` : ''}<div class="signature"><div class="signature-box"><strong>${escapeHtml(prescription.doctorName || organization.clinician || '')}</strong><span>${escapeHtml(organization.specialty || '')}</span><span>Firma y sello</span></div></div><footer class="footer"><span>${escapeHtml(organization.prescriptionFooter || 'Documento para revisión y firma del profesional tratante.')}</span><span>${escapeHtml(organization.name || '')}</span></footer></section><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script></body></html>`;
 }
