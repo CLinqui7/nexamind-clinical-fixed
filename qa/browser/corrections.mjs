@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const page = await browser.newPage();
+const consoleErrors = [];
 page.on('pageerror', error => console.error('PAGE ERROR:', error));
 page.on('console', message => {
-  if (message.type() === 'error') console.error('BROWSER ERROR:', message.text());
+  if (message.type() === 'error') {
+    consoleErrors.push(message.text());
+    console.error('BROWSER ERROR:', message.text());
+  }
 });
 const checks = [];
 const patientName = `QA Corrections ${Date.now()}`;
@@ -154,6 +158,9 @@ try {
   await page.getByRole('button', { name: 'Archivados', exact: true }).click();
   await page.getByText(patientName, { exact: true }).waitFor();
   checks.push('patient can be archived and found in the archived filter');
+
+  assert.deepEqual(consoleErrors, []);
+  checks.push('correction and archive workflows render without browser console errors');
 
   console.log(JSON.stringify({ passed: checks.length, checks, scope: 'React/Vite browser + isolated PostgreSQL; no production data' }, null, 2));
 } finally {
