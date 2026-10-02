@@ -1,0 +1,15 @@
+_backups/
+backup-*/
+_patch-*/
+supabase/.temp/
+.vercel/
+.env
+.env.local
+.env.*.local
+*.env.private
+qa-results/
+playwright-report/
+test-results/
+qa/results/
+*.zip
+*.log

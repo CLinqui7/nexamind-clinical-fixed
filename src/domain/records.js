@@ -4,13 +4,12 @@ export const ADMIN_PATIENT_KEYS = Object.freeze([
   'nextVisit', 'archived', 'archivedAt', 'archivedBy', 'archiveReason', 'createdAt', 'updatedAt', 'notificationPreferences',
 ]);
 export const APPOINTMENT_KEYS = Object.freeze([
-  'id', 'patientId', 'title', 'start', 'end', 'type', 'modality', 'status',
+  'id', 'calendarId', 'eventType', 'patientId', 'title', 'start', 'end', 'type', 'modality', 'status',
   'adminReviewStatus', 'confirmedAt', 'confirmedBy', 'cancelledAt', 'cancelledBy',
   'reviewedAt', 'reviewedBy', 'reminderLog', 'googleEventId', 'googleEventUrl', 'createdAt', 'updatedAt',
 ]);
 export const PROFILE_KEYS = Object.freeze(['name','clinician','specialty','professionalLicense','address','phone','phones','email','website','clinicLogo','doctorPhoto','prescriptionFooter','updatedAt']);
 export const SETTINGS_KEYS = Object.freeze(['largeText','reducedMotion','simpleMode','theme','reminderHours','reminderChannels','palette']);
-export const SECRETARY_PERMISSIONS = Object.freeze(['patientsView','patientsCreate','patientsEdit','appointmentsManage','remindersManage','medicationsCapture','prescriptionsEdit','documentsGenerateAdministrative']);
 export function pick(value, keys) {
   return Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
 }

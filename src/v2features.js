@@ -304,6 +304,7 @@ export function appointmentReadyForConsultation(data, now = new Date()) {
   const windowStart = current.getTime() - 30 * 60 * 1000;
   const windowEnd = current.getTime() + 10 * 60 * 1000;
   return (data.appointments || [])
+    .filter(appointment => appointment.eventType !== 'general' && Boolean(appointment.patientId))
     .filter(appointment => !['completed', 'cancelled', 'no_show'].includes(appointment.status))
     .filter(appointment => {
       const start = new Date(appointment.start).getTime();

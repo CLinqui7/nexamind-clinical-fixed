@@ -9,6 +9,6 @@ export function createClient(){return {
  auth:{getSession:async()=>({data:{session:session()},error:null}),getUser:async()=>({data:{user:session()?.user},error:null}),onAuthStateChange(cb){callbacks.push(cb);return {data:{subscription:{unsubscribe(){}}}};},
  signInWithPassword:async({email,password})=>{if(password!=='qa-password-123')return {error:{message:'Invalid login credentials'}};const user={id:identities[email.split('@')[0]],email,email_confirmed_at:'2026-09-01'};const s={user,access_token:'qa-token'};localStorage.setItem(storage,JSON.stringify(s));return {data:{session:s},error:null};},
  signOut:async()=>{localStorage.removeItem(storage);callbacks.forEach(cb=>cb('SIGNED_OUT'));return {error:null};},updateUser:async()=>({error:null})},
- rpc:async(name,args)=>query({name,args}),from:table=>new Query(table),functions:{invoke:async(name)=>name==='linkare-team'?query({team:true}):({data:name==='calendar-status'?{ok:true,status:{google:{connected:false},apple:{connected:false}}}:{ok:true,providers:{email:false,sms:false,whatsapp:false}},error:null})},
+ rpc:async(name,args)=>query({name,args}),from:table=>new Query(table),functions:{invoke:async(name,options={})=>name==='linkare-team'?query({team:true,teamInput:options.body||{}}):({data:name==='calendar-status'?{ok:true,status:{google:{connected:false},apple:{connected:false}}}:{ok:true,providers:{email:false,sms:false,whatsapp:false}},error:null})},
  storage:{from:()=>({upload:async(path)=>query({storage:true,path}),createSignedUrl:async()=>({data:{signedUrl:'/qa.pdf'},error:null})})}
 };}

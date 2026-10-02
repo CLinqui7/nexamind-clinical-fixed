@@ -1,10 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 import { ApiError, requireMember, publicKey, limitAction, safeApiMessage } from '../_shared/auth.ts';
 import { corsHeaders,jsonResponse } from '../_shared/cors.ts';
-import { PERMISSION_KEYS, OWNER_ONLY, ADMIN_PERMISSIONS, uiRole } from '../_shared/permissions.ts';
+import { PERMISSION_KEYS, OWNER_ONLY, ADMIN_PERMISSIONS, CALENDAR_ACTIONS, CALENDAR_DEFINITIONS, calendarPermissionKey, uiRole } from '../_shared/permissions.ts';
 const requestedRole=(value:unknown)=>{const role=({doctor:'psychiatrist',nurse:'clinical_assistant'} as Record<string,string>)[String(value)]||String(value||'secretary');if(!['psychiatrist','clinical_assistant','secretary'].includes(role))throw new ApiError(400,'Seleccione Doctor, Enfermería o Secretaría.');return role;};
 const clean=(s:unknown,max=160)=>String(s||'').trim().slice(0,max);
-function permissions(value:any,role:string){return Object.fromEntries(PERMISSION_KEYS.map(k=>[k,!OWNER_ONLY.includes(k) && (role!=='secretary'||ADMIN_PERMISSIONS.includes(k)) && value?.[k]===true]));}
+function permissions(value:any,role:string){
+ const output=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,!OWNER_ONLY.includes(k)&&(role!=='secretary'||ADMIN_PERMISSIONS.includes(k))&&value?.[k]===true]));
+ for(const calendar of CALENDAR_DEFINITIONS){
+  const view=calendarPermissionKey(calendar.code,'View');
+  if(!output[view])for(const action of CALENDAR_ACTIONS.slice(1))output[calendarPermissionKey(calendar.code,action)]=false;
+ }
+ if(role==='secretary')output.appointmentsManage=CALENDAR_DEFINITIONS.some(calendar=>CALENDAR_ACTIONS.some(action=>output[calendarPermissionKey(calendar.code,action)]===true));
+ return output;
+}
 Deno.serve(async request=>{
  if(request.method==='OPTIONS')return new Response('ok',{headers:corsHeaders(request)});
  if(request.method!=='POST')return jsonResponse(request,{ok:false,message:'Método no permitido.'},405);

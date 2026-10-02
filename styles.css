@@ -3179,3 +3179,229 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 /* Solid surfaces avoid repeated large backdrop compositing. */
 .app-frame,.topbar,.modal-backdrop {backdrop-filter:none;}
 .ambient {display:none;}
+
+/* Selectores claros y táctiles: calendario y permisos nunca dependen solo del color. */
+.calendar-filter-panel{display:grid;grid-template-columns:auto minmax(360px,1fr) auto;align-items:center;gap:18px;background:linear-gradient(135deg,#fff,#f7fafc);border:1px solid #d8e3ef;border-radius:22px;padding:17px 18px;margin:0 0 16px;box-shadow:0 10px 28px rgba(5,49,110,.055)}
+.calendar-filter-heading{display:flex;align-items:center;gap:10px;min-width:180px}.calendar-filter-heading>div{display:grid;gap:3px}.calendar-filter-heading-icon{width:38px;height:38px;border-radius:13px;display:grid;place-items:center;color:#174e88;background:#e8f1fa}.calendar-filter-panel small{color:#5b7188}.calendar-filter-options{display:grid;grid-template-columns:repeat(3,minmax(130px,1fr));gap:9px}.calendar-filter{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr) 24px;align-items:center;gap:9px;min-height:58px;border:1px solid #cbd9e6;border-radius:16px;padding:9px 10px;background:#fff;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}.calendar-filter:hover{transform:translateY(-1px);border-color:#92abc2;box-shadow:0 8px 18px rgba(5,49,110,.08)}.calendar-filter input,.calendar-choice input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.calendar-filter:has(input:focus-visible),.calendar-choice:has(input:focus-visible){outline:3px solid #477ab6;outline-offset:3px}.calendar-filter.active{border-width:2px;padding:8px 9px;background:#fbfdff}.calendar-filter-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:11px}.calendar-filter-copy{display:grid;gap:2px;min-width:0}.calendar-filter-copy b{font-size:12px}.calendar-filter-copy small{font-size:10px}.calendar-filter-check{display:grid;place-items:center;width:23px;height:23px;border:1px solid #c5d3df;border-radius:8px;color:transparent;background:#f3f6f8}.calendar-filter.active .calendar-filter-check{color:#fff;border-color:#05316e;background:#05316e}.calendar-filter-actions{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.calendar-filter-actions .text-button{white-space:nowrap}
+.calendar-doctor .calendar-filter-icon,.calendar-doctor .calendar-choice-icon,.calendar-label.calendar-doctor{background:#e4f0ff;color:#174e88}.calendar-wife .calendar-filter-icon,.calendar-wife .calendar-choice-icon,.calendar-label.calendar-wife{background:#fce9f0;color:#8c3154}.calendar-general .calendar-filter-icon,.calendar-general .calendar-choice-icon,.calendar-label.calendar-general{background:#ece9fb;color:#513c8f}.calendar-label{display:inline-flex;width:max-content;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:750;margin-top:5px}.calendar-event.calendar-doctor,.week-event.calendar-doctor{border-left:5px solid #3478b8}.calendar-event.calendar-wife,.week-event.calendar-wife{border-left:5px double #b8547a}.calendar-event.calendar-general,.week-event.calendar-general{border-left:5px dashed #705bb1}.general-event-symbol{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#ece9fb;color:#513c8f;font-size:17px;font-weight:800;flex:none}
+
+.calendar-choice-fieldset{border:1px solid #d8e3ef;border-radius:18px;padding:16px;background:#f8fbfd}.calendar-choice-fieldset>legend{padding:0 7px;color:#0c315b;font-size:13px;font-weight:800}.calendar-choice-hint{margin:0 0 12px;color:#536b84;font-size:12px;line-height:1.5}.calendar-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.calendar-choice{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) 27px;align-items:center;gap:10px;min-height:78px;padding:12px;border:1px solid #cad8e4;border-radius:16px;background:#fff;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}.calendar-choice:hover{transform:translateY(-1px);border-color:#8faac3;box-shadow:0 10px 22px rgba(5,49,110,.09)}.calendar-choice.active{border:2px solid #164f86;padding:11px;background:#fbfdff;box-shadow:0 9px 22px rgba(5,49,110,.1)}.calendar-choice-icon{width:44px;height:44px;border-radius:14px;display:grid;place-items:center}.calendar-choice-copy{display:grid;gap:4px;min-width:0}.calendar-choice-copy b{color:#102c4a;font-size:13px}.calendar-choice-copy small{font-size:10.5px;line-height:1.35}.calendar-choice-check{width:27px;height:27px;border:1px solid #c5d3df;border-radius:50%;display:grid;place-items:center;color:transparent;background:#f5f7f9}.calendar-choice.active .calendar-choice-check{color:#fff;border-color:#05316e;background:#05316e}.calendar-choice-required,.calendar-choice-selected{display:flex;align-items:center;gap:6px;margin:11px 0 0;font-size:11px}.calendar-choice-required{color:#9a3c47}.calendar-choice-selected{color:#26704b}
+
+.permission-mode,.permission-bulk-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.permission-mode{padding:12px;border:1px solid #dbe5ef;border-radius:12px;background:#f8fbfd}.permission-mode label{display:flex;gap:8px;align-items:center}.permission-bulk-actions{margin:8px 0 14px}.permission-bulk-actions .button{min-height:38px}.permission-selection-count{display:flex;align-items:baseline;gap:6px;margin-right:auto;color:#536b84}.permission-selection-count b{color:#05316e;font-size:18px}.permission-selection-count span{font-size:11px}.permission-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.permission-group{min-width:0;padding:0;border:1px solid #dbe5ef;border-radius:16px;overflow:hidden;background:#fff}.permission-group>legend{float:left;width:100%;box-sizing:border-box;padding:11px 13px;color:#12395f;background:#edf4fa;border-bottom:1px solid #dbe5ef;font-size:11px;font-weight:800}.permission-group>legend+*{clear:both}.permission-row{position:relative;display:grid;grid-template-columns:30px minmax(0,1fr);align-items:start;gap:10px;margin:0;padding:11px 12px;border:0;border-bottom:1px solid #e3eaf0;border-radius:0;background:#fff;cursor:pointer;transition:background-color .12s ease}.permission-row:last-child{border-bottom:0}.permission-row:hover{background:#f7fafc}.permission-row.active{background:#edf6fa}.permission-row>input{position:absolute;width:1px;height:1px;margin:0;opacity:0;pointer-events:none}.permission-row:has(input:focus-visible){outline:3px solid #477ab6;outline-offset:-3px}.permission-check{width:28px;height:28px;border:1px solid #bccbd7;border-radius:9px;display:grid;place-items:center;color:transparent;background:#f2f5f7;transition:color .12s ease,background-color .12s ease,border-color .12s ease}.permission-row.active .permission-check{color:#fff;border-color:#05316e;background:#05316e}.permission-copy{display:grid;gap:4px;min-width:0}.permission-copy b{color:#152f49;font-size:11px}.permission-copy small{color:#5c738c;font-size:9.5px;line-height:1.42}.invite-password-note{margin-bottom:4px}.invite-success{display:grid;justify-items:center;text-align:center;gap:12px}.invite-success>h3,.invite-success>p{margin:0}.invite-success-icon{width:64px;height:64px;border-radius:21px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#05316e,#397ca4);box-shadow:0 14px 30px rgba(5,49,110,.18)}.invite-success .form-information{text-align:left;width:100%}.invite-success>.button{margin-top:3px}
+
+.setting-toggle{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:16px;min-height:66px;padding:12px 2px;border-bottom:1px solid #e2e9ef;cursor:pointer}.setting-toggle:last-child{border-bottom:0}.setting-copy{display:grid;gap:4px}.setting-copy b{color:#152f49;font-size:12px}.setting-copy small{color:#5c738c;font-size:9.5px;line-height:1.4}.setting-toggle>input{position:absolute;width:1px;height:1px;opacity:0}.setting-toggle-track{align-self:center;width:46px;height:27px;padding:3px;border:1px solid #b9c8d4;border-radius:999px;background:#e9eef2;transition:background-color .15s ease,border-color .15s ease}.setting-toggle-track i{display:block;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 2px 7px rgba(15,38,61,.22);transition:transform .15s ease}.setting-toggle>input:checked+.setting-toggle-track{border-color:#05316e;background:#05316e}.setting-toggle>input:checked+.setting-toggle-track i{transform:translateX(19px)}.setting-toggle:has(input:focus-visible){outline:3px solid #477ab6;outline-offset:3px;border-radius:12px}
+
+@media(max-width:1050px){.calendar-filter-panel{grid-template-columns:1fr}.calendar-filter-heading{min-width:0}.calendar-filter-actions{flex-direction:row;align-items:center}.calendar-choice-grid{grid-template-columns:1fr}.permission-groups{grid-template-columns:1fr}}
+@media(max-width:700px){.calendar-filter-panel{align-items:stretch;padding:14px}.calendar-filter-options{grid-template-columns:1fr}.calendar-filter-actions{justify-content:space-between}.calendar-choice-fieldset{padding:13px}.permission-mode,.permission-bulk-actions{align-items:stretch;flex-direction:column}.permission-selection-count{margin-right:0;justify-content:center}.permission-bulk-actions .button{width:100%}}
+
+/* Motion system: clear feedback, small distances and one visual rhythm. */
+:root {
+  --motion-quick: 150ms;
+  --motion-standard: 220ms;
+  --motion-enter: 280ms;
+  --motion-emphasized: cubic-bezier(.2,.8,.2,1);
+  --motion-settle: cubic-bezier(.22,1,.36,1);
+}
+
+@keyframes linkare-page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes linkare-dialog-enter {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes linkare-soft-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes linkare-check-enter {
+  from { transform: scale(.6); opacity: .4; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.view-enter { animation: linkare-page-enter var(--motion-enter) var(--motion-settle) both; }
+.login-card { animation: linkare-page-enter 340ms var(--motion-settle) both; }
+.login-copy { animation: linkare-soft-reveal 360ms var(--motion-settle) 70ms both; }
+.login-benefits { animation: linkare-soft-reveal 360ms var(--motion-settle) 130ms both; }
+.login-panel-head { animation: linkare-soft-reveal var(--motion-enter) var(--motion-settle) both; }
+.view-enter .kpi-grid > .kpi-card { animation: linkare-soft-reveal var(--motion-enter) var(--motion-settle) both; }
+.view-enter .kpi-grid > .kpi-card:nth-child(2) { animation-delay: 35ms; }
+.view-enter .kpi-grid > .kpi-card:nth-child(3) { animation-delay: 70ms; }
+.view-enter .kpi-grid > .kpi-card:nth-child(4) { animation-delay: 105ms; }
+.month-calendar, .week-calendar, .day-view {
+  animation: linkare-soft-reveal var(--motion-standard) var(--motion-emphasized) both;
+}
+.modal-backdrop { animation: fadeIn var(--motion-standard) ease-out both; }
+.modal { animation: linkare-dialog-enter var(--motion-enter) var(--motion-settle) both; }
+.toast { animation: slideUp var(--motion-enter) var(--motion-settle) both; }
+.invite-success-icon { animation: linkare-check-enter 360ms var(--motion-settle) both; }
+
+.nav-pill button, .segmented button, .patient-tabs button {
+  transition: color var(--motion-quick) ease,
+    background-color var(--motion-standard) ease,
+    box-shadow var(--motion-standard) ease,
+    transform var(--motion-quick) var(--motion-emphasized);
+}
+.nav-pill button .icon { transition: transform var(--motion-standard) var(--motion-settle); }
+.nav-pill button.active .icon { transform: scale(1.09); }
+.button, .icon-button, .text-button {
+  transition: transform var(--motion-quick) var(--motion-emphasized),
+    box-shadow var(--motion-standard) ease,
+    background-color var(--motion-standard) ease,
+    border-color var(--motion-standard) ease,
+    color var(--motion-quick) ease;
+}
+.form-field input, .form-field select, .form-field textarea, .search-box, .login-input {
+  transition: border-color var(--motion-standard) ease,
+    background-color var(--motion-standard) ease,
+    box-shadow var(--motion-standard) ease;
+}
+.form-field:focus-within > span { color: #174e88; }
+.search-box:focus-within { border-color: #8faccc; box-shadow: 0 0 0 3px rgba(143,172,203,.16); }
+
+.calendar-filter, .calendar-choice, .patient-card, .plan-option {
+  transition: transform var(--motion-standard) var(--motion-emphasized),
+    border-color var(--motion-standard) ease,
+    background-color var(--motion-standard) ease,
+    box-shadow var(--motion-standard) ease;
+}
+.calendar-filter-check, .calendar-choice-check, .permission-check {
+  transition: color var(--motion-quick) ease,
+    background-color var(--motion-standard) ease,
+    border-color var(--motion-standard) ease,
+    transform var(--motion-standard) var(--motion-settle);
+}
+.calendar-filter-check svg, .calendar-choice-check svg, .permission-check svg {
+  transform: scale(.55);
+  opacity: 0;
+  transition: transform var(--motion-standard) var(--motion-settle),
+    opacity var(--motion-quick) ease;
+}
+.calendar-filter.active .calendar-filter-check svg,
+.calendar-choice.active .calendar-choice-check svg,
+.permission-row.active .permission-check svg { transform: scale(1); opacity: 1; }
+.calendar-choice-icon, .calendar-filter-icon {
+  transition: transform var(--motion-standard) var(--motion-settle);
+}
+.calendar-choice.active .calendar-choice-icon,
+.calendar-filter.active .calendar-filter-icon { transform: scale(1.06); }
+.permission-row {
+  transition: background-color var(--motion-standard) ease,
+    box-shadow var(--motion-standard) ease;
+}
+.setting-toggle-track { transition: background-color var(--motion-standard) ease, border-color var(--motion-standard) ease; }
+.setting-toggle-track i { transition: transform var(--motion-standard) var(--motion-settle); }
+.calendar-event, .upcoming-list button, .day-schedule > button {
+  transition: transform var(--motion-quick) var(--motion-emphasized),
+    background-color var(--motion-standard) ease,
+    box-shadow var(--motion-standard) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-pill button:hover:not(.active) { transform: translateY(-1px); }
+  .calendar-filter:hover, .calendar-choice:hover, .patient-card:hover { transform: translateY(-2px); }
+  .calendar-event:hover, .upcoming-list button:hover, .day-schedule > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 7px 17px rgba(5,49,110,.09);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-enter, .login-card, .login-copy, .login-benefits, .login-panel-head,
+  .view-enter .kpi-grid > .kpi-card, .month-calendar, .week-calendar, .day-view,
+  .modal-backdrop, .modal, .toast, .invite-success-icon {
+    animation: none !important;
+  }
+}
+
+/* Capacitación: el contenido explicativo ocupa espacio propio y nunca tapa el objetivo. */
+.training-tabs { display:flex; gap:6px; padding:5px; margin-bottom:20px; border-radius:14px; background:#edf3f9; }
+.training-tabs button { flex:1; border:0; border-radius:10px; background:transparent; color:#526b84; cursor:pointer; padding:12px 10px; font-size:13px; font-weight:750; }
+.training-tabs button.active { color:#05316e; background:#fff; box-shadow:0 3px 10px rgba(5,49,110,.1); }
+.training-intro { display:flex; align-items:center; gap:15px; padding:18px; border:1px solid #dce9f4; border-radius:18px; background:linear-gradient(115deg,#f3f8fd,#fff); }
+.training-intro-icon { flex:none; display:grid; place-items:center; width:54px; height:54px; border-radius:17px; color:#fff; background:linear-gradient(145deg,#397caa,#05316e); box-shadow:0 10px 21px rgba(5,49,110,.18); }
+.training-intro h3 { margin:3px 0 5px; color:#062f63; font-size:21px; letter-spacing:-.03em; }
+.training-intro p { margin:0; color:#536b84; line-height:1.5; font-size:13px; }
+.training-video { display:block; width:100%; aspect-ratio:16/10; max-height:420px; margin:15px 0 11px; border-radius:16px; background:#082a50; box-shadow:0 14px 28px rgba(5,49,110,.14); }
+.training-video-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:#60778c; font-size:12px; }
+.training-guide { display:grid; gap:10px; }
+.training-guide section { display:flex; gap:14px; padding:16px; border:1px solid #e0eaf3; border-radius:15px; background:#fff; }
+.training-guide-number { flex:none; display:grid; place-items:center; width:34px; height:34px; border-radius:11px; background:#e9f2f9; color:#12527d; font-size:12px; font-weight:800; }
+.training-guide h3 { margin:0 0 5px; color:#05316e; font-size:15px; }
+.training-guide p { margin:0; color:#516b84; line-height:1.58; font-size:13px; }
+.training-footer { position:sticky; bottom:-20px; z-index:2; display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:17px 0 2px; margin-top:19px; background:linear-gradient(transparent,#fff 12px); }
+.training-support-note { color:#60778c; font-size:12px; }
+
+.training-active { padding-right:396px; }
+.training-active .app-frame { width:min(1540px,100%); }
+.training-rail { position:fixed; z-index:125; top:22px; right:22px; bottom:22px; width:354px; display:flex; flex-direction:column; min-height:0; border:1px solid #dbe7f1; border-radius:24px; overflow:hidden; background:#fff; box-shadow:0 20px 50px rgba(5,39,85,.18); animation:linkare-dialog-enter var(--motion-enter) var(--motion-settle) both; }
+.training-rail-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:18px 20px 15px; }
+.training-rail-brand { display:flex; align-items:center; gap:10px; color:#082f62; }
+.training-rail-brand b,.training-rail-brand small { display:block; }
+.training-rail-brand b { font-size:14px; letter-spacing:-.02em; }
+.training-rail-brand small { margin-top:3px; color:#668097; font-size:11px; }
+.training-rail-mark { display:grid; place-items:center; width:38px; height:38px; flex:none; border-radius:12px; color:#fff; background:linear-gradient(145deg,#4393b1,#05316e); }
+.training-rail-close { width:32px; height:32px; flex:none; border:1px solid #dce7ef; border-radius:10px; background:#fff; color:#44647e; font-size:24px; line-height:1; cursor:pointer; }
+.training-progress { height:5px; background:#e9f2f8; }
+.training-progress>div { height:100%; border-radius:0 6px 6px 0; background:linear-gradient(90deg,#479bb1,#075a91); transition:width var(--motion-standard) ease; }
+.training-rail-content { min-height:0; overflow:auto; padding:25px 22px 13px; }
+.training-count { color:#377998; font-size:10px; font-weight:850; letter-spacing:.13em; }
+.training-step-icon { display:grid; place-items:center; width:48px; height:48px; margin:17px 0 14px; border-radius:15px; color:#fff; background:linear-gradient(145deg,#4896b5,#0b467e); box-shadow:0 10px 18px rgba(7,79,127,.17); }
+.training-rail-content h2 { margin:0 0 10px; color:#062f63; font-size:26px; letter-spacing:-.045em; }
+.training-rail-content p { margin:0; color:#496780; line-height:1.67; font-size:14px; }
+.training-tip { display:flex; align-items:flex-start; gap:9px; margin-top:18px; padding:13px; border-radius:13px; background:#eef7f6; color:#245d63; font-size:12px; line-height:1.45; }
+.training-tip svg { flex:none; margin-top:1px; }
+.training-step-list { display:flex; justify-content:center; gap:7px; flex-wrap:wrap; margin:auto 16px 13px; padding-top:12px; }
+.training-step-list button { width:31px; height:31px; border:1px solid #d6e3ee; border-radius:10px; background:#fff; color:#66819a; cursor:pointer; font-size:11px; font-weight:800; }
+.training-step-list button.active { color:#fff; border-color:#075a91; background:#075a91; box-shadow:0 5px 10px rgba(7,90,145,.2); }
+.training-rail-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 18px; }
+.training-rail-actions .button { width:100%; }
+.training-open-guide { align-self:center; margin:12px 0 17px; border:0; background:none; color:#386b8d; text-decoration:underline; cursor:pointer; font-size:11px; font-weight:700; }
+.training-active [data-tour-active-target="true"] { outline:3px solid #1a84ae; outline-offset:5px; border-radius:13px; box-shadow:0 0 0 8px rgba(26,132,174,.12); scroll-margin-top:112px; }
+.training-active .modal-backdrop { right:396px; }
+
+@media (max-width:1100px) {
+  .training-active { padding-right:22px; }
+  .training-active .main-content { padding-bottom:355px; }
+  .training-rail { top:auto; left:10px; right:10px; bottom:10px; width:auto; height:300px; border-radius:20px; }
+  .training-rail-head { padding:10px 16px 8px; }
+  .training-rail-content { padding:10px 16px 6px; }
+  .training-step-icon { display:none; }
+  .training-rail-content h2 { display:inline; margin-left:10px; font-size:20px; }
+  .training-rail-content p { margin-top:7px; font-size:12px; line-height:1.45; }
+  .training-tip { margin-top:8px; padding:8px 10px; font-size:11px; }
+  .training-step-list { margin:3px 12px 8px; padding-top:0; }
+  .training-step-list button { width:27px; height:27px; }
+  .training-rail-actions { padding:0 14px; }
+  .training-rail-actions .button { min-height:36px; }
+  .training-open-guide { margin:5px 0 8px; }
+  .training-active .modal-backdrop { right:0; bottom:316px; }
+  .training-active .modal { max-height:calc(100vh - 345px); }
+  .training-active .modal-body { max-height:calc(100vh - 430px); }
+  .training-active [data-tour-active-target="true"] { scroll-margin-top:92px; scroll-margin-bottom:335px; }
+}
+@media (max-width:600px) {
+  .training-intro { align-items:flex-start; padding:13px; }
+  .training-intro-icon { width:39px; height:39px; border-radius:12px; }
+  .training-intro h3 { font-size:17px; }
+  .training-tabs button { font-size:11px; padding:10px 5px; }
+  .training-video { border-radius:11px; }
+  .training-footer .button { width:100%; }
+  .training-rail { height:326px; }
+  .training-active .main-content { padding-bottom:380px; }
+  .training-active .modal-backdrop { bottom:342px; }
+  .training-active .modal { max-height:calc(100vh - 365px); }
+  .training-active .modal-body { max-height:calc(100vh - 450px); }
+  .training-rail-content h2 { font-size:18px; }
+}
+@media (max-width:880px) {
+  .topbar .help-button { display:inline-grid; place-items:center; width:40px; min-width:40px; height:40px; padding:0; }
+  .topbar .help-button span { display:none; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .training-rail { animation:none !important; }
+  .training-progress>div { transition:none !important; }
+}
+.reduced-motion-mode .training-rail { animation:none !important; }
+.reduced-motion-mode .training-progress>div { transition:none !important; }

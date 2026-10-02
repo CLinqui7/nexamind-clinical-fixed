@@ -1,6 +1,8 @@
 import { normalizePatientV2 } from './v2features.js';
 import { normalizePracticePhones } from './practice.js';
-const defaultClinicLogo = '/assets/linkare-logo.jpg';
+import { CALENDAR_DEFINITIONS } from './domain/permissions.js';
+const defaultClinicLogo = '/assets/linkare-symbol-v2.png';
+const legacyDefaultClinicLogos = new Set(['/assets/linkare-logo.jpg','/assets/linkare-wordmark.png']);
 const runtimeEnv = import.meta.env ?? {};
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -220,14 +222,17 @@ export function normalizeData(input = {}) {
       phones: normalizePracticePhones(input.organization || {}),
       email: input.organization?.email || '',
       website: input.organization?.website || '',
-      clinicLogo: input.organization?.clinicLogo || defaultClinicLogo,
+      clinicLogo: !input.organization?.clinicLogo || legacyDefaultClinicLogos.has(input.organization.clinicLogo) ? defaultClinicLogo : input.organization.clinicLogo,
       doctorPhoto: input.organization?.doctorPhoto || doctor.avatar || '',
       prescriptionFooter: input.organization?.prescriptionFooter || 'Documento emitido para revisión, firma y sello del profesional tratante.',
       updatedAt: input.organization?.updatedAt || null,
     },
     users,
+    calendars: (Array.isArray(input.calendars) && input.calendars.length ? input.calendars : CALENDAR_DEFINITIONS.map(item=>({id:`calendar_${item.code}`,...item,isActive:true}))).map(calendar=>({
+      id:String(calendar.id),code:calendar.code,name:calendar.name,visualKey:calendar.visualKey||CALENDAR_DEFINITIONS.find(item=>item.code===calendar.code)?.visualKey||'calendar',isActive:calendar.isActive!==false,
+    })),
     patients: Array.isArray(input.patients) ? input.patients.map(normalizePatient) : [],
-    appointments: Array.isArray(input.appointments) ? input.appointments.map(item => ({ ...item, reminderLog: Array.isArray(item.reminderLog) ? item.reminderLog : [] })) : [],
+    appointments: Array.isArray(input.appointments) ? input.appointments.map(item => ({ ...item, calendarId:item.calendarId||null,eventType:item.eventType||'appointment',reminderLog: Array.isArray(item.reminderLog) ? item.reminderLog : [] })) : [],
     alerts: Array.isArray(input.alerts) ? input.alerts.map(item => ({ ...item })) : [],
     billing: {
       planName: input.billing?.planName || 'Plan Profesional Linkare',

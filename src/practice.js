@@ -1,5 +1,5 @@
 import { uid } from './utils.js';
-import { permissionAllowed } from './domain/permissions.js';
+import { CALENDAR_ACTIONS, CALENDAR_DEFINITIONS, calendarPermissionKey, defaultPermissions, permissionAllowed } from './domain/permissions.js';
 
 const nowIso = () => new Date().toISOString();
 const clean = value => String(value ?? '').trim();
@@ -49,6 +49,14 @@ function stableIntakeSort(items) {
 export const sortPrescriptionItemsBySchedule = items => stableIntakeSort(items);
 export const sortMedicationsBySchedule = medications => stableIntakeSort((medications || []).map(item => ({ ...item, directions: item.frequency })));
 
+// Administrative review is an appointment workflow, never a clinical score.
+// Only patient-linked, non-cancelled appointments can place a patient in this queue.
+export function patientsNeedingAdministrativeReview(appointments = []) {
+  return new Set((appointments || [])
+    .filter(item => item?.patientId && item.adminReviewStatus === 'pending' && !['cancelled', 'no_show'].includes(item.status))
+    .map(item => item.patientId));
+}
+
 
 
 
@@ -58,7 +66,7 @@ export const PERMISSION_CATALOG = [
   { key: 'patientsView', group: 'Pacientes', label: 'Ver pacientes', description: 'Consultar la lista y la ficha administrativa.' },
   { key: 'patientsCreate', group: 'Pacientes', label: 'Crear pacientes', description: 'Registrar expedientes nuevos.' },
   { key: 'patientsEdit', group: 'Pacientes', label: 'Editar datos administrativos', description: 'Actualizar contacto, seguro y fotografía.' },
-  { key: 'appointmentsManage', group: 'Agenda', label: 'Gestionar agenda', description: 'Crear, editar, confirmar o cancelar citas.' },
+  { key: 'appointmentsManage', group: 'Agenda', label: 'Gestionar agenda completa', description: 'Permiso histórico para personal clínico; Secretaría se configura por calendario.' },
   { key: 'remindersManage', group: 'Agenda', label: 'Gestionar recordatorios', description: 'Abrir WhatsApp y marcar recordatorios enviados.' },
   { key: 'clinicalView', group: 'Información clínica', label: 'Ver información clínica', description: 'Consultar diagnósticos, escalas, tratamiento y controles.' },
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },
@@ -77,34 +85,17 @@ export const PERMISSION_CATALOG = [
   { key: 'exportsManage', group: 'Supervisión', label: 'Exportar información', description: 'Descargar CSV, ICS y respaldos.' },
   { key: 'settingsManage', group: 'Administración', label: 'Configurar clínica', description: 'Editar identidad, recordatorios y apariencia.' },
   { key: 'usersManage', group: 'Administración', label: 'Gestionar usuarios', description: 'Administrar equipo y permisos (solo propietario).' },
+  ...CALENDAR_DEFINITIONS.flatMap(calendar => CALENDAR_ACTIONS.map(action => ({
+    key: calendarPermissionKey(calendar.code, action),
+    group: `Calendario · ${calendar.name}`,
+    label: ({View:'Ver',Create:'Crear',Edit:'Editar',Cancel:'Cancelar',Delete:'Eliminar'})[action],
+    description: `${({View:'Consultar',Create:'Crear eventos en',Edit:'Modificar eventos en',Cancel:'Cancelar eventos en',Delete:'Eliminar eventos de'})[action]} el calendario ${calendar.name}.`,
+  }))),
 ];
 
 export const ALL_PERMISSIONS = Object.fromEntries(PERMISSION_CATALOG.map(item => [item.key, true]));
 
-export const DEFAULT_SECRETARY_PERMISSIONS = {
-  patientsView: true,
-  patientsCreate: true,
-  patientsEdit: true,
-  appointmentsManage: true,
-  remindersManage: true,
-  clinicalView: false,
-  clinicalEdit: false,
-  medicationsCapture: true,
-  medicationsManage: false,
-  prescriptionsCreate: false,
-  prescriptionsEdit: true,
-  documentsView: false,
-  documentsManage: false,
-  documentsGenerateAdministrative: false,
-  documentsGenerateClinical: false,
-  consultationsManage: false,
-  postmortemExport: false,
-  alertsView: false,
-  analyticsView: false,
-  exportsManage: false,
-  settingsManage: false,
-  usersManage: false,
-};
+export const DEFAULT_SECRETARY_PERMISSIONS = defaultPermissions('secretary');
 
 export const REMINDER_OPTIONS = [72, 48, 24, 8, 2];
 
@@ -145,6 +136,7 @@ export function secretaryFormDefaults() {
     role: 'secretary',
     password: '',
     confirmPassword: '',
+    permissionMode: 'all',
     permissions: { ...DEFAULT_SECRETARY_PERMISSIONS },
   };
 }

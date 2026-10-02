@@ -1,4 +1,4 @@
-import { permissionAllowed, PERMISSION_KEYS, ROLE_LABELS, OWNER_ONLY, defaultPermissions, changePermission } from './domain/permissions.js';
+import { assignablePermissions, calendarPermissionAllowed, permissionAllowed, PERMISSION_KEYS, ROLE_LABELS, OWNER_ONLY, defaultPermissions, changePermission } from './domain/permissions.js';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import htm from 'htm';
@@ -82,6 +82,7 @@ import {
   optimizeImageFile,
   prescriptionFormDefaults,
   prescriptionItemFromMedication,
+  patientsNeedingAdministrativeReview,
   reminderLabel,
   savePatientPhoto,
   savePracticeProfile,
@@ -151,11 +152,10 @@ import {
 import { manageTeam } from './services/team.js';
 import { generateDocumentFromTemplate, listDocumentTemplates } from './services/templates.js';
 import {listFamilyReminderRecipients,removeFamilyReminderRecipient,saveFamilyReminderRecipient} from './services/familyReminders.js';
-import { SECRETARY_PERMISSIONS } from './domain/records.js';
 import { PLAN_OPTIONS, subscriptionView } from './domain/plans.js';
+import { trainingFor } from './training.js';
 const html = htm.bind(React.createElement);
 const SUPPORT_WHATSAPP_NUMBER=String(import.meta.env.VITE_SUPPORT_WHATSAPP_NUMBER||'').replace(/\D/g,'');
-const TUTORIAL_URL=/^https:\/\//.test(String(import.meta.env.VITE_TUTORIAL_URL||''))?String(import.meta.env.VITE_TUTORIAL_URL):'';
 const iconPaths = {
   overview: '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
   patients: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -371,7 +371,8 @@ class App extends React.Component {
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
-      tutorialIntro:false,tourActive:false,tourMode:'quick',tourIndex:0,tourPreviewRole:null,
+      selectedCalendarIds:[],
+      tourActive:false,tourIndex:0,helpTab:'video',
     };
   }
 
@@ -391,7 +392,7 @@ class App extends React.Component {
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.loadIntegrationStatus();this.refreshDailyAgenda();this.checkConsultationPrompt();
       });
@@ -472,9 +473,11 @@ class App extends React.Component {
     if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady)this.schedulePersist();
     const overlay=Boolean(this.state.modal||this.state.appointmentDetails);
     if(overlay!==Boolean(prevState.modal||prevState.appointmentDetails))document.body.style.overflow=overlay?'hidden':'';
+    if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view))requestAnimationFrame(this.focusTourTarget);
+    if(prevState.tourActive && !this.state.tourActive)document.querySelectorAll('[data-tour-active-target]').forEach(node=>node.removeAttribute('data-tour-active-target'));
   }
 
-  handleKeyDown = event => {if(event.key==='Escape'){if(this.state.modal)this.closeModal();else if(this.state.appointmentDetails)this.setState({appointmentDetails:null});}};
+  handleKeyDown = event => {if(event.key==='Escape'){if(this.state.modal)this.closeModal();else if(this.state.appointmentDetails)this.setState({appointmentDetails:null});else if(this.state.tourActive)this.stopTour();}};
 
   updateLoginDraft = (key, value) => {
     this.setState(prev => ({ loginDraft: { ...prev.loginDraft, [key]: value }, loginError: '' }));
@@ -585,15 +588,31 @@ class App extends React.Component {
     catch(error){this.setState({loginBusy:false,modalError:readableError(error)});}
   };
 
-  getTourSteps = () => [
-    {title:'Inicio',text:'Revise la agenda del día. Puede abrir un expediente o iniciar una consulta desde una cita.'},
-    {title:'Pacientes',text:'Busque un paciente o registre uno nuevo. La secretaría utiliza únicamente los datos administrativos autorizados.'},
-    ...(this.can('clinicalView')?[{title:'Expediente',text:'Medicamentos, dosis, evolución, documentos y consultas están reunidos en la ficha. Las notas firmadas se abren con Ver nota.'},{title:'Libreta',text:'Durante la consulta, escriba sus anotaciones. Compruebe el estado de guardado antes de cerrar. Una nota firmada no puede reemplazarse.'}]:[]),
-    {title:'Agenda',text:'Cree, confirme o reprograme citas. Prepare recordatorios según las preferencias autorizadas por el paciente.'},
-    ...(this.can('settingsManage')?[{title:'Equipo y plan',text:'Agregue doctores, enfermería y secretaría desde Configuración. El plan gratuito habilita todos los módulos según los permisos asignados.'}]:[])
-  ];
+  currentTraining = () => trainingFor(this.activeUser()?.role,{settings:this.can('settingsManage'),agenda:this.can('appointmentsManage'),patients:this.can('patientsView')});
 
-  startTour = () => this.openHelp();
+  focusTourTarget = () => {
+    document.querySelectorAll('[data-tour-active-target]').forEach(node=>node.removeAttribute('data-tour-active-target'));
+    if(!this.state.tourActive)return;
+    const step=this.currentTraining().steps[this.state.tourIndex];
+    const target=step&&document.querySelector(`[data-tour="${step.target}"]`);
+    if(!target)return;
+    target.setAttribute('data-tour-active-target','true');
+    target.scrollIntoView({block:'start',behavior:this.state.data.settings?.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  };
+
+  startTour = () => {
+    const step=this.currentTraining().steps[0];
+    this.setState({modal:null,tourActive:true,tourIndex:0,view:step?.view||'dashboard',mobileNav:false});
+  };
+
+  goTourStep = index => {
+    if(this.state.modal && this.state.modal.type!=='help')return this.notify('Guarde o cierre el formulario antes de cambiar de paso.','danger');
+    const step=this.currentTraining().steps[index];
+    if(!step)return this.stopTour();
+    this.setState({modal:null,tourIndex:index,view:step.view,mobileNav:false});
+  };
+
+  stopTour = () => this.setState({tourActive:false});
 
   schedulePersist = () => {
     clearTimeout(this.persistTimer);
@@ -626,6 +645,19 @@ class App extends React.Component {
     const allowed=permissionAllowed(user,permission);
     return allowed;
   };
+
+  visibleCalendars = () => (this.state.data.calendars||[]).filter(calendar=>calendar.isActive!==false&&calendarPermissionAllowed(this.activeUser(),calendar,'View'));
+
+  canCalendar = (calendarId,action='View') => {
+    const calendar=(this.state.data.calendars||[]).find(item=>item.id===calendarId);
+    return Boolean(calendar&&calendarPermissionAllowed(this.activeUser(),calendar,action));
+  };
+
+  canAnyCalendar = (action='View') => (this.state.data.calendars||[]).some(calendar=>calendar.isActive!==false&&this.canCalendar(calendar.id,action));
+
+  calendarForAppointment = appointment => (this.state.data.calendars||[]).find(calendar=>calendar.id===appointment?.calendarId)||null;
+
+  calendarLabel = appointment => this.calendarForAppointment(appointment)?.name||'Calendario no disponible';
 
   permissionDenied = () => {
     this.notify('Su cuenta no tiene permiso para esta acción. Contacte al responsable del consultorio.', 'danger');
@@ -667,10 +699,29 @@ class App extends React.Component {
         draft: {
           ...prev.modal.draft,
           permissions: changePermission(prev.modal.draft.permissions || {},key,value),
+          permissionMode: 'custom',
         },
       } : null,
       modalError: '',
     }));
+  };
+
+  setDraftPermissionMode = mode => {
+    this.setState(prev=>{
+      if(!prev.modal)return null;
+      const role=prev.modal.draft.role||'secretary';
+      const allowed=assignablePermissions(role);
+      const permissions=mode==='all'?Object.fromEntries(PERMISSION_KEYS.map(key=>[key,allowed.includes(key)])):{...prev.modal.draft.permissions};
+      return {modal:{...prev.modal,draft:{...prev.modal.draft,permissionMode:mode,permissions}},modalError:''};
+    });
+  };
+
+  setAllDraftPermissions = value => {
+    this.setState(prev=>{
+      if(!prev.modal)return null;
+      const allowed=assignablePermissions(prev.modal.draft.role||'secretary');
+      return {modal:{...prev.modal,draft:{...prev.modal.draft,permissionMode:value?'all':'custom',permissions:Object.fromEntries(PERMISSION_KEYS.map(key=>[key,value&&allowed.includes(key)]))}},modalError:''};
+    });
   };
 
   openNewPatient = () => {
@@ -1239,18 +1290,22 @@ class App extends React.Component {
 
   openUserPermissions = user => {
     if (!this.can('usersManage')) return this.permissionDenied();
-    this.setState({ modal: { type: 'userPermissions', userId: user.id, draft: { name: user.name, email: user.email, phone: user.phone || '', title: user.title || '', role: user.role, password: '', confirmPassword: '', permissions: { ...(user.permissions || {}) } } }, modalError: '' });
+    const allowed=assignablePermissions(user.role);const all=allowed.every(key=>user.permissions?.[key]===true);
+    this.setState({ modal: { type: 'userPermissions', userId: user.id, draft: { name: user.name, email: user.email, phone: user.phone || '', title: user.title || '', role: user.role, password: '', confirmPassword: '', permissionMode:all?'all':'custom',permissions: { ...(user.permissions || {}) } } }, modalError: '' });
   };
 
-  openHelp = () => this.setState({modal:{type:'help',draft:{}},modalError:'',tourIndex:0});
+  openHelp = () => this.setState({modal:{type:'help',draft:{}},modalError:'',helpTab:'video'});
 
   openNewAppointment = (date = new Date(), patientId = null) => {
-    if (!this.can('appointmentsManage')) return this.permissionDenied();
-    this.setState({ modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, date, null, patientId) }, modalError: '' });
+    const calendar=this.visibleCalendars().find(item=>this.canCalendar(item.id,'Create'));
+    if (!calendar) return this.permissionDenied();
+    // A new event must always make its destination explicit. Do not silently
+    // place it in the first calendar the current user can edit.
+    this.setState({ modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, date, null, patientId,'') }, modalError: '' });
   };
 
   openEditAppointment = appointment => {
-    if (!this.can('appointmentsManage')) return this.permissionDenied();
+    if (!this.canCalendar(appointment.calendarId,'Edit')) return this.permissionDenied();
     this.setState({ appointmentDetails: null, modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, new Date(appointment.start), appointment) }, modalError: '' });
   };
 
@@ -1460,9 +1515,12 @@ class App extends React.Component {
   saveAppointmentForm = event => {
     event.preventDefault();
     try {
-      const editing = Boolean(this.state.modal.draft.id);
-      const result = saveAppointment(this.state.data, this.state.modal.draft);
-      this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, editing ? 'Cita actualizada.' : 'Cita creada correctamente.');
+      const draft=this.state.modal.draft;const previous=draft.id?this.state.data.appointments.find(item=>item.id===draft.id):null;
+      if(!previous&&!this.canCalendar(draft.calendarId,'Create'))return this.permissionDenied();
+      if(previous&&(!this.canCalendar(previous.calendarId,'Edit')||(previous.calendarId!==draft.calendarId&&!this.canCalendar(draft.calendarId,'Create'))))return this.permissionDenied();
+      if(previous&&draft.status==='cancelled'&&previous.status!=='cancelled'&&!this.canCalendar(previous.calendarId,'Cancel'))return this.permissionDenied();
+      const result = saveAppointment(this.state.data, draft);
+      this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
     } catch (error) { this.handleFormError(error); }
   };
 
@@ -1487,7 +1545,7 @@ class App extends React.Component {
   saveSecretaryForm = async event => {
     event.preventDefault();if(this.state.teamBusy)return;if(!this.can('usersManage'))return this.permissionDenied();
     this.setState({teamBusy:true});
-    try{const r=await manageTeam(this.state.remoteOrganizationId,'invite',this.state.modal.draft);this.setState({modal:null,teamBusy:false});await this.refreshTeam();this.notify(r.message);}
+    try{const email=this.state.modal.draft.email;const r=await manageTeam(this.state.remoteOrganizationId,'invite',this.state.modal.draft);this.setState({modal:{type:'inviteSent',email,message:r.message},teamBusy:false});await this.refreshTeam();}
     catch(e){this.setState({teamBusy:false,modalError:readableError(e)});await this.refreshTeam();}
   };
 
@@ -1563,7 +1621,8 @@ class App extends React.Component {
   };
 
   updateAppointmentStatus = (appointmentId, status) => {
-    if (!this.can('appointmentsManage')) return this.permissionDenied();
+    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
+    if (!appointment||!this.canCalendar(appointment.calendarId,status==='cancelled'?'Cancel':'Edit')) return this.permissionDenied();
     const next = changeAppointmentStatus(this.state.data, appointmentId, status);
     this.persistDataUpdate({
       data: next,
@@ -1604,15 +1663,17 @@ class App extends React.Component {
   };
 
   updateAppointmentReview = (appointmentId, adminReviewStatus) => {
-    if (!this.can('appointmentsManage')) return this.permissionDenied();
+    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
+    if (!appointment||!this.canCalendar(appointment.calendarId,'Edit')) return this.permissionDenied();
     const next=changeAppointmentReviewStatus(this.state.data,appointmentId,adminReviewStatus);
     this.persistDataUpdate({data:next,appointmentDetails:this.state.appointmentDetails?.id===appointmentId?{...this.state.appointmentDetails,adminReviewStatus}:this.state.appointmentDetails},adminReviewStatus==='reviewed'?'Cita marcada como revisada.':'Cita marcada por revisar.');
   };
 
   deleteAppointment = appointmentId => {
-    if (!this.can('appointmentsManage')) return this.permissionDenied();
-    if (!window.confirm('¿Eliminar esta cita? Esta acción no modifica el expediente clínico.')) return;
-    this.persistDataUpdate({ data: removeAppointment(this.state.data, appointmentId), appointmentDetails: null }, 'Cita eliminada.');
+    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
+    if (!appointment||!this.canCalendar(appointment.calendarId,'Delete')) return this.permissionDenied();
+    if (!window.confirm('¿Eliminar este evento? Esta acción no modifica el expediente clínico.')) return;
+    this.persistDataUpdate({ data: removeAppointment(this.state.data, appointmentId), appointmentDetails: null }, 'Evento eliminado.');
   };
 
   acknowledgeAlert = alertId => {
@@ -1682,7 +1743,7 @@ class App extends React.Component {
   renderLogin() {
     if(!supabaseConfigured)return this.renderStatePage('settings','Configuración pendiente','No se pudo iniciar la conexión del consultorio. Contacte a la administración.',()=>location.reload(),'Reintentar');
     const registering=this.state.authView==='register';const passwordFlow=['forgot','set-password'].includes(this.state.authView);
-    return html`<main className="login-shell"><section className="login-card"><aside className="login-intro"><${Logo} organization=${{name:'Linkare',clinicLogo:'/assets/linkare-logo.jpg',specialty:'Gestión clínica'}}/><div className="login-copy"><span className="login-kicker">Su consultorio, en orden</span><h1>Más tiempo para escuchar. Todo lo demás, aquí.</h1><p>Expedientes, agenda, documentos y notas de consulta en un mismo lugar.</p></div><div className="login-benefits"><div><${Icon} name="file"/><b>Expedientes</b><small>Seguimiento y documentos.</small></div><div><${Icon} name="calendar"/><b>Agenda</b><small>Su jornada organizada.</small></div><div><${Icon} name="notebook"/><b>Libreta clínica</b><small>Anotaciones por consulta.</small></div><div><${Icon} name="users"/><b>Su equipo</b><small>Accesos individuales.</small></div></div></aside>
+    return html`<main className="login-shell"><section className="login-card"><aside className="login-intro"><${Logo} organization=${{name:'Linkare',clinicLogo:'/assets/linkare-symbol-v2.png',specialty:'Gestión clínica'}}/><div className="login-copy"><span className="login-kicker">Su consultorio, en orden</span><h1>Más tiempo para escuchar. Todo lo demás, aquí.</h1><p>Expedientes, agenda, documentos y notas de consulta en un mismo lugar.</p></div><div className="login-benefits"><div><${Icon} name="file"/><b>Expedientes</b><small>Seguimiento y documentos.</small></div><div><${Icon} name="calendar"/><b>Agenda</b><small>Su jornada organizada.</small></div><div><${Icon} name="notebook"/><b>Libreta clínica</b><small>Anotaciones por consulta.</small></div><div><${Icon} name="users"/><b>Su equipo</b><small>Accesos individuales.</small></div></div></aside>
       <section className="login-panel">${!passwordFlow?html`<div className="auth-tabs"><button type="button" className=${registering?'':'active'} onClick=${this.showLogin}>Iniciar sesión</button><button type="button" className=${registering?'active':''} onClick=${this.showRegister}>Crear consultorio</button></div>`:null}${passwordFlow?this.renderPasswordFlow():registering?this.renderRegistrationForm():this.renderSignInForm()}</section></section></main>`;
   }
 
@@ -1705,7 +1766,7 @@ class App extends React.Component {
         ${nav.map(([key, icon, label]) => html`<button key=${key} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
       </nav>
       <div className="top-actions">
-        <button className="help-button" data-tour="help-button" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
+        <button className="help-button" data-tour="help-button" aria-label="Ayuda" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
         ${this.can('alertsView') ? html`<button className="icon-button notification-button" aria-label="Ver alertas" onClick=${() => this.setView('alerts')}><${Icon} name="alert"/>${openAlerts ? html`<i></i>` : null}</button>` : null}
         ${canConfigure ? html`<button className="icon-button" data-tour="settings-button" aria-label="Configuración" onClick=${() => this.setView('settings')}><${Icon} name="settings"/></button>` : null}
         <button className="profile-chip profile-chip-button" onClick=${this.openAccount} title="Cuenta y cierre de sesión"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="sm"/><div><b>${user?.name || 'Usuario'}</b><small>${user?.title || (user?.role === 'secretary' ? 'Secretaría' : 'Psiquiatría')}</small></div><${Icon} name="arrowDown" size=${14}/></button>
@@ -1730,11 +1791,11 @@ class App extends React.Component {
         eyebrow="Vista de secretaría"
         title=${`${greeting()}, ${user?.name?.split(' ')[0] || 'Secretaría'}`}
         subtitle="Aquí están las citas, confirmaciones y recordatorios. La información clínica permanece protegida según los permisos asignados."
-        actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.can('appointmentsManage') ? html`<${Button} icon="plus" onClick=${() => this.openNewAppointment()}>Nueva cita</${Button}>` : null}</div>`}
+        actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.canAnyCalendar('Create') ? html`<${Button} icon="plus" onClick=${() => this.openNewAppointment()}>Nuevo evento</${Button}>` : null}</div>`}
       />
-      <div className="simple-help administrative-help"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
+      <div className="simple-help administrative-help" data-tour="secretary-privacy"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
       <div className="kpi-grid secretary-kpis">
-        <${KpiCard} label="Citas de hoy" value=${todayAppointments.length} hint="programadas para hoy" icon="calendar" tone="blue"/>
+        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${todayAppointments.length} hint="programadas para hoy" icon="calendar" tone="blue"/>
         <${KpiCard} label="Por confirmar" value=${pending} hint="citas futuras pendientes" icon="clock" tone="purple"/>
         <${KpiCard} label="Recordatorios listos" value=${due.length} hint="requieren envío o revisión" icon="message" tone=${due.length ? 'coral' : 'teal'}/>
         <${KpiCard} label="Pacientes" value=${patients.length} hint="expedientes administrativos" icon="patients" tone="blue"/>
@@ -1840,8 +1901,9 @@ class App extends React.Component {
 
   renderPatients() {
     if (!this.can('patientsView')) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="Este usuario no tiene permiso para consultar pacientes."/>`;
-    const { patients, alerts } = this.state.data;
+    const { patients, alerts, appointments } = this.state.data;
     const clinicalVisible = this.can('clinicalView');
+    const administrativeReview = patientsNeedingAdministrativeReview(appointments);
     const query = this.state.search.trim().toLowerCase();
     const filtered = patients.filter(patient => {
       const searchable = clinicalVisible
@@ -1852,7 +1914,8 @@ class App extends React.Component {
       if (this.state.patientFilter === 'archived') return patient.archived;
       if (patient.archived) return false;
       if (this.state.patientFilter === 'active') return patient.status !== 'inactive';
-      if (this.state.patientFilter === 'review') return clinicalVisible ? getPatientPriority(patient, alerts).score >= 2 : !patient.nextVisit;
+      if (this.state.patientFilter === 'review') return clinicalVisible ? getPatientPriority(patient, alerts).score >= 2 : administrativeReview.has(patient.id);
+      if (this.state.patientFilter === 'unscheduled') return !clinicalVisible && !patient.nextVisit;
       return true;
     });
     return html`<div className="view-enter">
@@ -1862,11 +1925,11 @@ class App extends React.Component {
         subtitle=${clinicalVisible ? 'Busque un paciente o cree un expediente nuevo. Las tarjetas resumen el seguimiento.' : 'Consulte contacto, cobertura y próxima cita sin mostrar información clínica restringida.'}
         actions=${html`<div className="tour-actions-group" data-tour="patients-tools"><div className="search-box"><${Icon} name="search"/><input value=${this.state.search} onChange=${event => this.setState({ search: event.target.value })} placeholder=${clinicalVisible ? 'Buscar por nombre, diagnóstico o medicamento' : 'Buscar por nombre, teléfono o seguro'}/></div>${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}</div>`}
       />
-      <div className="patients-toolbar"><div><${Badge} tone="blue">${filtered.length} pacientes</${Badge}>${clinicalVisible ? html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && getPatientPriority(patient, alerts).score >= 2).length} por revisar</${Badge}>` : html`<${Badge} tone="neutral">${patients.filter(patient => !patient.archived && patient.insurance?.hasInsurance).length} con seguro</${Badge}>`}</div><div className="segmented" aria-label="Filtrar pacientes">${[['all', 'Todos'], ['active', 'Activos'], ['review', clinicalVisible ? 'Por revisar' : 'Sin próxima cita'], ['archived','Archivados']].map(([key, label]) => html`<button key=${key} className=${this.state.patientFilter === key ? 'active' : ''} onClick=${() => this.setState({ patientFilter: key })}>${label}</button>`)}</div></div>
+      <div className="patients-toolbar"><div><${Badge} tone="blue">${filtered.length} pacientes</${Badge}>${clinicalVisible ? html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && getPatientPriority(patient, alerts).score >= 2).length} por revisar</${Badge}>` : html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && administrativeReview.has(patient.id)).length} por revisar</${Badge}>`}</div><div className="segmented" aria-label="Filtrar pacientes">${[['all', 'Todos'], ['active', 'Activos'], ['review', 'Por revisar'], ...(!clinicalVisible ? [['unscheduled','Sin próxima cita']] : []), ['archived','Archivados']].map(([key, label]) => html`<button key=${key} className=${this.state.patientFilter === key ? 'active' : ''} onClick=${() => this.setState({ patientFilter: key })}>${label}</button>`)}</div></div>
       ${filtered.length ? html`<div className="patient-grid">${filtered.map(patient => {
         const summary = getAssessmentSummary(patient);
         const priority = clinicalVisible ? getPatientPriority(patient, alerts) : null;
-        return html`<button key=${patient.id} data-tour=${patient.id === filtered[0]?.id ? 'patient-card' : null} className="patient-card" onClick=${() => this.openPatient(patient.id)}><div className="patient-card-top"><div className="patient-identity"><${Avatar} patient=${patient} size="lg"/><div><h3>${patient.name}</h3><span>${patient.age} años${clinicalVisible ? ` · ${patient.diagnosisCode}` : patient.phone ? ` · ${patient.phone}` : ''}</span></div></div>${clinicalVisible ? html`<${Badge} tone=${priority.tone} dot=${true}>${priority.label}</${Badge}>` : html`<${Badge} tone=${patient.insurance?.hasInsurance ? 'blue' : 'neutral'}>${patient.insurance?.hasInsurance ? 'Con seguro' : 'Particular'}</${Badge}>`}</div><p>${clinicalVisible ? patient.diagnosis : patient.insurance?.hasInsurance ? `${patient.insurance.provider || 'Seguro médico'} · ${patient.insurance.plan || 'Plan sin registrar'}` : 'Atención particular'}</p>${clinicalVisible ? html`<div className="patient-metrics"><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || 'Agregue el tratamiento'}</small></div><div><span>${summary?.primary.code || 'Escala'}</span><b>${summary?.current ?? '—'}</b><small>${summary ? `Inicial ${summary.baseline}` : 'Sin medición'}</small></div><div><span>Mejoría observada</span><b className=${summary?.improvement >= 25 ? 'good-text' : ''}>${summary ? percent(summary.improvement) : '—'}</b><small>${summary?.label || 'Registrar evolución'}</small></div></div>` : html`<div className="patient-metrics admin-metrics"><div><span>Teléfono</span><b>${patient.phone || 'No registrado'}</b><small>${patient.email || 'Sin correo'}</small></div><div><span>Seguro</span><b>${patient.insurance?.hasInsurance ? patient.insurance.provider || 'Sí' : 'Particular'}</b><small>${patient.insurance?.memberId || 'Sin afiliación'}</small></div><div><span>Próxima cita</span><b>${patient.nextVisit ? relativeDate(patient.nextVisit) : 'Sin agendar'}</b><small>${patient.nextVisit ? formatDateTime(patient.nextVisit) : 'Requiere coordinación'}</small></div></div>`}<div className="patient-card-footer"><div><${Icon} name="calendar" size=${16}/><span>${patient.nextVisit ? `${relativeDate(patient.nextVisit)} · ${formatTime(patient.nextVisit)}` : 'Sin próxima cita'}</span></div><span>Abrir expediente <${Icon} name="chevronRight" size=${16}/></span></div></button>`;
+        return html`<button key=${patient.id} data-tour=${patient.id === filtered[0]?.id ? 'patient-card' : null} className="patient-card" onClick=${() => this.openPatient(patient.id)}><div className="patient-card-top"><div className="patient-identity"><${Avatar} patient=${patient} size="lg"/><div><h3>${patient.name}</h3><span>${patient.age} años${clinicalVisible ? ` · ${patient.diagnosisCode}` : patient.phone ? ` · ${patient.phone}` : ''}</span></div></div>${clinicalVisible ? html`<${Badge} tone=${priority.tone} dot=${true}>${priority.label}</${Badge}>` : administrativeReview.has(patient.id) ? html`<${Badge} tone="warning">Por revisar</${Badge}>` : html`<${Badge} tone=${patient.insurance?.hasInsurance ? 'blue' : 'neutral'}>${patient.insurance?.hasInsurance ? 'Con seguro' : 'Particular'}</${Badge}>`}</div><p>${clinicalVisible ? patient.diagnosis : patient.insurance?.hasInsurance ? `${patient.insurance.provider || 'Seguro médico'} · ${patient.insurance.plan || 'Plan sin registrar'}` : 'Atención particular'}</p>${clinicalVisible ? html`<div className="patient-metrics"><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || 'Agregue el tratamiento'}</small></div><div><span>${summary?.primary.code || 'Escala'}</span><b>${summary?.current ?? '—'}</b><small>${summary ? `Inicial ${summary.baseline}` : 'Sin medición'}</small></div><div><span>Mejoría observada</span><b className=${summary?.improvement >= 25 ? 'good-text' : ''}>${summary ? percent(summary.improvement) : '—'}</b><small>${summary?.label || 'Registrar evolución'}</small></div></div>` : html`<div className="patient-metrics admin-metrics"><div><span>Teléfono</span><b>${patient.phone || 'No registrado'}</b><small>${patient.email || 'Sin correo'}</small></div><div><span>Seguro</span><b>${patient.insurance?.hasInsurance ? patient.insurance.provider || 'Sí' : 'Particular'}</b><small>${patient.insurance?.memberId || 'Sin afiliación'}</small></div><div><span>Próxima cita</span><b>${patient.nextVisit ? relativeDate(patient.nextVisit) : 'Sin agendar'}</b><small>${patient.nextVisit ? formatDateTime(patient.nextVisit) : 'Requiere coordinación'}</small></div></div>`}<div className="patient-card-footer"><div><${Icon} name="calendar" size=${16}/><span>${patient.nextVisit ? `${relativeDate(patient.nextVisit)} · ${formatTime(patient.nextVisit)}` : 'Sin próxima cita'}</span></div><span>Abrir expediente <${Icon} name="chevronRight" size=${16}/></span></div></button>`;
       })}</div>` : html`<${EmptyState} icon="search" title="No encontramos pacientes" text="Cambie el filtro o cree un expediente nuevo." action=${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}/>`}
     </div>`;
   }
@@ -1884,7 +1947,7 @@ class App extends React.Component {
         <button className="back-button" aria-label="Volver a pacientes" onClick=${() => this.setView('patients')}><${Icon} name="chevronLeft"/></button>
         <div className="patient-photo-control" data-tour="patient-photo"><${Avatar} patient=${patient} size="xl"/>${this.can('patientsEdit') ? html`<label className="photo-fab" title="Cambiar fotografía"><${Icon} name="camera" size=${16}/><input type="file" accept="image/png,image/jpeg,image/webp" onChange=${event => this.handlePatientPhotoUpload(patient.id, event)}/></label>` : null}</div>
         <div className="patient-hero-main" data-tour="patient-badges"><span className="eyebrow">Ficha administrativa</span><h1>${patient.name}</h1><p>${patient.age} años · ${patient.phone || 'Sin teléfono'} · ${patient.email || 'Sin correo'}</p><div className="hero-badges"><${Badge} tone=${insurance.hasInsurance ? 'blue' : 'neutral'}>${insurance.hasInsurance ? 'Con seguro médico' : 'Paciente particular'}</${Badge}><${Badge} tone=${upcoming.length ? 'success' : 'warning'}>${upcoming.length ? 'Cita programada' : 'Sin próxima cita'}</${Badge}></div></div>
-        <div className="patient-hero-actions" data-tour="patient-next-visit">${this.can('patientsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Editar datos</${Button}>` : null}${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="calendar" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('patient_own',patient.id)}>Calendario del paciente</${Button}><${Button} icon="calendar" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}>Agendar</${Button}>` : null}</div>
+        <div className="patient-hero-actions" data-tour="patient-next-visit">${this.can('patientsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Editar datos</${Button}>` : null}${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="calendar" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('patient_own',patient.id)}>Calendario del paciente</${Button}>${this.canAnyCalendar('Create')?html`<${Button} icon="calendar" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}>Agendar</${Button}>`:null}` : null}</div>
       </div>
       <div className="simple-help administrative-help"><${Icon} name="shield" size=${18}/><p><b>Información protegida.</b> El resto del expediente clínico permanece protegido. Solo se muestran los datos y las recetas autorizados para este usuario.</p></div>
       <div className="dashboard-grid">
@@ -1894,7 +1957,7 @@ class App extends React.Component {
         <${Card} className="span-7" title="Seguro médico" action=${html`<${Badge} tone=${insurance.hasInsurance ? 'blue' : 'neutral'}>${insurance.hasInsurance ? 'Activo en expediente' : 'Particular'}</${Badge}>`}>
           ${insurance.hasInsurance ? html`<div className="insurance-grid"><div><span>Aseguradora</span><b>${insurance.provider || 'No registrada'}</b></div><div><span>Plan</span><b>${insurance.plan || 'No registrado'}</b></div><div><span>N.º de afiliado</span><b>${insurance.memberId || 'No registrado'}</b></div><div><span>Póliza</span><b>${insurance.policyNumber || 'No registrada'}</b></div><div><span>Autorización</span><b>${insurance.authorizationRequired ? 'Requerida' : 'No requerida'}</b></div><div><span>Copago</span><b>${insurance.copay || 'No registrado'}</b></div>${insurance.notes ? html`<div className="insurance-notes"><span>Notas</span><p>${insurance.notes}</p></div>` : null}</div>` : html`<${EmptyState} icon="insurance" title="Atención particular" text="No se ha registrado una póliza o plan médico."/>`}
         </${Card}>
-        <${Card} className="span-7" title="Citas del paciente" action=${this.can('appointmentsManage') ? html`<${Button} tone="soft" icon="plus" onClick=${() => this.openNewAppointment(new Date(), patient.id)}>Nueva cita</${Button}>` : null}>
+        <${Card} className="span-7" title="Citas del paciente" action=${this.canAnyCalendar('Create') ? html`<${Button} tone="soft" icon="plus" onClick=${() => this.openNewAppointment(new Date(), patient.id)}>Nueva cita</${Button}>` : null}>
           ${appointments.length ? html`<div className="admin-appointment-list">${appointments.slice(0, 8).map(appointment => html`<button key=${appointment.id} onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatDate(appointment.start)}<small>${formatTime(appointment.start)}</small></time><div><b>${appointment.type}</b><small>${appointment.modality}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`)}</div>` : html`<${EmptyState} icon="calendar" title="Sin citas registradas" text="Cree la primera cita desde el botón superior."/>`}
         </${Card}>
         <${Card} className="span-5" title="Recordatorios próximos">
@@ -2095,24 +2158,32 @@ class App extends React.Component {
     return html`<${Card} tour="timeline-section" className="timeline-full" title="Historial completo" subtitle="Una sola secuencia con medicamentos, mediciones, laboratorios, efectos y citas." action=${html`<div className="segmented small timeline-filter">${filters.map(([key, label]) => html`<button key=${key} className=${this.state.timelineFilter === key ? 'active' : ''} onClick=${() => this.setState({ timelineFilter: key })}>${label}</button>`)}</div>`}><div className="timeline-list large">${filtered.length ? filtered.map((item, index) => html`<div key=${`${item.date}_${index}`} className="timeline-row"><time>${formatDate(item.date)}<small>${formatTime(item.date)}</small></time><span className=${`timeline-icon timeline-${item.type}`}><${Icon} name=${item.type === 'medication' ? 'medication' : item.type === 'assessment' ? 'analytics' : item.type === 'lab' ? 'file' : item.type === 'appointment' ? 'calendar' : item.type === 'document' ? 'prescription' : item.type === 'vital' ? 'activity' : 'alert'} size=${18}/></span><div><b>${item.title}</b><p>${item.detail}</p></div></div>`) : html`<${EmptyState} icon="file" title="Sin eventos en este filtro" text="Seleccione “Todo” para ver el historial completo."/>`}</div></${Card}>`;
   }
 
-  updateSetting = (key, value) => {
+  updateSetting = async (key, value) => {
     if(!this.can('settingsManage'))return this.permissionDenied();
-    this.persistDataUpdate({data:{...this.state.data,settings:{...this.state.data.settings,[key]:value}}},'Preferencia actualizada.');
+    const previousData=this.state.data;
+    const data={...previousData,settings:{...previousData.settings,[key]:value}};
+    // Appearance controls must respond immediately; roll back only if the
+    // authoritative server write fails and no newer local change replaced it.
+    this.setState({data});
+    const saved=await this.persistDataUpdate({data},'Preferencia actualizada.');
+    if(!saved&&this.state.data===data)this.setState({data:previousData});
   };
 
   renderAgenda() {
     if (!this.can('appointmentsManage')) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="Este usuario no tiene permiso para gestionar la agenda."/>`;
     const { appointments, patients } = this.state.data;
+    const calendars=this.visibleCalendars();
+    const selected=new Set(this.state.selectedCalendarIds||[]);
     const cursor = new Date(this.state.calendarDate);
     const view = this.state.calendarView;
     const now = new Date();
     const appointmentFilter=this.state.appointmentFilter||'all';
-    const filteredAppointments=appointments.filter(item=>appointmentFilter==='all'||(appointmentFilter==='review'?item.adminReviewStatus==='pending':item.status===appointmentFilter));
+    const filteredAppointments=appointments.filter(item=>this.canCalendar(item.calendarId,'View')&&selected.has(item.calendarId)&&(appointmentFilter==='all'||(appointmentFilter==='review'?item.adminReviewStatus==='pending':item.status===appointmentFilter)));
     const upcoming = filteredAppointments
       .filter(item => new Date(item.start) >= now && item.status !== 'cancelled')
       .sort((left, right) => new Date(left.start) - new Date(right.start))
       .slice(0, 8);
-    const reminderQueue = getReminderQueue(this.state.data, now);
+    const reminderQueue = getReminderQueue({...this.state.data,appointments:filteredAppointments.filter(item=>item.eventType!=='general')}, now);
     const reminderVisible = reminderQueue
       .filter(item => item.status !== 'sent' || new Date(item.sentAt) >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
       .slice(0, 14);
@@ -2134,10 +2205,11 @@ class App extends React.Component {
     return html`<div className="view-enter">
       <${PageHeader}
         eyebrow="Agenda y recordatorios"
-        title="Citas"
-        subtitle="Organice consultas y prepare recordatorios desde una sola pantalla."
-        actions=${html`<div className="tour-actions-group">${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadAllICS(appointments.filter(item => item.status !== 'cancelled'))}>Exportar agenda</${Button}>` : null}<${Button} icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Nueva cita</${Button}></div>`}
+        title="Calendarios"
+        subtitle="Combine Doctor, Esposa y General sin recargar la página."
+        actions=${html`<div className="tour-actions-group">${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadAllICS(filteredAppointments.filter(item => item.status !== 'cancelled'))}>Exportar vista</${Button}>` : null}${this.canAnyCalendar('Create')?html`<${Button} tour="agenda-new-event" icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Nuevo evento</${Button}>`:null}</div>`}
       />
+      <section className="calendar-filter-panel" data-tour="calendar-filters" aria-label="Calendarios visibles"><div className="calendar-filter-heading"><span className="calendar-filter-heading-icon"><${Icon} name="calendar" size=${20}/></span><div><b>Calendarios visibles</b><small>${selected.size} de ${calendars.length} seleccionados</small></div></div><div className="calendar-filter-options">${calendars.map(calendar=>{const active=selected.has(calendar.id);const icon=calendar.code==='wife'?'heart':calendar.code==='general'?'users':'activity';return html`<label key=${calendar.id} className=${`calendar-filter calendar-${calendar.code} ${active?'active':''}`}><input type="checkbox" checked=${active} aria-label=${`Mostrar calendario ${calendar.name}`} onChange=${event=>this.setState(prev=>({selectedCalendarIds:event.target.checked?[...new Set([...(prev.selectedCalendarIds||[]),calendar.id])]:(prev.selectedCalendarIds||[]).filter(id=>id!==calendar.id)}))}/><span className="calendar-filter-icon" aria-hidden="true"><${Icon} name=${icon} size=${18}/></span><span className="calendar-filter-copy"><b>${calendar.name}</b><small>${active?'Visible':'Oculto'}</small></span><span className="calendar-filter-check" aria-hidden="true"><${Icon} name="check" size=${15}/></span></label>`;})}</div><div className="calendar-filter-actions"><button type="button" className="text-button" onClick=${()=>this.setState({selectedCalendarIds:calendars.map(calendar=>calendar.id)})}>Mostrar todos</button><button type="button" className="text-button" onClick=${()=>this.setState({selectedCalendarIds:[]})}>Ocultar todos</button></div></section>
       <div className="patients-toolbar"><div className="segmented" aria-label="Filtrar citas">${[['all','Todas'],['pending','Pendientes'],['confirmed','Confirmadas'],['review','Por revisar'],['cancelled','Canceladas']].map(([key,label])=>html`<button key=${key} className=${appointmentFilter===key?'active':''} onClick=${()=>this.setState({appointmentFilter:key})}>${label}</button>`)}</div></div>
       <div className="calendar-layout">
         <${Card} tour="agenda-calendar" className="calendar-main">
@@ -2151,7 +2223,7 @@ class App extends React.Component {
         <${Card} className="upcoming-card" title="Próximas citas" action=${html`<${Badge} tone="blue">${upcoming.length}</${Badge}>`}>
           <div className="upcoming-list">${upcoming.length ? upcoming.map(appointment => {
             const patient = patients.find(item => item.id === appointment.patientId);
-            return html`<button key=${appointment.id} onClick=${() => this.setState({ appointmentDetails: appointment })}><div className="date-box"><b>${new Date(appointment.start).getDate()}</b><span>${new Intl.DateTimeFormat('es-SV', { month: 'short' }).format(new Date(appointment.start))}</span></div><div><b>${appointment.title}</b><small>${formatTime(appointment.start)} · ${appointment.type}</small></div><${Avatar} patient=${patient} size="sm"/></button>`;
+            return html`<button key=${appointment.id} onClick=${() => this.setState({ appointmentDetails: appointment })}><div className="date-box"><b>${new Date(appointment.start).getDate()}</b><span>${new Intl.DateTimeFormat('es-SV', { month: 'short' }).format(new Date(appointment.start))}</span></div><div><b>${appointment.title}</b><small>${formatTime(appointment.start)} · ${appointment.type}</small><span className=${`calendar-label calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`}>${this.calendarLabel(appointment)}</span></div>${patient?html`<${Avatar} patient=${patient} size="sm"/>`:html`<${Icon} name="calendar"/>`}</button>`;
           }) : html`<${EmptyState} icon="calendar" title="Sin citas próximas" text="Cree una cita para comenzar."/>`}</div>
           <a className="button button-secondary full-width" href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer"><${Icon} name="external" size=${18}/><span>Abrir Google Calendar</span></a>
         </${Card}>
@@ -2192,7 +2264,7 @@ class App extends React.Component {
       const events = appointments.filter(item => isSameDay(item.start, day) && item.status !== 'cancelled').sort((left, right) => new Date(left.start) - new Date(right.start));
       const outside = day.getMonth() !== cursor.getMonth();
       const today = isSameDay(day, new Date());
-      return html`<div key=${day.toISOString()} className=${`calendar-day ${outside ? 'outside' : ''} ${today ? 'today' : ''}`}><button className="day-number" aria-label=${`Crear cita el ${formatDate(day)}`} onClick=${() => this.openNewAppointment(day)}>${day.getDate()}</button><div className="day-events">${events.slice(0, 3).map(appointment => html`<button key=${appointment.id} className=${`calendar-event event-status-${appointment.status}`} onClick=${() => this.setState({ appointmentDetails: appointment })}><span>${formatTime(appointment.start)}</span><b>${appointment.title.split(' ')[0]}</b></button>`)}${events.length > 3 ? html`<small>+${events.length - 3} más</small>` : null}</div></div>`;
+      return html`<div key=${day.toISOString()} className=${`calendar-day ${outside ? 'outside' : ''} ${today ? 'today' : ''}`}><button className="day-number" aria-label=${`Crear evento el ${formatDate(day)}`} onClick=${() => this.openNewAppointment(day)}>${day.getDate()}</button><div className="day-events">${events.slice(0, 3).map(appointment => html`<button key=${appointment.id} className=${`calendar-event event-status-${appointment.status} calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} onClick=${() => this.setState({ appointmentDetails: appointment })}><span>${formatTime(appointment.start)} · ${this.calendarLabel(appointment)}</span><b>${appointment.title.split(' ')[0]}</b></button>`)}${events.length > 3 ? html`<small>+${events.length - 3} más</small>` : null}</div></div>`;
     })}</div></div>`;
   }
 
@@ -2203,7 +2275,7 @@ class App extends React.Component {
       const date = new Date(appointment.start);
       const top = Math.max(0, (date.getHours() - 8) * 70 + date.getMinutes() / 60 * 70);
       const height = Math.max(44, (new Date(appointment.end) - date) / 60000 / 60 * 70);
-      return html`<button key=${appointment.id} className="week-event" style=${{ top: `${top}px`, height: `${height}px` }} onClick=${() => this.setState({ appointmentDetails: appointment })}><b>${formatTime(appointment.start)}</b><span>${appointment.title}</span><small>${appointment.type}</small></button>`;
+      return html`<button key=${appointment.id} className=${`week-event calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} style=${{ top: `${top}px`, height: `${height}px` }} onClick=${() => this.setState({ appointmentDetails: appointment })}><b>${formatTime(appointment.start)}</b><span>${appointment.title}</span><small>${this.calendarLabel(appointment)} · ${appointment.type}</small></button>`;
     })}</div>`)}</div></div>`;
   }
 
@@ -2211,7 +2283,7 @@ class App extends React.Component {
     const events = appointments.filter(item => isSameDay(item.start, cursor) && item.status !== 'cancelled').sort((left, right) => new Date(left.start) - new Date(right.start));
     return html`<div className="day-view"><div className="day-view-header"><div className=${isSameDay(cursor, new Date()) ? 'today' : ''}><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'long' }).format(cursor)}</span><strong>${cursor.getDate()}</strong><small>${new Intl.DateTimeFormat('es-SV', { month: 'long' }).format(cursor)}</small></div><p>${events.length} cita${events.length === 1 ? '' : 's'} programada${events.length === 1 ? '' : 's'}</p><${Button} tone="soft" icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Agregar cita</${Button}></div><div className="day-schedule">${events.length ? events.map(appointment => {
       const patient = this.state.data.patients.find(item => item.id === appointment.patientId);
-      return html`<button key=${appointment.id} onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}<small>${Math.round((new Date(appointment.end) - new Date(appointment.start)) / 60000)} min</small></time><span className="schedule-line"></span><${Avatar} patient=${patient}/><div><h3>${appointment.title}</h3><p>${appointment.type} · ${appointment.modality}</p><small>${appointment.notes || 'Sin notas de preparación.'}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></button>`;
+      return html`<button key=${appointment.id} onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}<small>${Math.round((new Date(appointment.end) - new Date(appointment.start)) / 60000)} min</small></time><span className="schedule-line"></span>${patient?html`<${Avatar} patient=${patient}/>`:html`<span className="general-event-symbol">◆</span>`}<div><h3>${appointment.title}</h3><p>${this.calendarLabel(appointment)} · ${appointment.type} · ${appointment.modality}</p><small>${appointment.notes || 'Sin notas de preparación.'}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></button>`;
     }) : html`<${EmptyState} icon="calendar" title="Agenda libre" text="Cree una cita para este día." action=${html`<${Button} icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Nueva cita</${Button}>`}/>`}</div></div>`;
   }
 
@@ -2282,15 +2354,15 @@ class App extends React.Component {
     return html`<div className="view-enter"><${PageHeader} title="Configuración" subtitle="Su consultorio, su equipo y sus preferencias."/>
       <div className="settings-grid">
         <${Card} title="Identidad del consultorio"><h3>${org.name}</h3><p>${org.clinician}</p><p>${org.email}</p><${Button} icon="edit" onClick=${this.openClinicProfile}>Editar datos y logotipo</${Button}></${Card}>
-        <${Card} title="Lectura y movimiento"><label className="setting-row"><span>Texto grande</span><input type="checkbox" checked=${!!s.largeText} onChange=${e=>this.updateSetting('largeText',e.target.checked)}/></label><label className="setting-row"><span>Reducir movimiento</span><input type="checkbox" checked=${!!s.reducedMotion} onChange=${e=>this.updateSetting('reducedMotion',e.target.checked)}/></label></${Card}>
-        <${Card} className="settings-wide" title="Equipo del consultorio" action=${html`<${Button} icon="userPlus" onClick=${this.openSecretary}>Agregar usuario</${Button}>`}>
+        <${Card} title="Lectura y movimiento"><label className="setting-row setting-toggle"><span className="setting-copy"><b>Texto grande</b><small>Aumenta el tamaño de lectura en toda la aplicación.</small></span><input type="checkbox" checked=${!!s.largeText} onChange=${e=>this.updateSetting('largeText',e.target.checked)}/><span className="setting-toggle-track" aria-hidden="true"><i></i></span></label><label className="setting-row setting-toggle"><span className="setting-copy"><b>Reducir movimiento</b><small>Desactiva transiciones y animaciones decorativas.</small></span><input type="checkbox" checked=${!!s.reducedMotion} onChange=${e=>this.updateSetting('reducedMotion',e.target.checked)}/><span className="setting-toggle-track" aria-hidden="true"><i></i></span></label></${Card}>
+        <${Card} className="settings-wide" tour="team-management" title="Equipo del consultorio" action=${html`<${Button} tour="team-add-user" icon="userPlus" onClick=${this.openSecretary}>Agregar usuario</${Button}>`}>
           <div className="team-list">${this.state.data.users.map(u=>html`<article className="team-member" key=${u.id}><${UserAvatar} user=${u}/><div className="team-member-main"><b>${u.name}</b><small>${u.email}</small><span>${ROLE_LABELS[u.role]||'Sin acceso'} · ${u.active?'Activo':'Sin acceso'}</span></div>${u.role!=='owner'?html`<div className="team-actions"><${Button} tone="secondary" onClick=${()=>this.openUserPermissions(u)}>Permisos</${Button}><${Button} tone="secondary" onClick=${()=>this.toggleTeamUser(u.id)}>${u.active?'Desactivar':'Activar'}</${Button}></div>`:null}</article>`)}</div>
           ${this.state.teamInvites.length?html`<h3>Invitaciones pendientes</h3><div className="team-list">${this.state.teamInvites.map(i=>html`<article className="team-member" key=${i.id}><div className="team-member-main"><b>${i.display_name}</b><small>${i.email}</small><span>${i.delivery_status==='sent'?'Correo enviado':'Envío pendiente'} · Vence ${formatDate(i.expires_at)}</span></div><${Button} tone="secondary" disabled=${this.state.teamBusy} onClick=${()=>this.manageInvitation(i,'resend')}>Reenviar</${Button}><${Button} tone="secondary" disabled=${this.state.teamBusy} onClick=${()=>this.manageInvitation(i,'revoke')}>Revocar</${Button}></article>`)}</div>`:null}
         </${Card}>
         <${Card} className="settings-wide" title="Anticipación de recordatorios"><p>Elija las horas previas a la cita. La preferencia y el consentimiento del paciente se revisan antes del envío.</p><div className="reminder-settings-grid">${REMINDER_OPTIONS.map(h=>html`<button className=${`reminder-option ${s.reminderHours.includes(h)?'active':''}`} key=${h} onClick=${()=>this.toggleReminderHour(h)}>${reminderLabel(h)}</button>`)}</div><p className="field-note">Los canales automáticos requieren un proveedor configurado. Desde la agenda puede preparar o enviar cada recordatorio.</p></${Card}>
         <${Card} title="Calendarios"><p>Cada enlace tiene un alcance explícito, caduca a los 90 días y puede revocarse.</p><div className="settings-actions"><${Button} tone="secondary" disabled=${this.state.integrationBusy} onClick=${this.connectGoogleCalendar}>Conectar Google</${Button}><${Button} tone="secondary" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('doctor_full')}>Agenda médica</${Button}><${Button} tone="secondary" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('family_busy')}>Familia: solo ocupado</${Button}><${Button} tone="secondary" disabled=${this.state.integrationBusy} onClick=${this.openCalendarFeeds}>Administrar enlaces</${Button}></div></${Card}>
         <${Card} title="Recordatorio personal"><p>Avise a un contacto autorizado sobre el horario general del día siguiente, sin nombres de pacientes.</p><${Button} tone="secondary" disabled=${this.state.integrationBusy} onClick=${this.openFamilyReminders}>Configurar contacto</${Button}></${Card}>
-        <${Card} title="Guía y seguridad"><p>Su equipo utiliza cuentas individuales. Las notas clínicas no se muestran a secretaría.</p><${Button} tone="secondary" onClick=${this.openHelp}>Abrir guía</${Button}></${Card}>
+        <${Card} title="Guía y seguridad" tour="help-settings"><p>Su equipo utiliza cuentas individuales. Las notas clínicas no se muestran a secretaría.</p><${Button} tone="secondary" onClick=${this.openHelp}>Abrir guía</${Button}></${Card}>
       </div></div>`;
   }
 
@@ -2305,6 +2377,7 @@ class App extends React.Component {
     if (modal.type === 'patientEdit') return this.renderPatientEditFormModal();
     if (modal.type === 'clinicProfile') return this.renderClinicProfileModal();
     if (modal.type === 'secretary') return this.renderSecretaryModal();
+    if (modal.type === 'inviteSent') return this.renderInviteSentModal();
     if (modal.type === 'userPermissions') return this.renderUserPermissionsModal();
     if (modal.type === 'account') return this.renderAccountModal();
     if (modal.type === 'checkoutReady') return html`<${Modal} title="Enlace de pago disponible" subtitle="La suscripción se activa al recibir la confirmación de Wompi." onClose=${this.closeModal} size="md"><p>Revise el importe antes de pagar en Wompi.</p><${Button} icon="external" onClick=${()=>this.openPaymentLink(modal.payment.url)}>Abrir checkout de Wompi</${Button}><p className="field-note">Al terminar, regrese a Mi plan y presione Actualizar estado.</p></${Modal}>`;
@@ -2429,24 +2502,31 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   }
 
   renderTeamRoleFields(d) {
-    return html`<${FormField} label="Teléfono"><input value=${d.phone||''} onChange=${e=>this.updateDraft('phone',e.target.value)}/></${FormField}><${FormField} label="Cargo"><input value=${d.title||''} onChange=${e=>this.updateDraft('title',e.target.value)}/></${FormField}><${FormField} label="Rol"><select value=${d.role||'secretary'} onChange=${e=>{const role=e.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,role,permissions:defaultPermissions(role)}}}));}}><option value="doctor">Doctor</option><option value="nurse">Enfermería</option><option value="secretary">Secretaría</option></select></${FormField}><h3>Permisos</h3>`;
+    return html`<${FormField} label="Teléfono"><input value=${d.phone||''} onChange=${e=>this.updateDraft('phone',e.target.value)}/></${FormField}><${FormField} label="Cargo"><input value=${d.title||''} onChange=${e=>this.updateDraft('title',e.target.value)}/></${FormField}><${FormField} label="Rol"><select value=${d.role||'secretary'} onChange=${e=>{const role=e.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,role,permissionMode:'all',permissions:defaultPermissions(role)}}}));}}><option value="doctor">Doctor</option><option value="nurse">Enfermería</option><option value="secretary">Secretaría</option></select></${FormField}><h3>Permisos</h3>${d.role==='secretary'?html`<div className="permission-mode" role="radiogroup" aria-label="Modo de permisos"><label><input type="radio" name="permissionMode" value="all" checked=${d.permissionMode==='all'} onChange=${()=>this.setDraftPermissionMode('all')}/> Todos los permisos permitidos</label><label><input type="radio" name="permissionMode" value="custom" checked=${d.permissionMode!=='all'} onChange=${()=>this.setDraftPermissionMode('custom')}/> Personalizados</label></div>`:null}`;
   }
 
   renderPermissionGroups(draft) {
-    const catalog=PERMISSION_CATALOG.filter(p=>!OWNER_ONLY.includes(p.key) && (draft.role!=='secretary'||SECRETARY_PERMISSIONS.includes(p.key)||p.key==='prescriptionsEdit'));
-    return html`<div className="permission-groups">${[...new Set(catalog.map(p=>p.group))].map(group=>html`<fieldset key=${group}><legend>${group}</legend>${catalog.filter(p=>p.group===group).map(p=>html`<label key=${p.key} className="permission-row"><input type="checkbox" checked=${draft.permissions?.[p.key]===true} onChange=${e=>this.updateDraftPermission(p.key,e.target.checked)}/><span><b>${p.label}</b><small>${p.description}</small></span></label>`)}</fieldset>`)}</div>`;
+    const allowed=assignablePermissions(draft.role);const catalog=PERMISSION_CATALOG.filter(p=>!OWNER_ONLY.includes(p.key)&&allowed.includes(p.key));
+    const selected=catalog.filter(permission=>draft.permissions?.[permission.key]===true).length;
+    return html`<div className="permission-bulk-actions"><div className="permission-selection-count" role="status"><b>${selected}</b><span>de ${catalog.length} permisos activos</span></div><${Button} tone="secondary" onClick=${()=>this.setAllDraftPermissions(true)}>Seleccionar todos</${Button}><${Button} tone="secondary" onClick=${()=>this.setAllDraftPermissions(false)}>Limpiar todos</${Button}></div><div className="permission-groups">${[...new Set(catalog.map(p=>p.group))].map(group=>html`<fieldset className="permission-group" key=${group}><legend>${group}</legend>${catalog.filter(p=>p.group===group).map(p=>{const active=draft.permissions?.[p.key]===true;return html`<label key=${p.key} className=${`permission-row ${active?'active':''}`}><input type="checkbox" checked=${active} onChange=${e=>this.updateDraftPermission(p.key,e.target.checked)}/><span className="permission-check" aria-hidden="true"><${Icon} name="check" size=${17}/></span><span className="permission-copy"><b>${p.label}</b><small>${p.description}</small></span></label>`;})}</fieldset>`)}</div>`;
   }
 
   renderSecretaryModal() {
     const d=this.state.modal.draft;
     return html`<${Modal} title="Agregar usuario" subtitle="La persona recibirá un correo para definir su propia contraseña." onClose=${this.closeModal} size="lg">
       <form className="clinical-form" onSubmit=${this.saveSecretaryForm}>${this.renderModalError()}
+        <div className="form-information invite-password-note"><${Icon} name="lock" size=${19}/><div><b>Cuenta individual, sin contraseña compartida</b><p>Al enviar la invitación, esta persona recibirá un enlace seguro para crear su propia contraseña. Linkare no genera ni muestra contraseñas de otras personas.</p></div></div>
         <${FormField} label="Nombre completo"><input required value=${d.name} onChange=${e=>this.updateDraft('name',e.target.value)}/></${FormField}>
         <${FormField} label="Correo"><input required type="email" value=${d.email} onChange=${e=>this.updateDraft('email',e.target.value)}/></${FormField}>
         ${this.renderTeamRoleFields(d)}<p className="field-note">Seleccione los permisos del usuario. La administración del equipo y del plan corresponde al propietario.</p>
         ${this.renderPermissionGroups(d)}
         <${Button} type="submit" disabled=${this.state.teamBusy}>${this.state.teamBusy?'Enviando invitación…':'Enviar invitación'}</${Button}>
       </form></${Modal}>`;
+  }
+
+  renderInviteSentModal() {
+    const {email,message}=this.state.modal;
+    return html`<${Modal} title="Invitación enviada" subtitle="El acceso quedó preparado de forma segura." onClose=${this.closeModal} size="md"><div className="invite-success"><span className="invite-success-icon"><${Icon} name="mail" size=${30}/></span><h3>Revise ${email}</h3><p>${message||'Enviamos el enlace de acceso.'}</p><div className="form-information"><${Icon} name="lock" size=${18}/><div><b>¿Con qué contraseña entra?</b><p>No existe una contraseña predeterminada. La persona abre el correo, crea una contraseña privada de al menos 12 caracteres y después inicia sesión con su correo.</p></div></div><p className="field-note">Si el correo no llega, puede reenviarlo desde “Invitaciones pendientes”.</p><${Button} onClick=${this.closeModal}>Entendido</${Button}></div></${Modal}>`;
   }
 
   renderUserPermissionsModal() {
@@ -2525,7 +2605,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   renderAppointmentFormModal() {
     const draft = this.state.modal.draft;
     const patients = this.state.data.patients.filter(item => !item.archived);
-    return html`<${Modal} title=${draft.id ? 'Editar cita' : 'Nueva cita'} subtitle="La cita se guardará en la agenda del consultorio." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<div data-tour="appointment-form-who-when"><${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event => this.updateDraft('patientId', event.target.value)}>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name} · ${patient.diagnosis}</option>`)}</select></${FormField}><div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}><option>Seguimiento</option><option>Primera consulta</option><option>Prioritaria</option><option>Seguridad</option><option>Laboratorios</option></select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmada</option><option value="pending">Pendiente</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></${FormField}></div><${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus||'none'} onChange=${event=>this.updateDraft('adminReviewStatus',event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>${this.can('clinicalView')?html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>`:null}</div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear cita'}/></form></${Modal}>`;
+    const calendarOptions=this.visibleCalendars().filter(calendar=>draft.id?calendar.id===draft.calendarId||this.canCalendar(calendar.id,'Create'):this.canCalendar(calendar.id,'Create'));
+    const general=draft.eventType==='general';
+    const typeOptions=general?['Evento general']:['Seguimiento','Primera consulta','Prioritaria','Seguridad','Laboratorios'];
+    return html`<${Modal} title=${draft.id ? 'Editar evento' : 'Nuevo evento'} subtitle="El calendario y el tipo de evento son obligatorios." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<fieldset className="calendar-choice-fieldset"><legend>${draft.id?'Calendario del evento':'¿En qué calendario quiere guardar este evento?'}</legend><p className="calendar-choice-hint">Elija una opción. Linkare no seleccionará un calendario por usted.</p><div className="calendar-choice-grid">${calendarOptions.map(calendar=>{const active=draft.calendarId===calendar.id;const icon=calendar.code==='wife'?'heart':calendar.code==='general'?'users':'activity';const description=calendar.code==='doctor'?'Agenda clínica principal':calendar.code==='wife'?'Agenda personal compartida':'Actividades y bloqueos generales';return html`<label key=${calendar.id} className=${`calendar-choice calendar-${calendar.code} ${active?'active':''}`}><input type="radio" name="appointmentCalendar" value=${calendar.id} checked=${active} required onChange=${event=>this.updateDraft('calendarId',event.target.value)}/><span className="calendar-choice-icon" aria-hidden="true"><${Icon} name=${icon} size=${22}/></span><span className="calendar-choice-copy"><b>${calendar.name}</b><small>${description}</small></span><span className="calendar-choice-check" aria-hidden="true"><${Icon} name="check" size=${17}/></span></label>`;})}</div>${!draft.calendarId?html`<p className="calendar-choice-required" role="status"><${Icon} name="alert" size=${15}/> Falta elegir el calendario.</p>`:html`<p className="calendar-choice-selected" role="status"><${Icon} name="check" size=${15}/> Calendario seleccionado: ${calendarOptions.find(calendar=>calendar.id===draft.calendarId)?.name||''}</p>`}</fieldset><div className="form-grid"><${FormField} label="Clase de evento" required=${true}><select value=${draft.eventType||'appointment'} onChange=${event=>{const eventType=event.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,eventType,type:eventType==='general'?'Evento general':prev.modal.draft.type==='Evento general'?'Seguimiento':prev.modal.draft.type}}}));}}><option value="appointment">Cita de paciente</option><option value="general">Evento general (sin paciente)</option></select></${FormField}></div><div data-tour="appointment-form-who-when">${general?html`<${FormField} label="Título del evento" required=${true}><input autoFocus value=${draft.title||''} onChange=${event=>this.updateDraft('title',event.target.value)} placeholder="Ej. compromiso personal o reunión" required/></${FormField}>`:html`<${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event=>this.updateDraft('patientId',event.target.value)} required><option value="">Seleccione…</option>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name}${patient.diagnosis?` · ${patient.diagnosis}`:''}</option>`)}</select></${FormField}>`}<div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}>${typeOptions.map(option=>html`<option key=${option}>${option}</option>`)}</select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option><option>No aplica</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option><option value="completed">Completado</option><option value="cancelled">Cancelado</option><option value="no_show">No se realizó</option></select></${FormField}></div>${!general?html`<${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus||'none'} onChange=${event=>this.updateDraft('adminReviewStatus',event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>`:null}${!general&&this.can('clinicalView')?html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>`:null}</div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear evento'}/></form></${Modal}>`;
   }
 
   renderReportModal() {
@@ -2536,8 +2619,17 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   }
 
   renderHelpModal() {
-    const secretary=this.activeUser()?.role==='secretary';const guide=secretary?[['Crear paciente','Abra Pacientes, use “Nuevo paciente” y complete identificación, contacto, seguro y consentimiento. La información clínica queda reservada al médico.'],['Agenda y confirmación','Cree o abra una cita, cambie su estado y marque la revisión administrativa.'],['Medicamentos y recetas','Puede capturar un medicamento informado para revisión médica, y corregir o anular recetas cuando tenga permiso.'],['Documentos','Genere constancias e incapacidades administrativas desde la ficha del paciente.']]:[['Consulta diaria','Revise Inicio y Agenda, confirme la cita y abra la libreta de consulta.'],['Tratamiento','Revise medicamentos pendientes, registre cambios de dosis y conserve el historial.'],['Recetas','Cree, corrija o anule la receta. La versión anterior y las recetas anuladas permanecen visibles.'],['Documentos y agenda','Genere documentos versionados, imprima la agenda diaria y gestione calendarios compartidos.']];
-    return html`<${Modal} title="Centro de ayuda" subtitle=${secretary?'Guía rápida para Secretaría':'Guía rápida para el médico'} onClose=${this.closeModal} size="lg"><div className="guide-sections">${guide.map(([title,text])=>html`<section key=${title}><h3>${title}</h3><p>${text}</p></section>`)}</div><h3>Preguntas frecuentes</h3><div className="guide-sections"><section><h3>¿Se guardó el cambio?</h3><p>Espere el mensaje “Guardado en el servidor”. Si aparece un error, no cierre la página y use Reintentar.</p></section><section><h3>¿Cómo corrijo una receta?</h3><p>Use Editar para crear una revisión o Anular para conservarla marcada como inválida. Las recetas no se borran del historial.</p></section><section><h3>¿Qué ve Secretaría?</h3><p>Solo los datos y acciones concedidos. Diagnósticos, notas y documentos clínicos siguen protegidos.</p></section></div><div className="settings-actions">${TUTORIAL_URL?html`<a className="button button-secondary" href=${TUTORIAL_URL} target="_blank" rel="noreferrer"><${Icon} name="play" size=${18}/><span>Ver tutorial</span></a>`:html`<span className="field-note">El enlace del tutorial se habilitará al configurar VITE_TUTORIAL_URL.</span>`}${SUPPORT_WHATSAPP_NUMBER?html`<a className="button button-secondary" href=${`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}`} target="_blank" rel="noreferrer"><${Icon} name="message" size=${18}/><span>Soporte por WhatsApp</span></a>`:null}<${Button} onClick=${this.closeModal}>Cerrar</${Button}></div></${Modal}>`;
+    const training=this.currentTraining();
+    const tab=this.state.helpTab;
+    return html`<${Modal} title="Capacitación y ayuda" subtitle=${`Guía para ${training.label} · disponible para repetir en cualquier momento`} onClose=${this.closeModal} size="lg">
+      <div className="training-tabs" role="tablist" aria-label="Contenido de capacitación">
+        ${[['video','Video'],['guide','Guía rápida'],['questions','Preguntas frecuentes']].map(([key,label])=>html`<button key=${key} type="button" role="tab" aria-selected=${tab===key} className=${tab===key?'active':''} onClick=${()=>this.setState({helpTab:key})}>${label}</button>`)}
+      </div>
+      ${tab==='video'?html`<div className="training-video-section" role="tabpanel"><div className="training-intro"><span className="training-intro-icon"><${Icon} name="play" size=${25}/></span><div><span className="eyebrow">Aprenda a su ritmo</span><h3>El recorrido de ${training.label}</h3><p>${training.intro}</p></div></div><video className="training-video" controls playsInline preload="metadata" aria-label=${`Video tutorial de ${training.label}`} src=${training.video}>Su navegador no puede reproducir este video. Use Descargar video.</video><div className="training-video-actions"><a className="button button-secondary" href=${training.video} download><${Icon} name="download" size=${17}/><span>Descargar video</span></a><span>Demostración con datos ficticios. Sin información de pacientes reales.</span></div></div>`:null}
+      ${tab==='guide'?html`<div className="training-guide" role="tabpanel">${training.guide.map(([title,text],index)=>html`<section key=${title}><span className="training-guide-number">${String(index+1).padStart(2,'0')}</span><div><h3>${title}</h3><p>${text}</p></div></section>`)}</div>`:null}
+      ${tab==='questions'?html`<div className="training-guide" role="tabpanel"><section><span className="training-guide-number">?</span><div><h3>¿Se guardó el cambio?</h3><p>Espere “Cambios guardados”. Si aparece un error, mantenga la página abierta y use Reintentar.</p></div></section><section><span className="training-guide-number">?</span><div><h3>¿Cómo entro si me invitaron?</h3><p>Abra el correo de invitación y establezca su propia contraseña. Si venció, pida al médico responsable que reenvíe la invitación.</p></div></section><section><span className="training-guide-number">?</span><div><h3>¿Por qué falta un botón?</h3><p>Las acciones dependen de los permisos de su cuenta y de cada calendario. El médico responsable puede revisarlos en Configuración.</p></div></section><section><span className="training-guide-number">?</span><div><h3>¿Qué ve Secretaría?</h3><p>Solo los datos y acciones concedidos. Diagnósticos, notas y documentos clínicos privados siguen protegidos.</p></div></section></div>`:null}
+      <div className="training-footer"><${Button} icon="play" onClick=${this.startTour}>Iniciar recorrido interactivo</${Button}>${SUPPORT_WHATSAPP_NUMBER?html`<a className="button button-secondary" href=${`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer"><${Icon} name="message" size=${18}/><span>Soporte por WhatsApp</span></a>`:html`<span className="training-support-note">WhatsApp de soporte pendiente de número autorizado.</span>`}<${Button} tone="secondary" onClick=${this.closeModal}>Cerrar</${Button}></div>
+    </${Modal}>`;
   }
 
   renderMedicationArchiveModal() {
@@ -2553,26 +2645,38 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     return html`<${Modal} title=${titles[resource]||'Retirar registro'} subtitle=${draft.label} onClose=${this.closeModal} size="md"><form className="clinical-form" onSubmit=${this.saveClinicalArchive}>${this.renderModalError()}<div className="form-warning"><${Icon} name="alert" size=${18}/><span>${patientArchive?'El paciente dejará de aparecer entre los expedientes activos y sus citas futuras se cancelarán.':signedConsultation?'Si la nota está firmada, su contenido original permanecerá intacto y aparecerá como anulada en el historial.':'El registro desaparecerá de la vista activa, pero se conservará con autor, fecha y motivo.'}</span></div><${FormField} label="Motivo" required=${true}><textarea autoFocus rows="4" minLength="3" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} placeholder="Ej. registro duplicado o información agregada por error" required></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${patientArchive?'Archivar paciente':'Eliminar y conservar historial'}/></form></${Modal}>`;
   }
 
-  renderTutorialIntro() { return null; }
-
-  renderGuidedTour() { return null; }
+  renderGuidedTour() {
+    if(!this.state.tourActive)return null;
+    const training=this.currentTraining();
+    const steps=training.steps;const step=steps[this.state.tourIndex];
+    if(!step)return null;
+    return html`<aside className="training-rail" aria-label=${`Recorrido interactivo para ${training.label}`}>
+      <div className="training-rail-head"><div className="training-rail-brand"><span className="training-rail-mark"><${Icon} name="activity" size=${20}/></span><span><b>Linkare en acción</b><small>${training.label} · guía interactiva</small></span></div><button type="button" className="training-rail-close" aria-label="Cerrar recorrido" onClick=${this.stopTour}>×</button></div>
+      <div className="training-progress" aria-label=${`Paso ${this.state.tourIndex+1} de ${steps.length}`}><div style=${{width:`${((this.state.tourIndex+1)/steps.length)*100}%`}}></div></div>
+      <div className="training-rail-content" aria-live="polite" aria-atomic="true"><span className="training-count">PASO ${String(this.state.tourIndex+1).padStart(2,'0')} / ${String(steps.length).padStart(2,'0')}</span><span className="training-step-icon"><${Icon} name=${step.icon} size=${24}/></span><h2>${step.title}</h2><p>${step.text}</p><div className="training-tip"><${Icon} name="check" size=${16}/><span>${step.tip}</span></div></div>
+      <div className="training-step-list" aria-label="Pasos del recorrido">${steps.map((item,index)=>html`<button key=${item.title} type="button" aria-label=${`Ir al paso ${index+1}: ${item.title}`} aria-current=${index===this.state.tourIndex?'step':null} className=${index===this.state.tourIndex?'active':''} onClick=${()=>this.goTourStep(index)}>${index+1}</button>`)}</div>
+      <div className="training-rail-actions"><${Button} tone="secondary" disabled=${this.state.tourIndex===0} onClick=${()=>this.goTourStep(this.state.tourIndex-1)}>Anterior</${Button}><${Button} icon=${this.state.tourIndex===steps.length-1?'check':'chevronRight'} onClick=${()=>this.goTourStep(this.state.tourIndex+1)}>${this.state.tourIndex===steps.length-1?'Finalizar':'Siguiente'}</${Button}></div>
+      <button type="button" className="training-open-guide" onClick=${()=>{this.stopTour();this.openHelp();}}>Volver a videos y guía rápida</button>
+    </aside>`;
+  }
 
   renderAppointmentDetails() {
     const appointment = this.state.appointmentDetails;
     if (!appointment) return null;
     const patient = this.state.data.patients.find(item => item.id === appointment.patientId);
-    const reminders = getReminderQueue(this.state.data).filter(item => item.appointment.id === appointment.id);
+    const general=appointment.eventType==='general';
+    const reminders = general?[]:getReminderQueue(this.state.data).filter(item => item.appointment.id === appointment.id);
     const insurance = patient?.insurance || {};
     const canStart = this.can('consultationsManage') && patient?.vitalStatus !== 'deceased' && !['completed', 'cancelled', 'no_show'].includes(appointment.status);
-    return html`<${Modal} title="Detalle de la cita" subtitle="Revise datos, recordatorios, calendarios y notas de preparación." onClose=${() => this.setState({ appointmentDetails: null })} size="xl"><div className="appointment-detail-hero"><${Avatar} patient=${patient} size="lg"/><div><span className="eyebrow">${appointment.type}</span><h3>${appointment.title}</h3><p>${this.can('clinicalView') ? patient?.diagnosis || '' : patient?.phone || 'Sin teléfono registrado'}</p></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></div>
-      <div className="appointment-info"><div><${Icon} name="calendar"/><span>Fecha</span><b>${formatLongDate(appointment.start)}</b></div><div><${Icon} name="clock"/><span>Hora</span><b>${formatTime(appointment.start)} – ${formatTime(appointment.end)}</b></div><div><${Icon} name="activity"/><span>Modalidad</span><b>${appointment.modality}</b></div><div><${Icon} name="insurance"/><span>Cobertura</span><b>${insurance.hasInsurance ? insurance.provider || 'Seguro médico' : 'Particular'}</b></div></div>
+    return html`<${Modal} title=${general?'Detalle del evento':'Detalle de la cita'} subtitle=${`${this.calendarLabel(appointment)} · ${general?'Evento general':'Cita de paciente'}`} onClose=${() => this.setState({ appointmentDetails: null })} size="xl"><div className="appointment-detail-hero">${patient?html`<${Avatar} patient=${patient} size="lg"/>`:html`<span className="general-event-symbol">◆</span>`}<div><span className="eyebrow">${appointment.type}</span><h3>${appointment.title}</h3>${patient?html`<p>${this.can('clinicalView') ? patient?.diagnosis || '' : patient?.phone || 'Sin teléfono registrado'}</p>`:html`<p>Evento no vinculado a un expediente clínico.</p>`}</div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'neutral'}>${statusLabel(appointment.status)}</${Badge}></div>
+      <div className="appointment-info"><div><${Icon} name="calendar"/><span>Calendario</span><b>${this.calendarLabel(appointment)}</b></div><div><${Icon} name="calendar"/><span>Fecha</span><b>${formatLongDate(appointment.start)}</b></div><div><${Icon} name="clock"/><span>Hora</span><b>${formatTime(appointment.start)} – ${formatTime(appointment.end)}</b></div><div><${Icon} name="activity"/><span>Modalidad</span><b>${appointment.modality}</b></div>${patient?html`<div><${Icon} name="insurance"/><span>Cobertura</span><b>${insurance.hasInsurance ? insurance.provider || 'Seguro médico' : 'Particular'}</b></div>`:null}</div>
       ${insurance.hasInsurance && insurance.authorizationRequired ? html`<div className="appointment-insurance-warning"><${Icon} name="insurance" size=${18}/><div><b>Autorización de seguro requerida</b><p>${insurance.plan || 'Plan sin registrar'}${insurance.memberId ? ` · Afiliado ${insurance.memberId}` : ''}${insurance.copay ? ` · Copago ${insurance.copay}` : ''}</p></div></div>` : null}
       ${this.can('clinicalView')?html`<div className="notes-box"><span>Notas de preparación clínica</span><p>${appointment.notes || 'Sin notas.'}</p></div>`:null}
       ${canStart ? html`<section className="start-consultation-card"><span><${Icon} name="notebook" size=${24}/></span><div><b>¿Ya está con el paciente?</b><p>Abra la libreta virtual para tomar notas con guardado automático durante la consulta.</p></div><${Button} icon="play" onClick=${() => this.startConsultation(appointment)}>Iniciar consulta</${Button}></section>` : null}
-      <section className="appointment-reminder-section"><header><div><span className="eyebrow">Confirmación de cita</span><h3>Recordatorios</h3></div><div>${reminders.map(reminder => html`<${Badge} key=${reminder.id} tone=${reminder.status === 'sent' ? 'success' : reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminderLabel(reminder.hours)} · ${reminder.status === 'sent' ? 'Enviado' : reminder.status === 'due' ? 'Listo' : reminder.status === 'overdue' ? 'Pendiente' : 'Programado'}</${Badge}>`)}</div></header>${this.can('remindersManage') ? html`<div className="appointment-reminder-actions">${reminders.filter(reminder => reminder.status !== 'sent').slice(0, 3).map(reminder => html`<div key=${reminder.id}><span>${reminderLabel(reminder.hours)}</span>${(reminder.channels || patient?.notificationPreferences?.channels || ['whatsapp']).map(channel => html`<${Button} key=${channel} tone=${channel === 'whatsapp' ? 'soft' : 'secondary'} icon=${channel === 'email' ? 'mail' : 'message'} onClick=${() => this.sendReminderChannel(reminder, channel)}>${reminderChannelLabel(channel)}</${Button}>`)}<${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}></div>`)}</div>` : null}</section>
+      ${general?null:html`<section className="appointment-reminder-section"><header><div><span className="eyebrow">Confirmación de cita</span><h3>Recordatorios</h3></div><div>${reminders.map(reminder => html`<${Badge} key=${reminder.id} tone=${reminder.status === 'sent' ? 'success' : reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminderLabel(reminder.hours)} · ${reminder.status === 'sent' ? 'Enviado' : reminder.status === 'due' ? 'Listo' : reminder.status === 'overdue' ? 'Pendiente' : 'Programado'}</${Badge}>`)}</div></header>${this.can('remindersManage') ? html`<div className="appointment-reminder-actions">${reminders.filter(reminder => reminder.status !== 'sent').slice(0, 3).map(reminder => html`<div key=${reminder.id}><span>${reminderLabel(reminder.hours)}</span>${(reminder.channels || patient?.notificationPreferences?.channels || ['whatsapp']).map(channel => html`<${Button} key=${channel} tone=${channel === 'whatsapp' ? 'soft' : 'secondary'} icon=${channel === 'email' ? 'mail' : 'message'} onClick=${() => this.sendReminderChannel(reminder, channel)}>${reminderChannelLabel(channel)}</${Button}>`)}<${Button} tone="secondary" onClick=${() => this.copyReminderMessage(reminder)}>Copiar</${Button}></div>`)}</div>` : null}</section>`}
       <section className="calendar-actions-card"><div><span className="eyebrow">Calendarios</span><h3>Conservar la cita en sus dispositivos</h3><p>Google Calendar puede sincronizarse. Apple Calendar puede importar esta cita o suscribirse al calendario privado de Linkare.</p></div><div>${this.state.calendarStatus?.google?.connected ? html`<${Button} tone="secondary" icon="calendar" onClick=${() => this.syncGoogleAppointment(appointment)}>Sincronizar con Google</${Button}>` : html`<a className="button button-secondary" href=${googleCalendarUrl(appointment)} target="_blank" rel="noreferrer"><${Icon} name="external" size=${18}/><span>Agregar a Google</span></a>`}${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadICS(appointment)}>Agregar a Apple / ICS</${Button}>` : null}</div></section>
-      <div className="appointment-actions-grid">${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditAppointment(appointment)}>Editar cita</${Button}>` : null}<${Button} tone="soft" onClick=${() => this.openPatient(appointment.patientId)}>Abrir paciente</${Button}></div>
-      ${this.can('appointmentsManage') ? html`<div className="status-actions"><span>Cambiar estado:</span>${[['confirmed', 'Confirmada'], ['pending', 'Pendiente'], ['completed', 'Completada'], ['cancelled', 'Cancelada'], ['no_show', 'No asistió']].map(([key, label]) => html`<button key=${key} className=${appointment.status === key ? 'active' : ''} onClick=${() => this.updateAppointmentStatus(appointment.id, key)}>${label}</button>`)}</div><div className="status-actions"><span>Revisión administrativa:</span>${[['none','Sin marca'],['pending','Por revisar'],['reviewed','Revisada']].map(([key,label])=>html`<button key=${key} className=${(appointment.adminReviewStatus||'none')===key?'active':''} onClick=${()=>this.updateAppointmentReview(appointment.id,key)}>${label}</button>`)}</div><div className="danger-zone"><button onClick=${() => this.deleteAppointment(appointment.id)}><${Icon} name="trash" size=${17}/> Eliminar cita</button></div>` : null}
+      <div className="appointment-actions-grid">${this.canCalendar(appointment.calendarId,'Edit')?html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditAppointment(appointment)}>Editar evento</${Button}>`:null}${patient?html`<${Button} tone="soft" onClick=${() => this.openPatient(appointment.patientId)}>Abrir paciente</${Button}>`:null}</div>
+      ${this.canCalendar(appointment.calendarId,'Edit')||this.canCalendar(appointment.calendarId,'Cancel') ? html`<div className="status-actions"><span>Cambiar estado:</span>${[['confirmed', 'Confirmado'], ['pending', 'Pendiente'], ['completed', 'Completado'], ['cancelled', 'Cancelado'], ['no_show', 'No se realizó']].filter(([key])=>key!=='cancelled'||this.canCalendar(appointment.calendarId,'Cancel')).map(([key, label]) => html`<button key=${key} className=${appointment.status === key ? 'active' : ''} onClick=${() => this.updateAppointmentStatus(appointment.id, key)}>${label}</button>`)}</div>${!general&&this.canCalendar(appointment.calendarId,'Edit')?html`<div className="status-actions"><span>Revisión administrativa:</span>${[['none','Sin marca'],['pending','Por revisar'],['reviewed','Revisada']].map(([key,label])=>html`<button key=${key} className=${(appointment.adminReviewStatus||'none')===key?'active':''} onClick=${()=>this.updateAppointmentReview(appointment.id,key)}>${label}</button>`)}</div>`:null}${this.canCalendar(appointment.calendarId,'Delete')?html`<div className="danger-zone"><button onClick=${() => this.deleteAppointment(appointment.id)}><${Icon} name="trash" size=${17}/> Eliminar evento</button></div>`:null}` : null}
     </${Modal}>`;
   }
 
@@ -2582,7 +2686,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     if(location.pathname!=='/' && location.pathname!=='/index.html')return this.renderStatePage('search','Página no encontrada','La dirección no corresponde a una sección de Linkare.',()=>{history.replaceState({},'','/');this.setView('dashboard');},'Ir al inicio');
     const v=this.state.view;const s=this.state.data.settings;let body;
     if(v==='notebook')body=this.renderConsultationNotebook();else if(v==='dashboard')body=this.renderDashboard();else if(v==='patients')body=this.renderPatients();else if(v==='patient')body=this.renderPatient();else if(v==='agenda')body=this.renderAgenda();else if(v==='payments')body=this.renderPayments();else if(v==='analytics')body=this.renderAnalytics();else if(v==='alerts')body=this.renderAlerts();else if(v==='settings')body=this.renderSettings();else body=this.renderStatePage('search','Sección no encontrada','Regrese al inicio para continuar.',()=>this.setView('dashboard'));
-    return html`<div className=${`app-shell ${s.largeText?'large-text-mode':''} ${s.reducedMotion?'reduced-motion-mode':''}`}><div className="app-frame">${this.renderTopbar()}${this.renderSaveBanner()}<main className="main-content">${body}</main><footer><span>Linkare · Gestión clínica</span><span>${this.state.remoteSaveStatus==='saved'?'Cambios guardados':'Revise el estado de guardado'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderConsultationPrompt()}${this.state.toast?html`<div className=${`toast toast-${this.state.toastTone}`} role="status">${this.state.toast}</div>`:null}</div>`;
+    return html`<div className=${`app-shell ${s.largeText?'large-text-mode':''} ${s.reducedMotion?'reduced-motion-mode':''} ${this.state.tourActive?'training-active':''}`}><div className="app-frame">${this.renderTopbar()}${this.renderSaveBanner()}<main className="main-content">${body}</main><footer><span>Linkare · Gestión clínica</span><span>${this.state.remoteSaveStatus==='saved'?'Cambios guardados':'Revise el estado de guardado'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderConsultationPrompt()}${this.renderGuidedTour()}${this.state.toast?html`<div className=${`toast toast-${this.state.toastTone}`} role="status">${this.state.toast}</div>`:null}</div>`;
   }
 
   showReceipt = order => this.setState({modal:{type:'receipt',order}});
@@ -2656,7 +2760,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.authEpoch++;this.savingForm=false;this.persistedData=null;clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourIndex:0,helpTab:'video',passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {

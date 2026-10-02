@@ -180,11 +180,13 @@ export function labFormDefaults(patient, lab = null) {
   };
 }
 
-export function appointmentFormDefaults(data, date = new Date(), appointment = null, patientId = null) {
+export function appointmentFormDefaults(data, date = new Date(), appointment = null, patientId = null, calendarId = null) {
   if (appointment) {
     return {
       id: appointment.id,
+      calendarId: appointment.calendarId || calendarId || '', eventType: appointment.eventType || 'appointment',
       patientId: appointment.patientId,
+      title: appointment.title || '',
       start: appointment.start ? new Date(new Date(appointment.start).getTime() - new Date(appointment.start).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
       duration: Math.max(15, Math.round((new Date(appointment.end) - new Date(appointment.start)) / 60_000)),
       type: appointment.type || 'Seguimiento', modality: appointment.modality || 'Presencial',
@@ -197,6 +199,7 @@ export function appointmentFormDefaults(data, date = new Date(), appointment = n
   const local = new Date(start.getTime() - offset * 60_000).toISOString().slice(0, 16);
   return {
     id: null,
+    calendarId: calendarId || '', eventType: 'appointment', title: '',
     patientId: patientId || data.patients[0]?.id || '',
     start: local,
     duration: 45,
@@ -1061,15 +1064,23 @@ export function setPatientArchived(data, patientId, reason) {
 
 export function saveAppointment(data, draft) {
   const previousAppointment = draft.id ? data.appointments.find(item => item.id === draft.id) : null;
-  const patient = data.patients.find(item => item.id === draft.patientId);
-  if (!patient) throw new Error('Selecciona un paciente.');
+  const calendar=data.calendars?.find(item=>item.id===draft.calendarId&&item.isActive!==false);
+  if(!calendar)throw new Error('Selecciona un calendario disponible.');
+  const eventType=draft.eventType==='general'?'general':'appointment';
+  if(eventType==='general'&&calendar.code!=='general')throw new Error('Los eventos generales solo pueden guardarse en el calendario General.');
+  const patient = eventType==='appointment'?data.patients.find(item => item.id === draft.patientId):null;
+  if (eventType==='appointment'&&!patient) throw new Error('Selecciona un paciente.');
+  const title=eventType==='general'?cleanText(draft.title):patient.name;
+  if(!title)throw new Error('Escribe el título del evento.');
   if (!draft.start) throw new Error('Selecciona fecha y hora.');
   const start = fromLocalInputDateTime(draft.start);
   const duration = Math.max(15, Number(draft.duration) || 45);
   const appointment = {
     id: draft.id || uid('appointment'),
-    patientId: patient.id,
-    title: patient.name,
+    calendarId: calendar.id,
+    eventType,
+    ...(patient?{patientId:patient.id}:{}),
+    title,
     start,
     end: addMinutes(start, duration),
     type: draft.type || 'Seguimiento',
@@ -1087,10 +1098,10 @@ export function saveAppointment(data, draft) {
       ? data.appointments.map(item => item.id === draft.id ? appointment : item)
       : [...data.appointments, appointment],
   };
-  if (previousAppointment?.patientId && previousAppointment.patientId !== patient.id) {
+  if (previousAppointment?.patientId && previousAppointment.patientId !== patient?.id) {
     next = updateNextVisit(next, previousAppointment.patientId);
   }
-  next = updateNextVisit(next, patient.id);
+  if(patient)next = updateNextVisit(next, patient.id);
   return { data: next, appointment };
 }
 
