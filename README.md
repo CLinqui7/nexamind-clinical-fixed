@@ -8,6 +8,8 @@ Node 24 recomendado. `npm ci --include=dev`, configurar `.env.local` según `.en
 
 ## Guías
 
+- `docs/HANDOFF-PRODUCCION-2026-10-03.md`: estado real de producción, migraciones aplicadas, incidentes, pruebas y continuidad para el siguiente responsable.
+- `docs/performance/INFRASTRUCTURE_AND_CPU_PLAN_2026-10-03.md`: arquitectura contra picos de CPU, comparativa de proveedores y plan de migración de infraestructura.
 - `docs/DESPLIEGUE-v3.md`: orden de migración y publicación, invitaciones, secretos e integraciones.
 - `docs/ARQUITECTURA-v3.md`: límites y controles de acceso.
 - `docs/PRUEBAS-v3.md`: comprobaciones realizadas y pendientes, sin certificaciones ficticias.
@@ -20,6 +22,6 @@ US$40 por 1 mes, US$220 por 6 meses o US$400 por 12 meses. Mismas funciones, dis
 
 ## Alcance de esta entrega
 
-Código de la implementación, no un despliegue ya realizado. El paquete no contiene claves, usuarios reales, base de datos ni node_modules. Se debe ejecutar la migración primero en un entorno de pruebas y validar Auth, Storage, permisos y pagos en infraestructura propia antes del corte definitivo. No es una certificación regulatoria, una firma electrónica cualificada ni un sistema offline.
+El estado fechado al 2026-10-03 sí está desplegado en producción y sus migraciones recientes están aplicadas al proyecto Supabase identificado en el documento de traspaso. El repositorio no contiene claves, contraseñas, pacientes, el respaldo FoxPro ni `node_modules`. Toda reproducción en otra infraestructura debe pasar primero por una restauración aislada y por las pruebas de permisos, persistencia y navegador. No es una certificación regulatoria, una firma electrónica cualificada ni un sistema offline.
 
 Las pruebas unitarias usan fixtures aislados y las pruebas de navegador usan respuestas simuladas de Supabase. Las cuentas de QA nunca se importan en el frontend ni se crean en producción.

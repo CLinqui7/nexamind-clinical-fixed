@@ -27,5 +27,6 @@ test-results/
 *.env.private
 supabase/.temp/
 qa/results/
+outputs/current-*.json
 .vercel/
 .env.local
