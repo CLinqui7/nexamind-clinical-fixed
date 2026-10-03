@@ -1,6 +1,7 @@
 export function corsHeaders(request: Request) {
   const normalize = (value: string) => String(value || '').trim().replace(/\/+$/, '');
   const origin = normalize(request.headers.get('origin') || '');
+  const trustedProjectPreview = /^https:\/\/nexamind-clinical-[a-z0-9-]+-clinqui7s-projects\.vercel\.app$/i.test(origin);
 
   // Build an allow-list from ALL sources instead of letting CORS_ORIGINS
   // completely replace APP_PUBLIC_URL. This avoids a stale secret breaking
@@ -26,7 +27,7 @@ export function corsHeaders(request: Request) {
     'Cache-Control': 'no-store',
   };
 
-  if (origin && allowed.has(origin)) {
+  if (origin && (allowed.has(origin) || trustedProjectPreview)) {
     headers['Access-Control-Allow-Origin'] = origin;
   }
 
