@@ -372,7 +372,7 @@ class App extends React.Component {
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
-      tourActive:false,tourIndex:0,helpTab:'video',
+      tourActive:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
     };
   }
 
@@ -443,6 +443,11 @@ class App extends React.Component {
     window.addEventListener('online',this.handleOnline);
     window.addEventListener('offline',this.handleOffline);
     window.addEventListener('beforeunload',this.warnUnsaved);
+    document.addEventListener('click',this.handleTourInteraction,true);
+    document.addEventListener('change',this.handleTourInteraction,true);
+    document.addEventListener('focusin',this.handleTourInteraction,true);
+    window.addEventListener('scroll',this.scheduleTourMarker,true);
+    window.addEventListener('resize',this.scheduleTourMarker);
     this.consultationPromptTimer=setInterval(this.checkConsultationPrompt,30000);
     this.accessTimer=setInterval(this.validateSessionAccess,30000);
     window.addEventListener('focus',this.validateSessionAccess);
@@ -463,6 +468,11 @@ class App extends React.Component {
     this.mounted=false;this.authEpoch++;
     window.removeEventListener('keydown',this.handleKeyDown);
     window.removeEventListener('online',this.handleOnline);window.removeEventListener('offline',this.handleOffline);window.removeEventListener('beforeunload',this.warnUnsaved);
+    document.removeEventListener('click',this.handleTourInteraction,true);
+    document.removeEventListener('change',this.handleTourInteraction,true);
+    document.removeEventListener('focusin',this.handleTourInteraction,true);
+    window.removeEventListener('scroll',this.scheduleTourMarker,true);
+    window.removeEventListener('resize',this.scheduleTourMarker);
     this.authSubscription?.unsubscribe();
     clearInterval(this.accessTimer);window.removeEventListener('focus',this.validateSessionAccess);
     for(const timer of [this.persistTimer,this.toastTimer,this.loadingTimer,this.encounterSaveIndicatorTimer])clearTimeout(timer);
@@ -473,7 +483,7 @@ class App extends React.Component {
     if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady)this.schedulePersist();
     const overlay=Boolean(this.state.modal||this.state.appointmentDetails);
     if(overlay!==Boolean(prevState.modal||prevState.appointmentDetails))document.body.style.overflow=overlay?'hidden':'';
-    if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view))requestAnimationFrame(this.focusTourTarget);
+    if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view || prevState.modal?.type!==this.state.modal?.type))requestAnimationFrame(this.focusTourTarget);
     if(prevState.tourActive && !this.state.tourActive)document.querySelectorAll('[data-tour-active-target]').forEach(node=>node.removeAttribute('data-tour-active-target'));
   }
 
@@ -588,31 +598,81 @@ class App extends React.Component {
     catch(error){this.setState({loginBusy:false,modalError:readableError(error)});}
   };
 
-  currentTraining = () => trainingFor(this.activeUser()?.role,{settings:this.can('settingsManage'),agenda:this.can('appointmentsManage'),patients:this.can('patientsView')});
+  currentTraining = () => trainingFor(this.activeUser()?.role,{settings:this.can('settingsManage'),agenda:this.can('appointmentsManage'),patients:this.can('patientsView'),usersManage:this.can('usersManage'),hasCalendars:this.visibleCalendars().length>0,createEvent:this.canAnyCalendar('Create')});
+
+  tourTargetFor = step => {
+    if(!step)return null;
+    const selectors={
+      'calendar-filter-first':'.calendar-filter-options .calendar-filter:first-child',
+      'agenda-today':'.calendar-nav .today-button',
+      'appointment-calendar-first':'.calendar-choice-grid .calendar-choice:first-child',
+      'appointment-cancel':'.modal-header .icon-button',
+      'team-permissions-custom':'.permission-mode label:last-child',
+      'team-cancel':'.modal-header .icon-button',
+      'help-guide-tab':'.training-tabs [role="tab"]:nth-child(2)',
+      'help-close':'.modal-header .icon-button',
+    };
+    return document.querySelector(selectors[step.target]||`[data-tour="${step.target}"]`);
+  };
+
+  handleTourInteraction = event => {
+    if(!this.state.tourActive || this.state.tourStepComplete)return;
+    const step=this.currentTraining().steps[this.state.tourIndex];
+    if(!step || event.type!==step.event)return;
+    const target=this.tourTargetFor(step);
+    if(!target || !target.contains(event.target) || event.target.disabled)return;
+    const index=this.state.tourIndex;
+    // Allow the control's own React handler to run before updating the guide.
+    setTimeout(()=>{if(this.mounted&&this.state.tourActive&&this.state.tourIndex===index)this.setState({tourStepComplete:true,tourMissing:false});},0);
+  };
+
+  scheduleTourMarker = () => {
+    if(!this.state.tourActive || this.tourMarkerFrame)return;
+    this.tourMarkerFrame=requestAnimationFrame(()=>{this.tourMarkerFrame=null;this.updateTourMarker();});
+  };
+
+  updateTourMarker = () => {
+    if(!this.state.tourActive)return;
+    const step=this.currentTraining().steps[this.state.tourIndex];
+    const target=this.tourTargetFor(step);
+    const rail=document.querySelector('.training-rail');
+    if(!target || !rail || !target.getClientRects().length){if(this.state.tourStepComplete){if(this.state.tourMarker)this.setState({tourMarker:null});}else if(!this.state.tourMissing)this.setState({tourMissing:true,tourMarker:null});return;}
+    const rect=target.getBoundingClientRect(),panel=rail.getBoundingClientRect();
+    const below=panel.top>innerHeight/2;
+    const endX=below?Math.max(12,Math.min(innerWidth-12,rect.left+rect.width/2)):Math.min(innerWidth-12,rect.right+7);
+    const endY=below?Math.min(innerHeight-12,rect.bottom+7):Math.max(12,Math.min(innerHeight-12,rect.top+rect.height/2));
+    const startX=below?panel.left+Math.min(panel.width/2,220):panel.left-8;
+    const startY=below?panel.top-8:panel.top+Math.min(panel.height*.52,320);
+    const path=below?`M ${startX} ${startY} Q ${startX} ${Math.max(endY+35,startY-100)} ${endX} ${endY}`:`M ${startX} ${startY} Q ${(startX+endX)/2} ${startY} ${endX} ${endY}`;
+    const marker={path,left:Math.max(10,Math.min(innerWidth-142,rect.left)),top:rect.top>52?rect.top-47:rect.bottom+10};
+    this.setState(prev=>JSON.stringify(prev.tourMarker)===JSON.stringify(marker)&&!prev.tourMissing?null:{tourMarker:marker,tourMissing:false});
+  };
 
   focusTourTarget = () => {
     document.querySelectorAll('[data-tour-active-target]').forEach(node=>node.removeAttribute('data-tour-active-target'));
     if(!this.state.tourActive)return;
     const step=this.currentTraining().steps[this.state.tourIndex];
-    const target=step&&document.querySelector(`[data-tour="${step.target}"]`);
-    if(!target)return;
+    const target=this.tourTargetFor(step);
+    if(!target){this.updateTourMarker();return;}
     target.setAttribute('data-tour-active-target','true');
-    target.scrollIntoView({block:'start',behavior:this.state.data.settings?.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+    target.scrollIntoView({block:'center',behavior:'instant'});
+    this.scheduleTourMarker();
+    setTimeout(this.scheduleTourMarker,180);
   };
 
   startTour = () => {
     const step=this.currentTraining().steps[0];
-    this.setState({modal:null,tourActive:true,tourIndex:0,view:step?.view||'dashboard',mobileNav:false});
+    this.setState({modal:null,tourActive:true,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step?.view||'dashboard',mobileNav:innerWidth<=880&&step?.target?.startsWith('nav-')});
   };
 
   goTourStep = index => {
-    if(this.state.modal && this.state.modal.type!=='help')return this.notify('Guarde o cierre el formulario antes de cambiar de paso.','danger');
+    if(!this.state.tourStepComplete)return;
     const step=this.currentTraining().steps[index];
     if(!step)return this.stopTour();
-    this.setState({modal:null,tourIndex:index,view:step.view,mobileNav:false});
+    this.setState({tourIndex:index,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step.view,mobileNav:innerWidth<=880&&step.target.startsWith('nav-')});
   };
 
-  stopTour = () => this.setState({tourActive:false});
+  stopTour = () => this.setState({tourActive:false,tourMarker:null,tourMissing:false,tourStepComplete:false});
 
   schedulePersist = () => {
     clearTimeout(this.persistTimer);
@@ -1763,7 +1823,7 @@ class App extends React.Component {
     return html`<header className="topbar">
       <${Logo} organization=${this.state.data.organization}/>
       <nav data-tour="main-navigation" className=${`nav-pill ${this.state.mobileNav ? 'nav-open' : ''}`} aria-label="Navegación principal">
-        ${nav.map(([key, icon, label]) => html`<button key=${key} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
+        ${nav.map(([key, icon, label]) => html`<button key=${key} data-tour=${`nav-${key}`} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
       </nav>
       <div className="top-actions">
         <button className="help-button" data-tour="help-button" aria-label="Ayuda" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
@@ -1923,9 +1983,9 @@ class App extends React.Component {
         eyebrow=${clinicalVisible ? 'Expedientes clínicos' : 'Expedientes administrativos'}
         title="Pacientes"
         subtitle=${clinicalVisible ? 'Busque un paciente o cree un expediente nuevo. Las tarjetas resumen el seguimiento.' : 'Consulte contacto, cobertura y próxima cita sin mostrar información clínica restringida.'}
-        actions=${html`<div className="tour-actions-group" data-tour="patients-tools"><div className="search-box"><${Icon} name="search"/><input value=${this.state.search} onChange=${event => this.setState({ search: event.target.value })} placeholder=${clinicalVisible ? 'Buscar por nombre, diagnóstico o medicamento' : 'Buscar por nombre, teléfono o seguro'}/></div>${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}</div>`}
+        actions=${html`<div className="tour-actions-group" data-tour="patients-tools"><div className="search-box"><${Icon} name="search"/><input data-tour="patients-search" value=${this.state.search} onChange=${event => this.setState({ search: event.target.value })} placeholder=${clinicalVisible ? 'Buscar por nombre, diagnóstico o medicamento' : 'Buscar por nombre, teléfono o seguro'}/></div>${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}</div>`}
       />
-      <div className="patients-toolbar"><div><${Badge} tone="blue">${filtered.length} pacientes</${Badge}>${clinicalVisible ? html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && getPatientPriority(patient, alerts).score >= 2).length} por revisar</${Badge}>` : html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && administrativeReview.has(patient.id)).length} por revisar</${Badge}>`}</div><div className="segmented" aria-label="Filtrar pacientes">${[['all', 'Todos'], ['active', 'Activos'], ['review', 'Por revisar'], ...(!clinicalVisible ? [['unscheduled','Sin próxima cita']] : []), ['archived','Archivados']].map(([key, label]) => html`<button key=${key} className=${this.state.patientFilter === key ? 'active' : ''} onClick=${() => this.setState({ patientFilter: key })}>${label}</button>`)}</div></div>
+      <div className="patients-toolbar"><div><${Badge} tone="blue">${filtered.length} pacientes</${Badge}>${clinicalVisible ? html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && getPatientPriority(patient, alerts).score >= 2).length} por revisar</${Badge}>` : html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && administrativeReview.has(patient.id)).length} por revisar</${Badge}>`}</div><div className="segmented" aria-label="Filtrar pacientes">${[['all', 'Todos'], ['active', 'Activos'], ['review', 'Por revisar'], ...(!clinicalVisible ? [['unscheduled','Sin próxima cita']] : []), ['archived','Archivados']].map(([key, label]) => html`<button key=${key} data-tour=${`patients-filter-${key}`} className=${this.state.patientFilter === key ? 'active' : ''} onClick=${() => this.setState({ patientFilter: key })}>${label}</button>`)}</div></div>
       ${filtered.length ? html`<div className="patient-grid">${filtered.map(patient => {
         const summary = getAssessmentSummary(patient);
         const priority = clinicalVisible ? getPatientPriority(patient, alerts) : null;
@@ -2650,12 +2710,14 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     const training=this.currentTraining();
     const steps=training.steps;const step=steps[this.state.tourIndex];
     if(!step)return null;
-    return html`<aside className="training-rail" aria-label=${`Recorrido interactivo para ${training.label}`}>
+    const marker=this.state.tourMarker;
+    return html`${marker?html`<svg className="training-connector" aria-hidden="true" width="100%" height="100%"><defs><marker id="training-arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M 0 1 L 9 5.5 L 0 10" fill="none" stroke="#e26f45" strokeWidth="2.5"/></marker></defs><path d=${marker.path} fill="none" stroke="#e26f45" strokeWidth="3" strokeDasharray="7 6" markerEnd="url(#training-arrow)"/></svg><div className="training-beacon" aria-hidden="true" style=${{left:marker.left,top:marker.top}}><span className="training-beacon-pulse"></span>${step.event==='change'?'SELECCIONE AQUÍ':step.event==='focusin'?'TOQUE AQUÍ':'PULSE AQUÍ'}</div>`:null}
+    <aside className="training-rail" aria-label=${`Recorrido interactivo para ${training.label}`}>
       <div className="training-rail-head"><div className="training-rail-brand"><span className="training-rail-mark"><${Icon} name="activity" size=${20}/></span><span><b>Linkare en acción</b><small>${training.label} · guía interactiva</small></span></div><button type="button" className="training-rail-close" aria-label="Cerrar recorrido" onClick=${this.stopTour}>×</button></div>
       <div className="training-progress" aria-label=${`Paso ${this.state.tourIndex+1} de ${steps.length}`}><div style=${{width:`${((this.state.tourIndex+1)/steps.length)*100}%`}}></div></div>
-      <div className="training-rail-content" aria-live="polite" aria-atomic="true"><span className="training-count">PASO ${String(this.state.tourIndex+1).padStart(2,'0')} / ${String(steps.length).padStart(2,'0')}</span><span className="training-step-icon"><${Icon} name=${step.icon} size=${24}/></span><h2>${step.title}</h2><p>${step.text}</p><div className="training-tip"><${Icon} name="check" size=${16}/><span>${step.tip}</span></div></div>
-      <div className="training-step-list" aria-label="Pasos del recorrido">${steps.map((item,index)=>html`<button key=${item.title} type="button" aria-label=${`Ir al paso ${index+1}: ${item.title}`} aria-current=${index===this.state.tourIndex?'step':null} className=${index===this.state.tourIndex?'active':''} onClick=${()=>this.goTourStep(index)}>${index+1}</button>`)}</div>
-      <div className="training-rail-actions"><${Button} tone="secondary" disabled=${this.state.tourIndex===0} onClick=${()=>this.goTourStep(this.state.tourIndex-1)}>Anterior</${Button}><${Button} icon=${this.state.tourIndex===steps.length-1?'check':'chevronRight'} onClick=${()=>this.goTourStep(this.state.tourIndex+1)}>${this.state.tourIndex===steps.length-1?'Finalizar':'Siguiente'}</${Button}></div>
+      <div className="training-rail-content" aria-live="polite" aria-atomic="true"><span className="training-count">PASO ${String(this.state.tourIndex+1).padStart(2,'0')} / ${String(steps.length).padStart(2,'0')}</span><span className="training-step-icon"><${Icon} name=${step.icon} size=${24}/></span><h2>${step.title}</h2><p>${step.text}</p><div className="training-action"><span className="training-action-number">${this.state.tourIndex+1}</span><strong>${step.action}</strong></div><div className=${`training-step-status ${this.state.tourStepComplete?'done':this.state.tourMissing?'missing':'pending'}`} role="status">${this.state.tourStepComplete?'✓ Acción completada. Puede continuar.':this.state.tourMissing?'No encontramos el control. Reinicie el recorrido.':'Siguiente se activa al realizar esta acción.'}</div><div className="training-tip"><${Icon} name="check" size=${16}/><span>${step.tip}</span></div></div>
+      <div className="training-step-list" aria-label="Progreso del recorrido">${steps.map((item,index)=>html`<span key=${item.title} aria-label=${`Paso ${index+1}: ${item.title}`} aria-current=${index===this.state.tourIndex?'step':null} className=${index===this.state.tourIndex?'active':index<this.state.tourIndex?'complete':''}>${index<this.state.tourIndex?'✓':index+1}</span>`)}</div>
+      <div className="training-rail-actions">${this.state.tourMissing?html`<${Button} tone="secondary" onClick=${this.startTour}>Reiniciar</${Button}>`:html`<span className="training-rail-hint">Realice el paso señalado<br/>para continuar</span>`}<${Button} disabled=${!this.state.tourStepComplete} icon=${this.state.tourIndex===steps.length-1?'check':'chevronRight'} onClick=${()=>this.goTourStep(this.state.tourIndex+1)}>${this.state.tourIndex===steps.length-1?'Finalizar':'Siguiente'}</${Button}></div>
       <button type="button" className="training-open-guide" onClick=${()=>{this.stopTour();this.openHelp();}}>Volver a videos y guía rápida</button>
     </aside>`;
   }

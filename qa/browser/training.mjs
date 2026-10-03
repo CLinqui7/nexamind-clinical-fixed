@@ -17,7 +17,10 @@ const login = async (page, role) => {
 };
 
 try {
-  assert.deepEqual(trainingFor('secretary', { patients: true, agenda: false }).steps.map(step => step.view), ['dashboard', 'patients', 'patients', 'dashboard']);
+  assert.ok(trainingFor('secretary', { patients: true, agenda: false }).steps.every(step => step.view !== 'agenda'));
+  assert.ok(trainingFor('secretary', { patients: true, agenda: true, hasCalendars: false, createEvent: false }).steps.every(step => !['calendar-filter-first','agenda-new-event','appointment-calendar-first'].includes(step.target)));
+  assert.equal(trainingFor('secretary', { patients:false, agenda:true, hasCalendars:true }).steps[0].target,'nav-agenda');
+  assert.deepEqual(trainingFor('doctor', { patients:false, agenda:false, settings:false }).steps.map(step=>step.target),['help-button','help-guide-tab','help-close']);
   // The isolated Secretary fixture starts with no calendar grants. Grant only
   // QA permissions so every training chapter can be exercised without writes
   // to Supabase or production users.
@@ -33,13 +36,15 @@ try {
   await fixture.close();
 
   const cases = [
-    { role: 'secretary', size: { width: 1440, height: 900 }, steps: 7 },
-    { role: 'owner', size: { width: 1440, height: 900 }, steps: 9 },
-    { role: 'secretary', size: { width: 800, height: 1280 }, steps: 7, touch: true },
-    { role: 'owner', size: { width: 1280, height: 800 }, steps: 9, touch: true },
-    { role: 'secretary', size: { width: 390, height: 844 }, steps: 7, touch: true },
+    { role: 'secretary', size: { width: 1440, height: 900 }, steps: 14 },
+    { role: 'owner', size: { width: 1440, height: 900 }, steps: 16 },
+    { role: 'secretary', size: { width: 800, height: 1280 }, steps: 14, touch: true },
+    { role: 'owner', size: { width: 1280, height: 800 }, steps: 16, touch: true },
+    { role: 'secretary', size: { width: 390, height: 844 }, steps: 14, touch: true },
   ];
   for (const { role, size, steps, touch = false } of cases) {
+    const chapter = trainingFor(role, { patients:true, agenda:true, settings:true, usersManage:true, hasCalendars:true, createEvent:true }).steps;
+    assert.equal(chapter.length, steps);
     const page = await browser.newPage({ viewport: size, hasTouch: touch, isMobile: touch, deviceScaleFactor: touch ? 1.5 : 1 });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -62,21 +67,17 @@ try {
     await dialog.getByRole('button', { name: 'Iniciar recorrido interactivo' }).click();
     const rail = page.locator('.training-rail');
     await rail.waitFor();
-    assert.equal(await rail.locator('.training-step-list button').count(), steps);
-    await rail.getByRole('button', { name: 'Siguiente' }).click();
-    assert.match(await rail.locator('.training-count').innerText(), /02/);
-    await rail.getByRole('button', { name: 'Anterior' }).click();
-    assert.match(await rail.locator('.training-count').innerText(), /01/);
-    await rail.getByRole('button', { name: 'Volver a videos y guía rápida' }).click();
-    assert.equal(await rail.count(), 0);
-    await page.getByRole('dialog').getByRole('button', { name: 'Iniciar recorrido interactivo' }).click();
-    await rail.waitFor();
+    assert.equal(await rail.locator('.training-step-list span').count(), steps);
+    assert.equal(await rail.locator('.training-step-list button').count(), 0, 'future steps must not be clickable');
     for (let index = 0; index < steps; index++) {
-      await rail.getByRole('button', { name: `Ir al paso ${index + 1}:`, exact: false })[touch ? 'tap' : 'click']();
+      const chapterTarget=chapter[index].target;
+      const next = rail.getByRole('button', { name: index === steps - 1 ? 'Finalizar' : 'Siguiente' });
+      assert.equal(await next.isDisabled(), true, `${role} step ${index + 1}: Next must wait for action`);
       const target = page.locator('[data-tour-active-target="true"]');
       await target.waitFor();
       assert.equal(await target.count(), 1);
-      await page.waitForTimeout(360);
+      await page.locator('.training-beacon').waitFor();
+      assert.ok(await page.locator('.training-connector > path[stroke]').getAttribute('d'));
       const separated = await page.evaluate(() => {
         const target = document.querySelector('[data-tour-active-target]')?.getBoundingClientRect();
         const panel = document.querySelector('.training-rail')?.getBoundingClientRect();
@@ -85,30 +86,24 @@ try {
       assert.ok(separated, `${role} ${size.width}: guide overlaps highlighted control at step ${index + 1}`);
       const space = await page.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth }));
       assert.ok(space.document <= space.width + 1, `${role} ${size.width}: horizontal overflow`);
-      if (index === 2 && role === 'secretary') {
-        const checkbox = page.locator('.calendar-filter input').first();
-        const before = await checkbox.isChecked();
-        await page.locator('.calendar-filter').first()[touch ? 'tap' : 'click']();
-        assert.notEqual(await checkbox.isChecked(), before);
+      if (process.env.LINKARE_TOUR_SHOTS === '1' && [0, 7, 11].includes(index)) {
+        await page.screenshot({ path: `${process.env.TEMP}/linkare-tour-${role}-${size.width}-${index + 1}.png` });
       }
-      if (index === 3 && role === 'secretary') {
-        await target[touch ? 'tap' : 'click']();
-        const eventDialog = page.getByRole('dialog');
-        await eventDialog.waitFor();
-        const modalSeparated = await page.evaluate(() => {
-          const modal = document.querySelector('.modal')?.getBoundingClientRect();
-          const panel = document.querySelector('.training-rail')?.getBoundingClientRect();
-          return modal && panel && (modal.right <= panel.left + 1 || modal.bottom <= panel.top + 1);
-        });
-        assert.ok(modalSeparated, `${role} ${size.width}: guide overlaps event dialog`);
-        assert.equal(await eventDialog.locator('input[name=appointmentCalendar]:checked').count(), 0);
-        const choice = eventDialog.locator('.calendar-choice').first();
-        await choice.click();
-        assert.equal(await eventDialog.locator('input[name=appointmentCalendar]:checked').count(), 1);
-        await page.keyboard.press('Escape');
-      }
+      const calendarWasChecked=chapterTarget==='calendar-filter-first'?await target.locator('input').isChecked():null;
+      await target.click();
+      await rail.locator('.training-step-status.done').waitFor();
+      if(chapterTarget==='nav-patients')await page.getByRole('heading',{name:'Pacientes',exact:true}).waitFor();
+      if(chapterTarget==='nav-agenda')await page.getByRole('heading',{name:'Calendarios',exact:true}).waitFor();
+      if(chapterTarget==='calendar-filter-first')assert.notEqual(await target.locator('input').isChecked(),calendarWasChecked);
+      if(chapterTarget==='agenda-new-event')assert.equal(await page.getByRole('dialog').locator('input[name=appointmentCalendar]:checked').count(),0);
+      if(chapterTarget==='appointment-calendar-first')assert.equal(await page.getByRole('dialog').locator('input[name=appointmentCalendar]:checked').count(),1);
+      if(['appointment-cancel','team-cancel','help-close'].includes(chapterTarget))assert.equal(await page.getByRole('dialog').count(),0);
+      if(chapterTarget==='team-add-user')await page.getByRole('dialog',{name:'Agregar usuario'}).waitFor();
+      if(chapterTarget==='team-permissions-custom')assert.equal(await page.getByRole('radio',{name:'Personalizados'}).isChecked(),true);
+      if(chapterTarget==='help-guide-tab')assert.ok(await page.getByRole('dialog').locator('.training-guide section').count()>=6);
+      assert.equal(await next.isEnabled(), true, `${role} step ${index + 1}: action unlocks Next`);
+      await next.click();
     }
-    await rail.getByRole('button', { name: 'Finalizar' }).click();
     assert.equal(await rail.count(), 0);
     assert.equal(await page.locator('[data-tour-active-target]').count(), 0);
     assert.deepEqual(errors, [], `${role} ${size.width} JavaScript errors`);
@@ -122,7 +117,7 @@ try {
   await reduced.keyboard.press('Escape');
   assert.equal(await reduced.locator('.training-rail').count(), 0);
   await reduced.close();
-  console.log('TRAINING_QA_OK: video, role guides, every tour step, live controls, tablet sizes, no JS errors');
+  console.log('TRAINING_QA_OK: video, gated guided actions, visual targets, role guides, desktop/tablet/mobile, no JS errors');
 } finally {
   await browser.close();
 }
