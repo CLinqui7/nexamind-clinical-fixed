@@ -5,13 +5,24 @@ const browser = await chromium.launch({ channel: process.env.LINKARE_BROWSER || 
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(15000);
 const errors = [];
+const rpcCalls = [];
 page.on('pageerror', error => errors.push(error.message));
+page.on('request', request => {
+  if (!request.url().endsWith('/__qa')) return;
+  try {
+    const body = request.postDataJSON();
+    if (body?.name) rpcCalls.push(body.name);
+  } catch (_) { /* Non-RPC test controls are irrelevant to this assertion. */ }
+});
 
 try {
   await page.goto('http://127.0.0.1:4173');
   await page.locator('input[type=email]').fill('owner@example.invalid');
   await page.locator('input[type=password]').fill('qa-password-123');
   await page.getByRole('button', { name: 'Ingresar a Linkare', exact: true }).click();
+  await page.getByRole('button', { name: 'Nuevo paciente', exact: true }).first().waitFor();
+  await page.waitForTimeout(1200);
+  assert.equal(rpcCalls.filter(name => name === 'linkare_save_changes_v3').length, 0, 'read-only bootstrap must not trigger a save RPC');
   await page.getByRole('button', { name: 'Nuevo paciente', exact: true }).first().click();
 
   const patientDialog = page.getByRole('dialog', { name: 'Nuevo paciente' });
@@ -54,8 +65,9 @@ try {
   assert.equal(errors.length, 0, errors.join('\n'));
 
   console.log(JSON.stringify({
-    passed: 6,
+    passed: 7,
     checks: [
+      'read-only bootstrap and directory hydration trigger zero save RPCs',
       'insurance plus reveals fields without blanking the modal',
       'insurance state remains controlled and accessible',
       'appointment patient search is a single combobox',

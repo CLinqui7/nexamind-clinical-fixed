@@ -589,7 +589,11 @@ class App extends React.Component {
   }
 
   componentDidUpdate(prevProps,prevState) {
-    if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady && !this.state.tourSandbox)this.schedulePersist();
+    // Remote reads (directory pages, agenda ranges, patient detail and profile
+    // assets) also replace `data`. Treating every replacement as a local edit
+    // caused each open tab to write server data back to PostgreSQL and made
+    // several tabs contend continuously. Mutating workflows schedule or await
+    // persistence explicitly instead.
     if(this.state.remoteReady&&this.state.view==='agenda'){
       const calendarsChanged=(prevState.selectedCalendarIds||[]).join(',')!==(this.state.selectedCalendarIds||[]).join(',');
       if(prevState.calendarDate!==this.state.calendarDate||prevState.calendarView!==this.state.calendarView||calendarsChanged)this.refreshAgendaRange();
@@ -1208,7 +1212,7 @@ class App extends React.Component {
       view: 'notebook',
       encounterAutosaveStatus: 'saved',
       mobileNav: false,
-    });
+    },this.schedulePersist);
   };
 
   startConsultationForSelectedPatient = () => {
@@ -1246,7 +1250,7 @@ class App extends React.Component {
       view: 'notebook',
       encounterAutosaveStatus: 'saving',
       mobileNav: false,
-    });
+    },this.schedulePersist);
   };
 
   updateEncounterField = (key,value) => {
@@ -1254,7 +1258,7 @@ class App extends React.Component {
     const signed=['completed','signed'].includes(current.status)||Boolean(current.signedAt);
     if(signed||current.__readOnly)return;
     const result=upsertEncounter(this.state.data,current.patientId,{...current,[key]:value});
-    this.setState({data:result.data,activeEncounter:{...result.encounter,patientId:current.patientId},encounterAutosaveStatus:'saving'});
+    this.setState({data:result.data,activeEncounter:{...result.encounter,patientId:current.patientId},encounterAutosaveStatus:'saving'},this.schedulePersist);
   };
 
   finishConsultation = async () => {
@@ -3343,7 +3347,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.setState({remoteSaveStatus:'saving',saveError:''});
     try{
       await saveProductionState(org,snapshot);
-      if(epoch===this.authEpoch && this.mounted)this.setState({remoteSaveStatus:snapshot===this.state.data?'saved':'dirty',encounterAutosaveStatus:'saved'});
+      if(epoch===this.authEpoch && this.mounted){
+        this.persistedData=snapshot;
+        this.setState({remoteSaveStatus:snapshot===this.state.data?'saved':'dirty',encounterAutosaveStatus:'saved'});
+      }
     }catch(error){if(epoch===this.authEpoch && this.mounted)this.setState({remoteSaveStatus:'error',encounterAutosaveStatus:'error',saveError:readableError(error)});throw error;}
   };
 

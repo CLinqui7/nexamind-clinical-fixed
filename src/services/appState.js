@@ -68,7 +68,19 @@ export async function bootstrapAndLoadState(_unused,requestedOrganizationName=nu
 }
 
 let activeOrganization=null;
-const writer=new StateWriter(changes=>rpc('linkare_save_changes_v3',{org:activeOrganization,changes}));
+async function serializeClinicalWrite(organizationId,write){
+  const locks=globalThis.navigator?.locks;
+  if(!locks?.request)return write();
+  // The Web Locks API coordinates all tabs on this browser profile/origin.
+  // Server revisions still resolve true conflicts; this only prevents tabs
+  // belonging to the same clinic from hammering PostgreSQL simultaneously.
+  return locks.request(`linkare-save:${organizationId}`,{mode:'exclusive'},write);
+}
+const sendChanges=changes=>{
+  const organizationId=activeOrganization;
+  return serializeClinicalWrite(organizationId,()=>rpc('linkare_save_changes_v3',{org:organizationId,changes}));
+};
+const writer=new StateWriter(sendChanges);
 export function setPersistenceBaseline(organizationId,data,revisions,clinical){activeOrganization=organizationId;writer.seed(data,revisions,clinical,{allowDeletes:false});}
 export function mergePersistenceBaseline(data,revisions,clinical){writer.merge(data,revisions,clinical);}
 export function resetPersistence(){activeOrganization=null;writer.reset();}
@@ -85,7 +97,7 @@ export function createProductionAppointment(organizationId,appointment,{includeC
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
   const changes=[{kind:'appointment',id:appointment.id,expectedRevision:0,deleted:false,payload:pick(appointment,APPOINTMENT_KEYS)}];
   if(includeClinical && String(appointment.notes||'').trim())changes.push({kind:'appointment_clinical',id:appointment.id,expectedRevision:0,deleted:false,payload:{notes:String(appointment.notes).trim()}});
-  return rpc('linkare_save_changes_v3',{org:organizationId,changes});
+  return serializeClinicalWrite(organizationId,()=>rpc('linkare_save_changes_v3',{org:organizationId,changes}));
 }
 export function captureReportedMedication(organizationId,patientId,draft){
   return rpc('linkare_capture_medication_v1',{org:organizationId,patient_id:patientId,input:draft});
