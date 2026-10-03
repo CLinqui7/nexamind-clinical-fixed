@@ -11,5 +11,6 @@ qa-results/
 playwright-report/
 test-results/
 qa/results/
+outputs/
 *.zip
 *.log
