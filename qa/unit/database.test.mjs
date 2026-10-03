@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -313,5 +313,24 @@ test('DB: projection backfill resumes by key, becomes ready and is idempotent',a
  const ready=(await db.query('select appointments_ready,patients_ready,listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0];assert.equal(ready.appointments_ready,true);assert.equal(ready.patients_ready,true);
  await db.query("select public.linkare_projection_backfill_v1($1,'patients',null,1000)",[org]);
  const after=(await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0];assert.equal(after.listing_version,ready.listing_version);
+ await actor('owner');
+});
+
+test('DB: directory cursor bumps are coalesced and deferred until commit',async()=>{
+ await db.exec('reset role');
+ const before=BigInt((await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0].listing_version);
+ await db.exec('begin');
+ await db.query('select linkare_private.bump_directory_version_v1($1)',[org]);
+ await db.query('select linkare_private.bump_directory_version_v1($1)',[org]);
+ const inside=BigInt((await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0].listing_version);
+ const queued=Number((await db.query('select count(*) n from linkare_private.patient_directory_version_queue_v2 where organization_id=$1',[org])).rows[0].n);
+ assert.equal(inside,before);assert.equal(queued,1);
+ await db.exec('commit');
+ const after=BigInt((await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0].listing_version);
+ const remaining=Number((await db.query('select count(*) n from linkare_private.patient_directory_version_queue_v2 where organization_id=$1',[org])).rows[0].n);
+ assert.equal(after,before+1n);assert.equal(remaining,0);
+ await db.exec('begin');await db.query('select linkare_private.bump_directory_version_v1($1)',[org]);await db.exec('rollback');
+ const rolledBack=BigInt((await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0].listing_version);
+ assert.equal(rolledBack,after);
  await actor('owner');
 });
