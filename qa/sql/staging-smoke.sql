@@ -22,14 +22,15 @@ select public.linkare_save_changes_v3(current_setting('linkare.qa_org')::uuid,js
  jsonb_build_object('kind','patient_admin','id','qa-patient','expectedRevision',0,'payload',jsonb_build_object('name','Patient QA')),
  jsonb_build_object('kind','patient_clinical','id','qa-patient','expectedRevision',0,'payload',jsonb_build_object('diagnosis','PRIVATE-ONLY','consultations',jsonb_build_array(jsonb_build_object('id','note1','status','signed','signedAt',now(),'signedBy',current_setting('linkare.qa_doctor'),'freeNotes','immutable'))))
 ));
-do $$declare loaded jsonb; denied boolean:=false;begin
+do $$declare loaded jsonb; conflict_result jsonb; denied boolean:=false;begin
  loaded:=public.linkare_load_state_v3(current_setting('linkare.qa_org')::uuid);
  if loaded::text not like '%PRIVATE-ONLY%' then raise exception 'Doctor cannot read clinical record';end if;
  begin perform public.linkare_load_state_v3(current_setting('linkare.qa_org_other')::uuid);exception when insufficient_privilege then denied:=true;end;
  if not denied then raise exception 'Cross-tenant read allowed';end if;
- denied:=false;
- begin perform public.linkare_save_changes_v3(current_setting('linkare.qa_org')::uuid,'[{"kind":"patient_admin","id":"qa-patient","expectedRevision":0,"payload":{"name":"Overwrite"}}]');exception when serialization_failure then denied:=true;end;
- if not denied then raise exception 'Stale revision allowed';end if;
+ conflict_result:=public.linkare_save_changes_v3(current_setting('linkare.qa_org')::uuid,'[{"kind":"patient_admin","id":"qa-patient","expectedRevision":0,"payload":{"name":"Overwrite"}}]');
+ if conflict_result#>>'{0,code}'<>'REVISION_CONFLICT' or (conflict_result#>>'{0,conflict}')::boolean is not true then raise exception 'Stale revision was not reported as a typed conflict';end if;
+ loaded:=public.linkare_load_state_v3(current_setting('linkare.qa_org')::uuid);
+ if loaded#>>'{payload,patients,0,name}'='Overwrite' then raise exception 'Stale revision overwrote current data';end if;
  denied:=false;
  begin perform public.linkare_save_changes_v3(current_setting('linkare.qa_org')::uuid,'[{"kind":"patient_clinical","id":"qa-patient","expectedRevision":1,"payload":{"consultations":[]}}]');exception when raise_exception then if sqlerrm like '%SIGNED_NOTE_IMMUTABLE%' then denied:=true;else raise;end if;end;
  if not denied then raise exception 'Signed note deletion allowed';end if;

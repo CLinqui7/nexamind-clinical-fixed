@@ -16,6 +16,11 @@ export class StateWriter {
         for(let i=0;i<changes.length;i+=200){
           const batch=changes.slice(i,i+200);const result=await this.send(batch);
           if(this.epoch!==epoch)return;
+          const conflicts=(result||[]).filter(item=>item?.conflict===true||item?.code==='REVISION_CONFLICT');
+          if(conflicts.length){
+            const error=new Error(`REVISION_CONFLICT:${conflicts.map(item=>`${item.kind}:${item.id}`).join(',')}`);
+            error.code='REVISION_CONFLICT';error.conflicts=conflicts;throw error;
+          }
           for(const change of batch){const k=recordKey(change.kind,change.id);if(change.deleted)this.baseline.delete(k);else this.baseline.set(k,{kind:change.kind,id:change.id,payload:change.payload});}
           for(const rev of result||[])this.revisions.set(recordKey(rev.kind,rev.id),rev.revision);
         }
