@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const { performance } = require('node:perf_hooks');
 const { Client } = require('pg');
 
 const args = process.argv.slice(2);
@@ -19,7 +20,7 @@ const manifestPath = value('--manifest');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{64}$/i;
 
-if (!['preflight', 'collisions', 'progress', 'backfill', 'verify'].includes(mode)) {
+if (!['preflight', 'collisions', 'progress', 'backfill', 'verify', 'performance'].includes(mode)) {
   throw new Error('MODE_INVALID');
 }
 if (!output) throw new Error('OUTPUT_REQUIRED');
@@ -220,7 +221,7 @@ async function progress(client) {
      where organization_id=$1 and batch_id=$2
   `, [organizationId, batchId])).rows[0] || null;
   const ledger = (await client.query(`
-    select count(*)::bigint rows,coalesce(jsonb_object_agg(disposition,total),'{}') dispositions
+    select coalesce(sum(total),0)::bigint rows,coalesce(jsonb_object_agg(disposition,total),'{}') dispositions
       from (select disposition,count(*)::bigint total
               from linkare_private.legacy_source_records_v2
              where organization_id=$1 and batch_id=$2 and not rolled_back group by disposition) grouped
@@ -232,6 +233,129 @@ async function progress(client) {
     ledger: { rows: Number(ledger.rows), dispositions: ledger.dispositions },
     generatedAt: new Date().toISOString(),
   };
+}
+
+function timing(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const percentile = fraction => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)] || 0;
+  return {
+    samples: sorted.length,
+    p50Ms: Number(percentile(0.5).toFixed(2)),
+    p95Ms: Number(percentile(0.95).toFixed(2)),
+    maxMs: Number((sorted.at(-1) || 0).toFixed(2)),
+  };
+}
+
+async function performanceCheck(client) {
+  if (!UUID.test(String(organizationId || '')) || !targetEmail) {
+    throw new Error('PERFORMANCE_ARGUMENTS_REQUIRED');
+  }
+  const member = (await client.query(`
+    select users.id::text user_id from auth.users users
+    join public.organization_members membership on membership.user_id=users.id
+     and membership.organization_id=$1 and membership.active
+    where lower(users.email)=lower($2)
+  `, [organizationId, targetEmail])).rows;
+  if (member.length !== 1) throw new Error('PERFORMANCE_MEMBER_AMBIGUOUS');
+  const sample = (await client.query(`
+    select patient_id,count(*)::integer history_count
+      from linkare_private.legacy_history_v1
+     where organization_id=$1 group by patient_id order by history_count desc,patient_id limit 1
+  `, [organizationId])).rows[0];
+  const listSql = `select patient_id,name,last_activity_on,last_activity_at,next_appointment_at
+      from linkare_private.patient_directory_v1
+     where organization_id=$1 and not archived
+     order by name_sort,patient_id limit 21`;
+  const explain = (await client.query(
+    `explain (analyze,buffers,format json) ${listSql}`,
+    [organizationId],
+  )).rows[0]['QUERY PLAN'][0];
+  const directRows = (await client.query(listSql, [organizationId])).rows;
+  await client.query('begin');
+  try {
+    await client.query("select set_config('request.jwt.claim.sub',$1,true)", [member[0].user_id]);
+    await client.query('set local role authenticated');
+    await client.query(
+      "select public.linkare_patient_directory_v1($1,'all',null,null,null,20)",
+      [organizationId],
+    );
+    const directoryDurations = [];
+    let directoryResult;
+    for (let index = 0; index < 10; index += 1) {
+      const started = performance.now();
+      directoryResult = (await client.query(
+        "select public.linkare_patient_directory_v1($1,'all',null,null,null,20) value",
+        [organizationId],
+      )).rows[0].value;
+      directoryDurations.push(performance.now() - started);
+    }
+    const historyDurations = [];
+    let historyResult;
+    for (let index = 0; index < 5; index += 1) {
+      const started = performance.now();
+      historyResult = (await client.query(
+        "select public.linkare_legacy_patient_history_v2($1,$2,'all',null,20) value",
+        [organizationId, sample.patient_id],
+      )).rows[0].value;
+      historyDurations.push(performance.now() - started);
+    }
+    const bootstrapStarted = performance.now();
+    const bootstrap = (await client.query(
+      'select public.linkare_bootstrap_state_v4($1) value', [organizationId],
+    )).rows[0].value;
+    const bootstrapMs = performance.now() - bootstrapStarted;
+    const dashboardStarted = performance.now();
+    const dashboard = (await client.query(
+      'select public.linkare_dashboard_summary_v1($1,null) value', [organizationId],
+    )).rows[0].value;
+    const dashboardMs = performance.now() - dashboardStarted;
+    return {
+      status: 'PRODUCTION_READ_PERFORMANCE',
+      projectRef: 'fvucylgrqgxjqabacnlt',
+      organizationId,
+      productionRows: {
+        patients: Number(dashboard.patients.total),
+        recentPatients: Number(dashboard.patients.recent),
+        patientsWithoutActivity: Number(dashboard.patients.withoutActivity),
+        archivedPatients: Number(dashboard.patients.archived),
+        sampledHistoryEntries: sample.history_count,
+      },
+      directory: {
+        ...timing(directoryDurations),
+        responseBytes: Buffer.byteLength(JSON.stringify(directoryResult)),
+        pageItems: directoryResult.items.length,
+        limit: directoryResult.limit,
+        hasMore: directoryResult.hasMore,
+      },
+      history: {
+        ...timing(historyDurations),
+        responseBytes: Buffer.byteLength(JSON.stringify(historyResult)),
+        pageItems: historyResult.items.length,
+        hasMore: historyResult.hasMore,
+      },
+      bootstrap: {
+        durationMs: Number(bootstrapMs.toFixed(2)),
+        responseBytes: Buffer.byteLength(JSON.stringify(bootstrap)),
+        projectionReady: bootstrap.projection?.ready === true,
+      },
+      dashboard: {
+        durationMs: Number(dashboardMs.toFixed(2)),
+        responseBytes: Buffer.byteLength(JSON.stringify(dashboard)),
+      },
+      directPage: {
+        rows: directRows.length,
+        responseBytes: Buffer.byteLength(JSON.stringify(directRows)),
+        planningMs: Number(explain['Planning Time'].toFixed(3)),
+        executionMs: Number(explain['Execution Time'].toFixed(3)),
+        rootNode: explain.Plan['Node Type'],
+        sharedHitBlocks: explain.Plan['Shared Hit Blocks'],
+        sharedReadBlocks: explain.Plan['Shared Read Blocks'],
+      },
+      generatedAt: new Date().toISOString(),
+    };
+  } finally {
+    await client.query('rollback');
+  }
 }
 
 async function collisionCheck(client) {
@@ -648,6 +772,7 @@ async function main() {
     else if (mode === 'collisions') report = await collisionCheck(client);
     else if (mode === 'progress') report = await progress(client);
     else if (mode === 'backfill') report = await runBackfill(client);
+    else if (mode === 'performance') report = await performanceCheck(client);
     else report = await finalVerification(client);
     writeReport(report);
     process.stdout.write(JSON.stringify({

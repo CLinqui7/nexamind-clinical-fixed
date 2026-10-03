@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)][ValidateSet('preflight', 'collisions', 'progress', 'backfill', 'verify')][string]$Mode,
+  [Parameter(Mandatory = $true)][ValidateSet('preflight', 'collisions', 'progress', 'backfill', 'verify', 'performance')][string]$Mode,
   [Parameter(Mandatory = $true)][string]$Output,
   [string]$Email,
   [string]$Organization,
