@@ -114,6 +114,7 @@ import {
   loadPatientDetail,
   loadAgendaRange,
   loadDashboardSummary,
+  loadProfileAssets,
   loadLegacyPatientHistory,
   saveProductionState,
   setPersistenceBaseline, mergePersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
@@ -364,7 +365,7 @@ class AppErrorBoundary extends React.Component {
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;
+    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
     const data=createEmptyData();
     this.state={
       data,authenticatedUserId:null,authView:'login',
@@ -383,7 +384,7 @@ class App extends React.Component {
       selectedCalendarIds:[],
       legacyHistoryByPatient:{},
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},
-      dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},
+      dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},profileAssetsLoaded:false,profileAssetsLoading:false,
       tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
     };
   }
@@ -407,7 +408,7 @@ class App extends React.Component {
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},projection:remote.projection,
-      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null}},()=>{
+      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
       });
@@ -417,6 +418,31 @@ class App extends React.Component {
     const org=this.state.remoteOrganizationId;if(!org||!this.can('patientsView'))return;
     const epoch=this.authEpoch;
     try{const dashboardSummary=await loadDashboardSummary(org);if(epoch===this.authEpoch)this.setState({dashboardSummary});}catch(_){/* Directory remains independently usable. */}
+  };
+
+  refreshProfileAssets = ({required=false}={}) => {
+    if(this.state.profileAssetsLoaded)return Promise.resolve(true);
+    if(this.profileAssetsPromise)return this.profileAssetsPromise;
+    const org=this.state.remoteOrganizationId;if(!org)return Promise.resolve(false);
+    const epoch=this.authEpoch;const request=++this.profileAssetsRequest;
+    this.setState({profileAssetsLoading:true});
+    this.profileAssetsPromise=(async()=>{
+      try{
+        const result=await loadProfileAssets(org);
+        if(epoch!==this.authEpoch||request!==this.profileAssetsRequest)return false;
+        const organization={...this.state.data.organization,...(result.organization||{})};
+        const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,this.can(k)]));
+        const revisions=result.revision===null||result.revision===undefined?[]:[{kind:'profile',id:'clinic',revision:result.revision}];
+        mergePersistenceBaseline({organization},revisions,permissions);
+        await new Promise(resolve=>this.setState(previous=>({data:{...previous.data,organization},profileAssetsLoaded:true,profileAssetsLoading:false}),resolve));
+        return true;
+      }catch(error){
+        if(epoch===this.authEpoch)this.setState({profileAssetsLoading:false});
+        if(required&&epoch===this.authEpoch)this.notify(`No fue posible cargar el logotipo y la fotografía: ${readableError(error)}`,'warning');
+        return false;
+      }finally{this.profileAssetsPromise=null;}
+    })();
+    return this.profileAssetsPromise;
   };
 
   refreshPatientDirectory = async ({scope,query,cursor,pageIndex=0,force=false}={}) => {
@@ -437,7 +463,7 @@ class App extends React.Component {
     this.setState(previous=>({
       data:{...previous.data,patients:mergePatients(previous.data.patients.filter(patient=>!patient.__summaryOnly&&patient.id===previous.selectedPatientId),summaries)},
       patientDirectory:{...result,scope,query,items:summaries,cursorStack:cursors,pageIndex,nextCursor:result.nextCursor||null,loading:false,error:''},
-    }));
+    }),()=>{if(!this.state.profileAssetsLoaded)this.refreshProfileAssets();});
   };
 
   selectDirectoryScope = scope => {clearTimeout(this.patientSearchTimer);this.refreshPatientDirectory({scope,query:this.state.patientDirectory.query,cursor:null,pageIndex:0,force:true});};
@@ -1137,8 +1163,9 @@ class App extends React.Component {
     }
   };
 
-  openClinicProfile = () => {
+  openClinicProfile = async () => {
     if (!this.can('settingsManage')) return this.permissionDenied();
+    if(!this.state.profileAssetsLoaded && !await this.refreshProfileAssets({required:true}))return;
     this.setState({ modal: { type: 'clinicProfile', draft: clinicProfileDefaults(this.state.data) }, modalError: '' });
   };
 
@@ -3118,7 +3145,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {

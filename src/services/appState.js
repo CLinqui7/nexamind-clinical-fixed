@@ -93,6 +93,9 @@ export function loadAgendaRange(organizationId,{start,end,calendarIds=null,curso
 export function loadDashboardSummary(organizationId,{asOf=null,signal}={}){
   return rpc('linkare_dashboard_summary_v1',{org:organizationId,p_as_of:asOf},{signal});
 }
+export function loadProfileAssets(organizationId,{signal}={}){
+  return rpc('linkare_profile_assets_v1',{org:organizationId},{signal});
+}
 export function loadLegacyPatientHistory(organizationId,patientId,cursor=null,limit=20,scope='all'){
   return rpc('linkare_legacy_patient_history_v2',{org:organizationId,p_patient_id:patientId,p_scope:scope,p_cursor:cursor,p_limit:Math.min(20,limit)});
 }
