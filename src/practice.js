@@ -142,23 +142,11 @@ export function secretaryFormDefaults() {
 }
 
 export function prescriptionFormDefaults(patient, organization = {}) {
-  const medication = patient?.medication?.name && patient.medication.name !== 'Sin medicamento' ? patient.medication : null;
   return {
     date: new Date().toISOString().slice(0, 10),
-    diagnosis: patient?.diagnosis || '',
     generalInstructions: '',
     observations: '',
-    items: [{
-      id: uid('rxitem'),
-      medication: medication?.name || '',
-      strength: medication?.dose || '',
-      directions: medication?.frequency || '',
-      quantity: '',
-      duration: '',
-      notes: '',
-      sourceMedicationId: medication?.id || null,
-      addToTreatment: false,
-    }],
+    items: [],
     doctorName: organization.clinician || patient?.clinician || '',
   };
 }
@@ -269,10 +257,17 @@ export function savePrescription(data, patientId, draft) {
     notes: clean(item.notes),
     frequencySlots: Array.isArray(item.frequencySlots) ? [...item.frequencySlots] : [],
     sourceMedicationId: item.sourceMedicationId || null,
-    addToTreatment: Boolean(item.addToTreatment),
   })).filter(item => item.medication || item.directions));
   if (!items.length) throw new Error('Agregue al menos un medicamento o indicación.');
   if (items.some(item => !item.medication || !item.directions)) throw new Error('Cada línea debe incluir medicamento e indicaciones.');
+  if (!previous) {
+    const activeMedicationIds = new Set((patient.medications || [])
+      .filter(item => item.status === 'active' && !item.archivedAt)
+      .map(item => item.id));
+    if (items.some(item => !item.sourceMedicationId || !activeMedicationIds.has(item.sourceMedicationId))) {
+      throw new Error('Seleccione los medicamentos desde el tratamiento activo del paciente.');
+    }
+  }
   const existing = data.patients.flatMap(item => item.prescriptions || []).length;
   const date = draft.date || new Date().toISOString().slice(0, 10);
   const prescription = {
@@ -280,7 +275,7 @@ export function savePrescription(data, patientId, draft) {
     id: previous?.id || uid('rx'),
     number: previous?.number || `RX-${date.slice(0, 4)}-${String(existing + 1).padStart(4, '0')}`,
     date: new Date(`${date}T12:00:00`).toISOString(),
-    diagnosis: clean(draft.diagnosis),
+    diagnosis: previous?.diagnosis || '',
     generalInstructions: clean(draft.generalInstructions),
     observations: clean(draft.observations),
     items,
@@ -290,21 +285,11 @@ export function savePrescription(data, patientId, draft) {
     updatedAt: timestamp,updatedBy:getActiveUser(data)?.id || null,
     status: previous?.status || 'active',
   };
-  const treatmentAdds = previous ? [] : items.filter(item => item.addToTreatment && !item.sourceMedicationId);
-  const actor = getActiveUser(data)?.id || null;
   const next = {
     ...data,
     patients: data.patients.map(item => item.id === patientId ? {
       ...item,
       prescriptions: previous ? item.prescriptions.map(p=>p.id===previous.id?prescription:p) : [prescription, ...(item.prescriptions || [])],
-      medications: treatmentAdds.length ? [...(item.medications || []), ...treatmentAdds.map(rxItem => ({
-        id: uid('medication'), name: rxItem.medication, class: 'Otro', dose: rxItem.strength || 'Dosis no registrada', doseValue: null, doseUnit: '',
-        frequency: rxItem.directions, frequencySlots: [], customFrequency: rxItem.directions, route: 'oral', indication: 'Agregado explícitamente desde receta',
-        startDate: timestamp, endDate: null, status: 'active', source: 'prescription', sourcePrescriptionId: prescription.id,
-        createdBy: actor, createdAt: timestamp, reviewedBy: actor, reviewedAt: timestamp, isPrimary: false, isPrn: false,
-        notes: rxItem.notes, clinicalNotes: rxItem.notes, internalNotes: '', reportedNotes: '', doseHistory: [],
-        events: [{ id: uid('medevent'), type: 'created', date: timestamp, actorId: actor, reason: 'Agregado explícitamente desde receta' }],
-      }))] : item.medications,
       timeline: [{ date: prescription.createdAt, type: 'document', title: `Receta ${prescription.number} ${previous?'corregida':'generada'}`, detail: `${items.length} indicación(es) registradas para impresión y firma.` }, ...(item.timeline || [])],
       updatedAt: nowIso(),
     } : item),
@@ -317,7 +302,6 @@ export function prescriptionItemFromMedication(medication) {
     id: uid('rxitem'), medication: medication?.name || '', strength: medication?.dose || '',
     directions: medication?.frequency || '', quantity: '', duration: '', frequencySlots: [...(medication?.frequencySlots || [])],
     notes: medication?.notes || medication?.clinicalNotes || '', sourceMedicationId: medication?.id || null,
-    addToTreatment: false,
   };
 }
 
@@ -464,6 +448,6 @@ export function buildPrescriptionPrintHtml(data, patient, prescription) {
       <td>${escapeHtml(item.quantity || '—')}</td>
     </tr>`).join('');
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(prescription.number)}</title><style>
-    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#05316E;margin:0;background:#fff}.sheet{min-height:267mm;border:1px solid #d7e1eb;padding:20mm 16mm 15mm;position:relative}.voided{border:5px solid #a32626;color:#a32626;font-size:30px;font-weight:800;letter-spacing:3px;margin:0 0 18px;padding:10px;text-align:center;transform:rotate(-2deg)}.void-reason{font-size:10px;letter-spacing:0;margin-top:5px}.header{display:flex;align-items:center;gap:18px;border-bottom:3px solid #05316E;padding-bottom:16px}.logo{width:84px;height:64px;object-fit:contain}.clinic{flex:1}.clinic h1{font-size:24px;margin:0 0 4px}.clinic p{margin:2px 0;color:#52677d;font-size:11px;line-height:1.35}.rx-meta{text-align:right}.rx-meta strong{display:block;font-size:17px}.rx-meta span{font-size:11px;color:#52677d}.patient{margin:20px 0 15px;padding:14px;background:#FCFDF6;border:1px solid #d8e3ed;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px 25px}.patient div{font-size:11px;color:#52677d}.patient b{display:block;color:#05316E;font-size:13px;margin-top:2px}.rx{font-size:35px;font-weight:700;margin:10px 0;color:#05316E}table{width:100%;border-collapse:collapse}th{background:#05316E;color:white;text-align:left;padding:10px;font-size:11px}td{border-bottom:1px solid #d8e3ed;padding:12px 10px;vertical-align:top;font-size:12px;line-height:1.45}td:first-child{width:35px}td:last-child{width:80px}.muted{color:#64788c;font-size:10px;margin-top:4px}.instructions{margin-top:18px;border-left:4px solid #8FACCB;padding:10px 14px;background:#f4f8fb}.instructions h3{font-size:12px;margin:0 0 6px}.instructions p{font-size:11px;white-space:pre-wrap;margin:0;line-height:1.5}.signature{margin-top:55px;display:flex;justify-content:flex-end}.signature-box{width:260px;text-align:center;border-top:1px solid #05316E;padding-top:8px}.signature-box strong,.signature-box span{display:block}.signature-box span{font-size:10px;color:#52677d;margin-top:3px}.footer{position:absolute;left:16mm;right:16mm;bottom:12mm;border-top:1px solid #d8e3ed;padding-top:8px;font-size:9px;color:#65798c;display:flex;justify-content:space-between;gap:15px}.footer span:last-child{text-align:right}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.sheet{border:0;padding:8mm 4mm 2mm;min-height:auto}.footer{left:4mm;right:4mm;bottom:0}}
-  </style></head><body><section class="sheet">${voided ? `<div class="voided">RECETA ANULADA<div class="void-reason">${escapeHtml(prescription.voidReason || 'Anulada en el expediente')}</div></div>` : ''}<header class="header">${logo ? `<img class="logo" src="${logo}" alt="Logo">` : ''}<div class="clinic"><h1>${escapeHtml(organization.name || 'Consultorio de Psiquiatría')}</h1><p><strong>${escapeHtml(organization.clinician || prescription.doctorName || '')}</strong> · ${escapeHtml(organization.specialty || 'Psiquiatría')}</p><p>${escapeHtml([organization.professionalLicense, organization.address].filter(Boolean).join(' · '))}</p>${phoneLine ? `<p>${escapeHtml(phoneLine)}</p>` : ''}${organization.email ? `<p>${escapeHtml(organization.email)}</p>` : ''}</div><div class="rx-meta"><strong>${escapeHtml(prescription.number)}</strong><span>${new Intl.DateTimeFormat('es-SV', { dateStyle: 'long' }).format(new Date(prescription.date))}</span></div></header><section class="patient"><div>Paciente<b>${escapeHtml(patient.name)}</b></div><div>Edad<b>${escapeHtml(patient.age)} años</b></div><div>Diagnóstico<b>${escapeHtml(prescription.diagnosis || patient.diagnosis || 'No consignado')}</b></div><div>Seguro médico<b>${patient.insurance?.hasInsurance ? escapeHtml(patient.insurance.provider || 'Sí') : 'No registrado'}</b></div></section><div class="rx">℞</div><table><thead><tr><th>#</th><th>Medicamento</th><th>Indicación</th><th>Cantidad</th></tr></thead><tbody>${items}</tbody></table>${prescription.generalInstructions ? `<section class="instructions"><h3>Indicaciones generales</h3><p>${escapeHtml(prescription.generalInstructions)}</p></section>` : ''}<div class="signature"><div class="signature-box"><strong>${escapeHtml(prescription.doctorName || organization.clinician || '')}</strong><span>${escapeHtml(organization.specialty || '')}</span><span>Firma y sello</span></div></div><footer class="footer"><span>${escapeHtml(organization.prescriptionFooter || 'Documento para revisión y firma del profesional tratante.')}</span><span>${escapeHtml(organization.name || '')}</span></footer></section><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script></body></html>`;
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#05316E;margin:0;background:#fff}.sheet{min-height:267mm;border:1px solid #d7e1eb;padding:20mm 16mm 15mm;position:relative}.voided{border:5px solid #a32626;color:#a32626;font-size:30px;font-weight:800;letter-spacing:3px;margin:0 0 18px;padding:10px;text-align:center;transform:rotate(-2deg)}.void-reason{font-size:10px;letter-spacing:0;margin-top:5px}.header{display:flex;align-items:center;gap:18px;border-bottom:3px solid #05316E;padding-bottom:16px}.logo{width:84px;height:64px;object-fit:contain}.clinic{flex:1}.clinic h1{font-size:24px;margin:0 0 4px}.clinic p{margin:2px 0;color:#52677d;font-size:11px;line-height:1.35}.rx-meta{text-align:right}.rx-meta strong{display:block;font-size:17px}.rx-meta span{font-size:11px;color:#52677d}.patient{margin:20px 0 15px;padding:14px;background:#FCFDF6;border:1px solid #d8e3ed;border-radius:10px}.patient div{font-size:11px;color:#52677d}.patient b{display:block;color:#05316E;font-size:13px;margin-top:2px}.rx{font-size:35px;font-weight:700;margin:10px 0;color:#05316E}table{width:100%;border-collapse:collapse}th{background:#05316E;color:white;text-align:left;padding:10px;font-size:11px}td{border-bottom:1px solid #d8e3ed;padding:12px 10px;vertical-align:top;font-size:12px;line-height:1.45}td:first-child{width:35px}td:last-child{width:80px}.muted{color:#64788c;font-size:10px;margin-top:4px}.instructions{margin-top:18px;border-left:4px solid #8FACCB;padding:10px 14px;background:#f4f8fb}.instructions h3{font-size:12px;margin:0 0 6px}.instructions p{font-size:11px;white-space:pre-wrap;margin:0;line-height:1.5}.signature{margin-top:55px;display:flex;justify-content:flex-end}.signature-box{width:260px;text-align:center;border-top:1px solid #05316E;padding-top:8px}.signature-box strong,.signature-box span{display:block}.signature-box span{font-size:10px;color:#52677d;margin-top:3px}.footer{position:absolute;left:16mm;right:16mm;bottom:12mm;border-top:1px solid #d8e3ed;padding-top:8px;font-size:9px;color:#65798c;display:flex;justify-content:space-between;gap:15px}.footer span:last-child{text-align:right}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.sheet{border:0;padding:8mm 4mm 2mm;min-height:auto}.footer{left:4mm;right:4mm;bottom:0}}
+  </style></head><body><section class="sheet">${voided ? `<div class="voided">RECETA ANULADA<div class="void-reason">${escapeHtml(prescription.voidReason || 'Anulada en el expediente')}</div></div>` : ''}<header class="header">${logo ? `<img class="logo" src="${logo}" alt="Logo">` : ''}<div class="clinic"><h1>${escapeHtml(organization.name || 'Consultorio de Psiquiatría')}</h1><p><strong>${escapeHtml(organization.clinician || prescription.doctorName || '')}</strong> · ${escapeHtml(organization.specialty || 'Psiquiatría')}</p><p>${escapeHtml([organization.professionalLicense, organization.address].filter(Boolean).join(' · '))}</p>${phoneLine ? `<p>${escapeHtml(phoneLine)}</p>` : ''}${organization.email ? `<p>${escapeHtml(organization.email)}</p>` : ''}</div><div class="rx-meta"><strong>${escapeHtml(prescription.number)}</strong><span>${new Intl.DateTimeFormat('es-SV', { dateStyle: 'long' }).format(new Date(prescription.date))}</span></div></header><section class="patient"><div>Paciente<b>${escapeHtml(patient.name)}</b></div></section><div class="rx">℞</div><table><thead><tr><th>#</th><th>Medicamento</th><th>Indicación</th><th>Cantidad</th></tr></thead><tbody>${items}</tbody></table>${prescription.generalInstructions ? `<section class="instructions"><h3>Indicaciones generales</h3><p>${escapeHtml(prescription.generalInstructions)}</p></section>` : ''}<div class="signature"><div class="signature-box"><strong>${escapeHtml(prescription.doctorName || organization.clinician || '')}</strong><span>${escapeHtml(organization.specialty || '')}</span><span>Firma y sello</span></div></div><footer class="footer"><span>${escapeHtml(organization.prescriptionFooter || 'Documento para revisión y firma del profesional tratante.')}</span><span>${escapeHtml(organization.name || '')}</span></footer></section><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script></body></html>`;
 }

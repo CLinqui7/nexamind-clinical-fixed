@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeData} from '../../src/data.js';
-import {appointmentFormDefaults,saveAppointment} from '../../src/clinical.js';
+import {appointmentFormDefaults,appointmentTimeParts,saveAppointment,updateAppointmentTimePart} from '../../src/clinical.js';
 import {appointmentReadyForConsultation} from '../../src/v2features.js';
 import {patientsNeedingAdministrativeReview} from '../../src/practice.js';
 
@@ -30,4 +30,10 @@ test('Secretary patient review queue uses only explicit administrative appointme
   {adminReviewStatus:'pending',status:'confirmed'},
  ]);
  assert.deepEqual([...review],['first']);
+});
+test('appointment time has an explicit and reversible 12-hour representation',()=>{
+ assert.deepEqual(appointmentTimeParts('2026-11-01T00:05'),{date:'2026-11-01',hour:12,minute:'05',period:'AM'});
+ assert.deepEqual(appointmentTimeParts('2026-11-01T12:30'),{date:'2026-11-01',hour:12,minute:'30',period:'PM'});
+ assert.equal(updateAppointmentTimePart('2026-11-01T09:15','period','PM'),'2026-11-01T21:15');
+ assert.equal(updateAppointmentTimePart('2026-11-01T12:30','period','AM'),'2026-11-01T00:30');
 });

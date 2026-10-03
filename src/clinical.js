@@ -21,6 +21,21 @@ function cleanText(value) {
   return String(value ?? '').trim();
 }
 
+export function normalizeDoseValue(value) {
+  const normalized = cleanText(value)
+    .replace(/[\u2012-\u2015]/g, '-')
+    .replace(/,/g, '.')
+    .replace(/\s+/g, '');
+  if (!normalized || !/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)*$/.test(normalized)) {
+    throw new Error('Escribe una dosis válida. Puede usar números y guiones, por ejemplo 1-2 o 1-0-1.');
+  }
+  const segments = normalized.split('-').map(Number);
+  if (segments.some(segment => !Number.isFinite(segment) || segment < 0) || !segments.some(segment => segment > 0)) {
+    throw new Error('Escribe una dosis mayor que cero.');
+  }
+  return normalized.includes('-') ? normalized : segments[0];
+}
+
 function clinicalDateIso(value) {
   if (!value) return nowIso();
   const today = new Date();
@@ -200,11 +215,31 @@ export function appointmentFormDefaults(data, date = new Date(), appointment = n
   return {
     id: null,
     calendarId: calendarId || '', eventType: 'appointment', title: '',
-    patientId: patientId || data.patients[0]?.id || '',
+    patientId: patientId || '',
     start: local,
     duration: 45,
     type: 'Seguimiento', modality: 'Presencial', status: 'pending', adminReviewStatus: 'none', notes: '',
   };
+}
+
+export function appointmentTimeParts(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(String(value || ''));
+  const hour24 = Math.min(23, Math.max(0, Number(match?.[2] || 0)));
+  return {
+    date: match?.[1] || '',
+    hour: hour24 % 12 || 12,
+    minute: String(Math.min(59, Math.max(0, Number(match?.[3] || 0)))).padStart(2, '0'),
+    period: hour24 >= 12 ? 'PM' : 'AM',
+  };
+}
+
+export function updateAppointmentTimePart(value, key, nextValue) {
+  const current = appointmentTimeParts(value);
+  const next = { ...current, [key]: nextValue };
+  const hour12 = Math.min(12, Math.max(1, Number(next.hour) || 12));
+  const minute = Math.min(59, Math.max(0, Number(next.minute) || 0));
+  const hour24 = (hour12 % 12) + (next.period === 'PM' ? 12 : 0);
+  return `${next.date}T${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
 export function createPatient(data, draft) {
@@ -425,9 +460,8 @@ export function updatePatientProfile(data, patientId, draft) {
 
 export function addMedication(data, patientId, draft) {
   const name = cleanText(draft.name);
-  const doseValue = numberOrNull(draft.doseValue);
+  const doseValue = normalizeDoseValue(draft.doseValue);
   if (!name) throw new Error('Escribe el nombre del medicamento.');
-  if (doseValue === null || doseValue <= 0) throw new Error('Escribe una dosis mayor que cero.');
   const date = clinicalDateIso(draft.startDate);
   const doseUnit = cleanText(draft.doseUnit) || 'mg';
   const medicationId = uid('medication');
@@ -492,9 +526,8 @@ export function updateMedication(data, patientId, draft) {
   const previous = patient?.medications?.find(item => item.id === draft.id);
   if (!previous || previous.archivedAt) throw new Error('El medicamento ya no está disponible para editarse.');
   const name = cleanText(draft.name);
-  const doseValue = numberOrNull(draft.doseValue);
+  const doseValue = normalizeDoseValue(draft.doseValue);
   if (!name) throw new Error('Escribe el nombre del medicamento.');
-  if (doseValue === null || doseValue <= 0) throw new Error('Escribe una dosis mayor que cero.');
   const timestamp = nowIso();
   const actor = data.settings?.activeUserId || null;
   const doseUnit = cleanText(draft.doseUnit) || 'mg';
@@ -542,8 +575,7 @@ export function updateMedication(data, patientId, draft) {
 }
 
 export function changeMedicationDose(data, patientId, draft) {
-  const newDoseValue = numberOrNull(draft.newDoseValue);
-  if (newDoseValue === null || newDoseValue <= 0) throw new Error('Escribe una dosis nueva mayor que cero.');
+  const newDoseValue = normalizeDoseValue(draft.newDoseValue);
   const patient = data.patients.find(item => item.id === patientId);
   const existing = patient?.medications?.find(item => item.id === draft.medicationId);
   if (!existing) throw new Error('Selecciona un medicamento activo.');
@@ -551,7 +583,7 @@ export function changeMedicationDose(data, patientId, draft) {
   const unit = cleanText(draft.doseUnit) || existing.doseUnit || 'mg';
   const effectiveDate = clinicalDateIso(draft.effectiveDate);
   const reason = cleanText(draft.reason) || 'Ajuste clínico registrado';
-  const direction = previousValue === null ? 'Cambio' : newDoseValue > previousValue ? 'Aumento' : newDoseValue < previousValue ? 'Reducción' : 'Confirmación';
+  const direction = typeof newDoseValue !== 'number' || previousValue === null ? 'Cambio' : newDoseValue > previousValue ? 'Aumento' : newDoseValue < previousValue ? 'Reducción' : 'Confirmación';
   const newDose = `${newDoseValue} ${unit}`;
   const actor = data.settings?.activeUserId || null;
   const frequency = draft.frequency === 'otra' ? cleanText(draft.customFrequency) : draft.frequency || existing.frequency;

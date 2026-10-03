@@ -6,6 +6,7 @@ import {
   archiveClinicalRecord,
   labFormDefaults,
   medicationFormDefaults,
+  normalizeDoseValue,
   recordAdverseEvent,
   recordAssessment,
   recordLab,
@@ -30,6 +31,14 @@ const baseData = () => normalizeData({
       { id: 'draft', title: 'Borrador', status: 'draft', startedAt: '2026-09-02T12:00:00Z', freeNotes: 'Borrador' },
     ],
   }],
+});
+
+test('medication doses accept clinically useful hyphenated schedules', () => {
+  assert.equal(normalizeDoseValue('1-0-1'), '1-0-1');
+  assert.equal(normalizeDoseValue(' 1 - 2 '), '1-2');
+  assert.equal(normalizeDoseValue('0,5'), 0.5);
+  assert.throws(() => normalizeDoseValue('uno-dos'), /dosis válida/);
+  assert.throws(() => normalizeDoseValue('0-0'), /mayor que cero/);
 });
 
 test('clinical records can be corrected while retaining their prior version', () => {
