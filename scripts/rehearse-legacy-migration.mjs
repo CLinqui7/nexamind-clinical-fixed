@@ -1,0 +1,36 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {PGlite} from '@electric-sql/pglite';
+import {pgcrypto} from '@electric-sql/pglite/contrib/pgcrypto';
+import {readZipEntries} from './lib/zip-reader.mjs';
+import {readFoxProArchive} from './lib/foxpro-reader.mjs';
+import {buildLegacyPlan} from './lib/legacy-plan.mjs';
+
+const args=process.argv.slice(2),value=flag=>{const index=args.indexOf(flag);return index>=0?args[index+1]:null;};
+const sourceZip=path.resolve(value('--source-zip')||'');const output=path.resolve(value('--output')||'legacy-rehearsal-public-report.json');
+if(!fs.existsSync(sourceZip))throw new Error('SOURCE_ZIP_NOT_FOUND');
+const backupSha=crypto.createHash('sha256').update(fs.readFileSync(sourceZip)).digest('hex'),expected=value('--backup-sha');
+if(expected&&backupSha!==expected.toLowerCase())throw new Error('BACKUP_SHA256_MISMATCH');
+const migrations=['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql'];
+const db=new PGlite({extensions:{pgcrypto}});const owner='60000000-0000-4000-8000-000000000001',batch='60000000-0000-5000-8000-000000000002';
+try{
+ await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
+ create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
+ create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;`);
+ for(const migration of migrations)await db.exec(fs.readFileSync(migration,'utf8'));
+ await db.query("insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values($1,'rehearsal-owner@example.invalid',now(),'{\"clinic_name\":\"Rehearsal isolated\",\"full_name\":\"Rehearsal owner\"}')",[owner]);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);await db.exec('set role authenticated');const organizationId=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;await db.exec('reset role;set role service_role');
+ const {records,publicReport}=buildLegacyPlan({tables:readFoxProArchive(readZipEntries(sourceZip)),organizationId,sourceSystem:'foxpro-linkare',backupSha});
+ const commit=crypto.createHash('sha1').update(publicReport.planSha).digest('hex');
+ await db.query('select public.linkare_legacy_start_v2($1,$2,$3,$4,$5,$6,$7::jsonb)',[organizationId,batch,'foxpro-linkare',backupSha,publicReport.planSha,commit,JSON.stringify(publicReport)]);
+ for(let offset=0;offset<records.length;offset+=100){await db.query('select public.linkare_legacy_apply_v2($1,$2,$3,$4::jsonb)',[organizationId,batch,backupSha,JSON.stringify(records.slice(offset,offset+100))]);if(offset>0&&offset%10000===0)console.log(`REHEARSAL_PROGRESS rows=${offset}/${records.length}`);}
+ const verification=(await db.query('select public.linkare_legacy_verify_v2($1,$2,$3) data',[organizationId,batch,backupSha])).rows[0].data;if(verification.ok!==true)throw new Error('REHEARSAL_RECONCILIATION_FAILED');
+ await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);await db.exec('set role authenticated');const loaded=(await db.query('select public.linkare_load_state_v3($1) data',[organizationId])).rows[0].data;const sample=records.find(record=>record.destinationKind==='patient_admin');const visible=loaded.payload.patients.find(patient=>patient.id===sample.destinationId);const history=(await db.query('select public.linkare_legacy_patient_history_v1($1,$2,0,100) data',[organizationId,sample.destinationId])).rows[0].data;
+ await db.exec('reset role');const appointmentCount=(await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='appointment'",[organizationId])).rows[0].n;const clinicalRecordCount=(await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_clinical'",[organizationId])).rows[0].n;const notificationCount=(await db.query('select count(*)::int n from public.linkare_notification_deliveries where organization_id=$1',[organizationId])).rows[0].n;
+ const result={...publicReport,organizationId:'isolated-rehearsal',databaseRehearsal:{ok:true,verification,dashboardContract:{patientCountLoaded:loaded.payload.patients.length,allImportedPatientsVisible:loaded.payload.patients.length===publicReport.destination.patients,sampledHistoricalMarkerVisible:visible?.dataQuality==='historical',sampledHistoryVisible:(history.items||[]).length>0,appointmentsCreated:appointmentCount,patientClinicalRecordsCreated:clinicalRecordCount,notificationsCreated:notificationCount},engine:'PGlite PostgreSQL (in-memory)',containsPatientData:false},generatedAt:new Date().toISOString()};
+ fs.writeFileSync(output,`${JSON.stringify(result,null,2)}\n`,{encoding:'utf8',flag:'w',mode:0o600});console.log(`LEGACY_REHEARSAL_OK rows=${verification.sourceRows} patients=${verification.patients} history=${verification.historyEntries} report=${output}`);
+}catch(error){
+ const code=String(error?.code||error?.message||'UNKNOWN').replace(/[^A-Za-z0-9_.:-]/g,'_').slice(0,120);console.error(`LEGACY_REHEARSAL_FAILED code=${code}`);process.exitCode=1;
+}finally{await db.close();}

@@ -1,18 +1,77 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {readZipEntries} from './lib/zip-reader.mjs';
+import {readFoxProArchive} from './lib/foxpro-reader.mjs';
+import {buildLegacyPlan,isStrictUuid} from './lib/legacy-plan.mjs';
 
-const args=process.argv.slice(2),value=flag=>{const i=args.indexOf(flag);return i>=0?args[i+1]:null;};
-const input=value('--input'),organizationId=value('--organization'),sourceSystem=value('--source')||'legacy',apply=args.includes('--apply'),output=value('--output')||path.resolve('legacy-migration-report.json');
-if(!input)throw new Error('Use --input archivo.json. El modo predeterminado es dry-run.');
-if(!organizationId||!/^[a-f\d-]{36}$/i.test(organizationId))throw new Error('Use --organization con el UUID de la organización de destino.');
-const raw=JSON.parse(fs.readFileSync(path.resolve(input),'utf8'));const allowed=['patients','appointments','medications','prescriptions','diagnoses','notes','documents','insurance'];
-const source=Array.isArray(raw)?raw:allowed.flatMap(entity=>(raw[entity]||[]).map(row=>({...row,entity_type:row.entity_type||entity})));
-const report={mode:apply?'apply':'dry-run',batchId:crypto.randomUUID(),sourceSystem,organizationId,totalSource:source.length,valid:0,invalid:0,imported:0,skipped:0,duplicates:0,errors:[],entities:{},generatedAt:new Date().toISOString()};const seen=new Set(),staging=[],mappings=[];
-const cleanString=(v,max=500)=>String(v??'').trim().replace(/\s+/g,' ').slice(0,max);const mappedId=(type,id)=>{const hex=crypto.createHash('sha256').update(`${organizationId}:${sourceSystem}:${type}:${id}`).digest('hex');return `${hex.slice(0,8)}-${hex.slice(8,12)}-5${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;};
-for(const [index,row] of source.entries()){
- const entity=cleanString(row.entity_type||row.entity||'',40),legacyId=cleanString(row.legacy_id??row.id,180),errors=[];if(!allowed.includes(entity))errors.push('entity_type no reconocido');if(!legacyId)errors.push('legacy_id requerido');if(entity==='patients'&&!cleanString(row.name??row.full_name,180))errors.push('nombre de paciente requerido');const key=`${entity}:${legacyId}`;let status='valid';if(seen.has(key)){status='duplicate';report.duplicates++;}else if(errors.length){status='invalid';report.invalid++;}else{seen.add(key);report.valid++;}
- const clean={...row,legacy_id:legacyId,entity_type:entity};delete clean.id;const item={batch_id:report.batchId,organization_id:organizationId,source_system:sourceSystem,entity_type:entity||'unknown',legacy_id:legacyId||`row-${index+1}`,raw_payload:row,clean_payload:status==='valid'?clean:null,validation_status:status,validation_errors:errors};staging.push(item);if(status==='valid')mappings.push({organization_id:organizationId,source_system:sourceSystem,entity_type:entity,legacy_id:legacyId,new_id:mappedId(entity,legacyId),metadata:{batchId:report.batchId}});report.entities[entity||'unknown']=(report.entities[entity||'unknown']||0)+1;
+const argv=process.argv.slice(2);
+const value=flag=>{const index=argv.indexOf(flag);return index>=0?argv[index+1]:null;};
+const sourceZip=value('--source-zip'),organizationId=value('--organization'),sourceSystem=value('--source')||'foxpro-linkare';
+const mode=value('--mode')||'dry-run',output=path.resolve(value('--output')||'legacy-migration-public-report.json');
+const approvalFile=value('--approval-file'),batchId=value('--batch');
+if(!['dry-run','apply','verify','rollback'].includes(mode))throw new Error('MODE_INVALID');
+if(!organizationId||!isStrictUuid(organizationId))throw new Error('ORGANIZATION_UUID_INVALID');
+if(!sourceZip&&['dry-run','apply'].includes(mode))throw new Error('Use --source-zip con el respaldo ZIP de solo lectura.');
+
+const fileSha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const writeReport=report=>fs.writeFileSync(output,`${JSON.stringify(report,null,2)}\n`,{encoding:'utf8',flag:'w',mode:0o600});
+const safeError=error=>String(error?.message||error).replace(/https?:\/\/\S+/g,'[url]').slice(0,400);
+async function rpc(name,args){
+  const base=String(process.env.SUPABASE_URL||'').replace(/\/$/,'');
+  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!base||!key)throw new Error('SUPABASE_SERVICE_CREDENTIALS_REQUIRED');
+  const response=await fetch(`${base}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(args)});
+  if(!response.ok)throw new Error(`RPC_FAILED:${name}:${response.status}`);
+  return response.status===204?null:response.json();
 }
-if(apply){const base=(process.env.SUPABASE_URL||'').replace(/\/$/,''),key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!base||!key)throw new Error('Para --apply configure SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY. No use una clave pública.');const headers={apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',Prefer:'resolution=ignore-duplicates,return=minimal'};for(const [table,rows] of [['legacy_staging_v1',staging],['legacy_identifiers',mappings]]){const schema=table==='legacy_staging_v1'?'linkare_private':'public';const response=await fetch(`${base}/rest/v1/${table}`,{method:'POST',headers:{...headers,'Content-Profile':schema},body:JSON.stringify(rows)});if(!response.ok){report.errors.push(`${table}: ${response.status} ${await response.text()}`);fs.writeFileSync(output,JSON.stringify(report,null,2));throw new Error(`Falló staging en ${table}; revise ${output}.`);}}report.imported=mappings.length;report.skipped=report.invalid+report.duplicates;}else report.skipped=source.length;
-fs.writeFileSync(output,JSON.stringify({...report,stagingPreview:staging.slice(0,20),mappingPreview:mappings.slice(0,20)},null,2));console.log(`LEGACY_${apply?'APPLY':'DRY_RUN'}_OK total=${report.totalSource} valid=${report.valid} invalid=${report.invalid} duplicates=${report.duplicates} imported=${report.imported} report=${output}`);
+function approval(expected){
+  if(!approvalFile)throw new Error('APPROVAL_FILE_REQUIRED');
+  const parsed=JSON.parse(fs.readFileSync(path.resolve(approvalFile),'utf8'));
+  const commit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  if(parsed.approvedForProduction!==true||parsed.organizationId!==organizationId||parsed.backupSha!==expected.backupSha||parsed.planSha!==expected.planSha||parsed.commitSha!==commit)throw new Error('APPROVAL_GATE_MISMATCH');
+  return {commit,approvedAt:parsed.approvedAt||null,approvedBy:parsed.approvedBy||null};
+}
+
+if(mode==='verify'||mode==='rollback'){
+  if(!batchId||!isStrictUuid(batchId))throw new Error('BATCH_UUID_REQUIRED');
+  const requestedBackup=value('--backup-sha'),requestedPlan=value('--plan-sha');
+  if(!/^[a-f0-9]{64}$/i.test(String(requestedBackup||''))||!/^[a-f0-9]{64}$/i.test(String(requestedPlan||'')))throw new Error('BACKUP_AND_PLAN_SHA_REQUIRED');
+  const approvalData=approval({backupSha:requestedBackup,planSha:requestedPlan});
+  const result=await rpc(mode==='verify'?'linkare_legacy_verify_v2':'linkare_legacy_rollback_v2',{org:organizationId,p_batch_id:batchId,p_backup_sha:requestedBackup});
+  if(result?.ok!==true)throw new Error(`${mode.toUpperCase()}_RECONCILIATION_FAILED`);
+  writeReport({schemaVersion:2,mode,organizationId,batchId,approval:{commit:approvalData.commit,approvedAt:approvalData.approvedAt},result,generatedAt:new Date().toISOString()});
+  console.log(`LEGACY_${mode.toUpperCase()}_OK batch=${batchId} report=${output}`);
+  process.exit(0);
+}
+
+const absoluteZip=path.resolve(sourceZip),backupSha=fileSha(absoluteZip);
+const expectedSha=value('--backup-sha');
+if(expectedSha&&expectedSha.toLowerCase()!==backupSha)throw new Error('BACKUP_SHA256_MISMATCH');
+const tables=readFoxProArchive(readZipEntries(absoluteZip));
+const {records,publicReport}=buildLegacyPlan({tables,organizationId,sourceSystem,backupSha});
+writeReport(publicReport);
+if(mode==='dry-run'){
+  console.log(`LEGACY_DRY_RUN_OK rows=${publicReport.sourceRows} patients=${publicReport.destination.patients} quarantined=${Object.values(publicReport.tables).reduce((sum,item)=>sum+item.quarantined,0)} report=${output}`);
+  process.exit(0);
+}
+
+const approvalData=approval(publicReport),runBatch=batchId||crypto.randomUUID();
+if(!isStrictUuid(runBatch))throw new Error('BATCH_UUID_INVALID');
+const finalReport={...publicReport,mode:'apply',batchId:runBatch,approval:{commit:approvalData.commit,approvedAt:approvalData.approvedAt},appliedBatches:0,server:null};
+try{
+  await rpc('linkare_legacy_start_v2',{org:organizationId,p_batch_id:runBatch,p_source_system:sourceSystem,p_backup_sha:backupSha,p_plan_sha:publicReport.planSha,p_approved_commit:approvalData.commit,p_source_summary:publicReport});
+  const size=100;
+  for(let offset=0;offset<records.length;offset+=size){
+    await rpc('linkare_legacy_apply_v2',{org:organizationId,p_batch_id:runBatch,p_backup_sha:backupSha,p_records:records.slice(offset,offset+size)});
+    finalReport.appliedBatches+=1;
+    if((finalReport.appliedBatches%25)===0)console.log(`LEGACY_APPLY_PROGRESS batches=${finalReport.appliedBatches} rows=${Math.min(offset+size,records.length)}/${records.length}`);
+  }
+  finalReport.server=await rpc('linkare_legacy_verify_v2',{org:organizationId,p_batch_id:runBatch,p_backup_sha:backupSha});
+  if(finalReport.server?.ok!==true)throw new Error('APPLY_RECONCILIATION_FAILED');
+  finalReport.completedAt=new Date().toISOString();writeReport(finalReport);
+  console.log(`LEGACY_APPLY_OK batch=${runBatch} report=${output}`);
+}catch(error){
+  finalReport.failure={code:safeError(error),at:new Date().toISOString()};writeReport(finalReport);throw error;
+}

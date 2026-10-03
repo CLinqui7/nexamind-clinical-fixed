@@ -52,22 +52,22 @@ const escapeHtml = value => String(value ?? '')
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
-export function normalizeNotificationPreferences(value = {}, patient = {}) {
-  const channels = Array.isArray(value.channels) && value.channels.length
+export function normalizeNotificationPreferences(value = {}, patient = {}, historical = false) {
+  const channels = historical ? [] : Array.isArray(value.channels) && value.channels.length
     ? [...new Set(value.channels.filter(item => REMINDER_CHANNELS.some(option => option.value === item)))]
-    : ['whatsapp'];
-  const reminderHours = Array.isArray(value.reminderHours) && value.reminderHours.length
+    : historical ? [] : ['whatsapp'];
+  const reminderHours = historical ? [] : Array.isArray(value.reminderHours) && value.reminderHours.length
     ? [...new Set(value.reminderHours.map(Number).filter(item => Number.isFinite(item) && item > 0))]
-    : [24, 8];
+    : historical ? [] : [24, 8];
   return {
-    enabled: value.enabled !== false,
+    enabled: historical ? false : value.enabled !== false,
     channels,
     reminderHours,
     email: clean(value.email || patient.email),
     phone: clean(value.phone || patient.phone),
-    language: clean(value.language) || 'Español',
+    language: clean(value.language) || (historical ? '' : 'Español'),
     timezone: clean(value.timezone) || 'America/El_Salvador',
-    consentStatus: value.consentStatus || 'pending',
+    consentStatus: value.consentStatus || (historical ? 'not_recorded' : 'pending'),
     consentRecordedAt: value.consentRecordedAt || null,
     quietHoursStart: value.quietHoursStart || '20:00',
     quietHoursEnd: value.quietHoursEnd || '07:00',
@@ -90,6 +90,7 @@ export function normalizeDeathRecord(value = {}) {
 }
 
 export function normalizePatientV2(patient = {}) {
+  const historical=patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro';
   return {
     preferredName: clean(patient.preferredName),
     pronouns: clean(patient.pronouns),
@@ -100,16 +101,16 @@ export function normalizePatientV2(patient = {}) {
     significantPeople: clean(patient.significantPeople),
     safetyHistory: {
       ideationHistory: patient.safetyHistory?.ideationHistory || 'No registrada',
-      suicideAttemptsCount: Number(patient.safetyHistory?.suicideAttemptsCount) || 0,
+      suicideAttemptsCount: patient.safetyHistory?.suicideAttemptsCount===null&&historical?null:Number(patient.safetyHistory?.suicideAttemptsCount) || (historical?null:0),
       lastAttemptDate: patient.safetyHistory?.lastAttemptDate || '',
       selfHarmHistory: patient.safetyHistory?.selfHarmHistory || 'No registrada',
       safetyPlan: clean(patient.safetyHistory?.safetyPlan),
       emergencyContact: clean(patient.safetyHistory?.emergencyContact),
       notes: clean(patient.safetyHistory?.notes),
     },
-    vitalStatus: patient.vitalStatus || 'active',
+    vitalStatus: patient.vitalStatus || (historical ? 'unconfirmed' : 'active'),
     deathRecord: normalizeDeathRecord(patient.deathRecord),
-    notificationPreferences: normalizeNotificationPreferences(patient.notificationPreferences, patient),
+    notificationPreferences: normalizeNotificationPreferences(patient.notificationPreferences, patient, historical),
     documents: Array.isArray(patient.documents) ? patient.documents.map(document => ({
       ...document,
       id: document.id || uid('document'),

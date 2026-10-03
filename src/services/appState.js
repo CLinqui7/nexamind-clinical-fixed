@@ -78,6 +78,9 @@ export function captureReportedMedication(organizationId,patientId,draft){
 export function loadDailyAgenda(organizationId,date){
   return rpc('linkare_daily_agenda_v1',{org:organizationId,agenda_date:date});
 }
+export function loadLegacyPatientHistory(organizationId,patientId,offset=0,limit=100){
+  return rpc('linkare_legacy_patient_history_v1',{org:organizationId,p_patient_id:patientId,p_offset:offset,p_limit:limit});
+}
 export function archiveMedication(organizationId,patientId,medicationId,reason){
   return rpc('linkare_archive_medication_v1',{p_org:organizationId,p_patient_id:patientId,p_medication_id:medicationId,p_reason:reason});
 }

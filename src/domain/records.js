@@ -42,13 +42,15 @@ export function projectRecords(data, clinical = false) {
   if(can('alertsView')) for(const alert of data.alerts || []) add('alert',alert.id,alert);
   return out;
 }
-export function diffRecords(previous, next, revisions = new Map()) {
+export function diffRecords(previous, next, revisions = new Map(), options = {}) {
   const changes=[];
   for(const [key,record] of next) {
     const old=previous.get(key);
     if(!old || stableJSON(old.payload)!==stableJSON(record.payload)) changes.push({...record,expectedRevision:revisions.get(key)||0,deleted:false});
   }
-  for(const [key,record] of previous) if(!next.has(key)) changes.push({kind:record.kind,id:record.id,expectedRevision:revisions.get(key)||0,deleted:true,payload:{}});
+  const allowDeletes=options.allowDeletes!==false;
+  const completeKinds=options.completeKinds?new Set(options.completeKinds):null;
+  for(const [key,record] of previous) if(!next.has(key)&&allowDeletes&&(!completeKinds||completeKinds.has(record.kind))) changes.push({kind:record.kind,id:record.id,expectedRevision:revisions.get(key)||0,deleted:true,payload:{}});
   return changes;
 }
 export function isSignedNote(note) { return Boolean(note?.signedAt) || ['completed','signed'].includes(note?.status); }

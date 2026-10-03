@@ -129,6 +129,7 @@ function normalizeMedication(medication, patient, index = 0) {
 }
 
 export function normalizePatient(patient = {}) {
+  const historical=patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro';
   const sourceMedications = Array.isArray(patient.medications) && patient.medications.length
     ? patient.medications
     : patient.medication && patient.medication.name && patient.medication.name !== 'Sin medicamento'
@@ -149,7 +150,7 @@ export function normalizePatient(patient = {}) {
     id: patient.id || `p_${Date.now()}`,
     initials: patient.initials || getInitials(patient.name),
     name: patient.name || 'Paciente sin nombre',
-    age: Number(patient.age) || 0,
+    age: historical ? (Number.isFinite(Number(patient.age))&&Number(patient.age)>0?Number(patient.age):null) : Number(patient.age) || 0,
     sex: patient.sex || 'No registrado',
     phone: patient.phone || '',
     email: patient.email || '',
@@ -164,22 +165,22 @@ export function normalizePatient(patient = {}) {
       copay: patient.insurance?.copay || '',
       notes: patient.insurance?.notes || '',
     },
-    diagnosis: patient.diagnosis || 'Diagnóstico pendiente',
-    diagnosisCode: patient.diagnosisCode || 'Sin código',
-    risk: patient.risk || 'low',
-    status: patient.status || 'stable',
+    diagnosis: patient.diagnosis || (historical ? 'No registrado en la fuente histórica' : 'Diagnóstico pendiente'),
+    diagnosisCode: patient.diagnosisCode || (historical ? 'No registrado' : 'Sin código'),
+    risk: patient.risk || (historical ? 'unrecorded' : 'low'),
+    status: patient.status || (historical ? 'unrecorded' : 'stable'),
     clinician: patient.clinician || '',
-    lastVisit: patient.lastVisit || new Date().toISOString(),
+    lastVisit: patient.lastVisit || (historical ? null : new Date().toISOString()),
     nextVisit: patient.nextVisit || null,
     medications,
-    medication: primary || {
+    medication: primary || (historical ? null : {
       id: `none_${patient.id || Date.now()}`,
       name: 'Sin medicamento', class: 'No asignado', dose: '—', doseValue: null, doseUnit: 'mg',
       frequency: '—', startDate: patient.lastVisit || new Date().toISOString(), indication: '—', status: 'inactive', doseHistory: [],
-    },
+    }),
     assessments: Array.isArray(patient.assessments) ? patient.assessments : [],
-    adherence: Number.isFinite(Number(patient.adherence)) ? Number(patient.adherence) : 0,
-    functioningChange: Number.isFinite(Number(patient.functioningChange)) ? Number(patient.functioningChange) : 0,
+    adherence: patient.adherence!==null&&patient.adherence!==undefined&&Number.isFinite(Number(patient.adherence)) ? Number(patient.adherence) : historical ? null : 0,
+    functioningChange: patient.functioningChange!==null&&patient.functioningChange!==undefined&&Number.isFinite(Number(patient.functioningChange)) ? Number(patient.functioningChange) : historical ? null : 0,
     sleepBaseline: Number.isFinite(Number(patient.sleepBaseline)) ? Number(patient.sleepBaseline) : null,
     sleepCurrent: Number.isFinite(Number(patient.sleepCurrent)) ? Number(patient.sleepCurrent) : null,
     appetite: patient.appetite || 'No registrado',
@@ -196,9 +197,12 @@ export function normalizePatient(patient = {}) {
     archiveReason: patient.archiveReason || '',
     notes: Array.isArray(patient.notes) ? patient.notes : [],
     prescriptions: Array.isArray(patient.prescriptions) ? patient.prescriptions.map((item, index) => ({ ...item, id: item.id || `rx_${patient.id}_${index}`, items: Array.isArray(item.items) ? item.items : [] })) : [],
+    dataQuality:patient.dataQuality||null,
+    sourceSummary:patient.sourceSummary?{...patient.sourceSummary}:null,
+    historicalProfile:patient.historicalProfile?structuredClone(patient.historicalProfile):null,
     ...normalizePatientV2(patient),
-    createdAt: patient.createdAt || patient.lastVisit || new Date().toISOString(),
-    updatedAt: patient.updatedAt || new Date().toISOString(),
+    createdAt: patient.createdAt || patient.lastVisit || (historical ? null : new Date().toISOString()),
+    updatedAt: patient.updatedAt || (historical ? null : new Date().toISOString()),
   };
 }
 

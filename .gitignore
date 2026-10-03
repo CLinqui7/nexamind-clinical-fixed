@@ -6,6 +6,13 @@ dist/
 .vercel/
 *.log
 *.zip
+*.dbf
+*.fpt
+*.cdx
+*.bak
+*.tbk
+legacy-migration-public-report.json
+legacy-rehearsal-public-report.json
 backup-*/
 _patch-*/
 .DS_Store
