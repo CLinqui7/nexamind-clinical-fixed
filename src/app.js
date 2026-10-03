@@ -153,7 +153,7 @@ import { manageTeam } from './services/team.js';
 import { generateDocumentFromTemplate, listDocumentTemplates } from './services/templates.js';
 import {listFamilyReminderRecipients,removeFamilyReminderRecipient,saveFamilyReminderRecipient} from './services/familyReminders.js';
 import { PLAN_OPTIONS, subscriptionView } from './domain/plans.js';
-import { trainingFor } from './training.js';
+import { DEMO_PATIENT_NAME, DEMO_MEDICATION_NAME, trainingFor } from './training.js';
 const html = htm.bind(React.createElement);
 const SUPPORT_WHATSAPP_NUMBER=String(import.meta.env.VITE_SUPPORT_WHATSAPP_NUMBER||'').replace(/\D/g,'');
 const iconPaths = {
@@ -372,7 +372,7 @@ class App extends React.Component {
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
-      tourActive:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
+      tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
     };
   }
 
@@ -380,6 +380,7 @@ class App extends React.Component {
 
   applyProductionSession = async (session, requestedOrganizationName=null) => {
     const epoch=++this.authEpoch;
+    this.tourSnapshot=null;
     const remote=await bootstrapAndLoadState(null,requestedOrganizationName);
     if(epoch!==this.authEpoch || !this.mounted)return;
     const data=normalizeData(remote.payload);
@@ -392,7 +393,7 @@ class App extends React.Component {
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null},()=>{
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.loadIntegrationStatus();this.refreshDailyAgenda();this.checkConsultationPrompt();
       });
@@ -445,7 +446,9 @@ class App extends React.Component {
     window.addEventListener('beforeunload',this.warnUnsaved);
     document.addEventListener('click',this.handleTourInteraction,true);
     document.addEventListener('change',this.handleTourInteraction,true);
+    document.addEventListener('input',this.handleTourInteraction,true);
     document.addEventListener('focusin',this.handleTourInteraction,true);
+    document.addEventListener('submit',this.handleTourInteraction,true);
     window.addEventListener('scroll',this.scheduleTourMarker,true);
     window.addEventListener('resize',this.scheduleTourMarker);
     this.consultationPromptTimer=setInterval(this.checkConsultationPrompt,30000);
@@ -472,7 +475,9 @@ class App extends React.Component {
     window.removeEventListener('online',this.handleOnline);window.removeEventListener('offline',this.handleOffline);window.removeEventListener('beforeunload',this.warnUnsaved);
     document.removeEventListener('click',this.handleTourInteraction,true);
     document.removeEventListener('change',this.handleTourInteraction,true);
+    document.removeEventListener('input',this.handleTourInteraction,true);
     document.removeEventListener('focusin',this.handleTourInteraction,true);
+    document.removeEventListener('submit',this.handleTourInteraction,true);
     window.removeEventListener('scroll',this.scheduleTourMarker,true);
     window.removeEventListener('resize',this.scheduleTourMarker);
     this.authSubscription?.unsubscribe();
@@ -482,7 +487,7 @@ class App extends React.Component {
   }
 
   componentDidUpdate(prevProps,prevState) {
-    if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady)this.schedulePersist();
+    if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady && !this.state.tourSandbox)this.schedulePersist();
     const overlay=Boolean(this.state.modal||this.state.appointmentDetails);
     if(overlay!==Boolean(prevState.modal||prevState.appointmentDetails))document.body.style.overflow=overlay?'hidden':'';
     if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view || prevState.modal?.type!==this.state.modal?.type))requestAnimationFrame(this.focusTourTarget);
@@ -601,15 +606,37 @@ class App extends React.Component {
     catch(error){this.setState({loginBusy:false,modalError:readableError(error)});}
   };
 
-  currentTraining = () => trainingFor(this.activeUser()?.role,{settings:this.can('settingsManage'),agenda:this.can('appointmentsManage'),patients:this.can('patientsView'),usersManage:this.can('usersManage'),hasCalendars:this.visibleCalendars().length>0,createEvent:this.canAnyCalendar('Create')});
+  currentTraining = () => {
+    const demoPatient=this.can('patientsView')&&this.can('patientsCreate');
+    const createEvent=this.canAnyCalendar('Create');
+    return trainingFor(this.activeUser()?.role,{settings:this.can('settingsManage'),agenda:this.can('appointmentsManage'),patients:this.can('patientsView'),usersManage:this.can('usersManage'),hasCalendars:this.visibleCalendars().length>0,createEvent,patientsCreate:demoPatient,demoPatient,demoAppointment:demoPatient&&createEvent,medicationsManage:this.can('medicationsManage'),medicationsCapture:this.can('medicationsCapture'),consultationsManage:this.can('consultationsManage')});
+  };
 
   tourTargetFor = step => {
     if(!step)return null;
+    if(step.target==='admin-medication-add')return [...document.querySelectorAll('.card')].find(card=>card.querySelector('h3')?.textContent==='Medicamentos informados')?.querySelector('button')||null;
     const selectors={
+      'patients-new':'[data-tour="patients-tools"] .button',
+      'patient-form-name':'[data-tour="patient-form-identification"] .form-grid input:not([type="number"])',
+      'patient-form-age':'[data-tour="patient-form-identification"] input[type="number"]',
+      'patient-form-diagnosis':'[data-tour="patient-form-clinical"] input',
+      'patient-form-save':'.modal form .form-actions button[type="submit"]',
+      'medication-form-name':'[data-tour="medication-form-identity"] input',
+      'medication-form-dose':'[data-tour="medication-form-dose"] input[type="number"]',
+      'medication-form-save':'.modal form .form-actions button[type="submit"]',
+      'consultations-start':'.consultations-view .card-heading .button',
+      'notebook-freeNotes':'#encounter-freeNotes',
+      'notebook-reason':'#encounter-reason',
+      'notebook-medicationNotes':'#encounter-medicationNotes',
+      'notebook-close':'.notebook-toolbar .back-button',
+      'patient-agendar':'[data-tour="patient-next-visit"] .button:last-child',
+      'appointment-start':'[data-tour="appointment-form-who-when"] input[type="datetime-local"]',
+      'appointment-form-save':'.modal form .form-actions button[type="submit"]',
       'calendar-filter-first':'.calendar-filter-options .calendar-filter:first-child',
       'agenda-today':'.calendar-nav .today-button',
       'appointment-calendar-first':'.calendar-choice-grid .calendar-choice:first-child',
       'appointment-cancel':'.modal-header .icon-button',
+      'appointment-detail-close':'.modal-header .icon-button',
       'team-permissions-custom':'.permission-mode label:last-child',
       'team-cancel':'.modal-header .icon-button',
       'help-guide-tab':'.training-tabs [role="tab"]:nth-child(2)',
@@ -623,10 +650,14 @@ class App extends React.Component {
     const step=this.currentTraining().steps[this.state.tourIndex];
     if(!step)return;
     const target=this.tourTargetFor(step);
-    if(event.type==='click' && !target?.contains(event.target) && !event.target.closest('.training-popover')){
+    if(event.type==='submit'&&this.state.tourSandbox){
+      if(!step.target.endsWith('-save')||!target?.contains(event.submitter)){event.preventDefault();event.stopPropagation();}
+      return;
+    }
+    if(event.type==='click' && !target?.contains(event.target) && !event.target.closest('.training-popover,.training-sandbox-banner button')){
       event.preventDefault();event.stopPropagation();return;
     }
-    if(event.type==='click' && this.state.tourStepComplete && !event.target.closest('.training-popover')){
+    if(event.type==='click' && this.state.tourStepComplete && !event.target.closest('.training-popover,.training-sandbox-banner button')){
       event.preventDefault();event.stopPropagation();return;
     }
     if(this.state.tourStepComplete || event.type!==step.event)return;
@@ -634,7 +665,7 @@ class App extends React.Component {
     const index=this.state.tourIndex;
     // Let the control's React handler run, then confirm that it actually changed the UI.
     setTimeout(()=>{
-      if(!this.mounted||!this.state.tourActive||this.state.tourIndex!==index||!this.tourActionSucceeded(step))return;
+      if(!this.mounted||!this.state.tourActive||this.state.tourIndex!==index||this.state.tourStepComplete||!this.tourActionSucceeded(step))return;
       this.setState({tourStepComplete:true,tourMissing:false},()=>{
         const reduced=this.state.data.settings?.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches;
         this.tourAdvanceTimer=setTimeout(()=>this.advanceTourFromAction(index),reduced?100:520);
@@ -644,10 +675,26 @@ class App extends React.Component {
 
   tourActionSucceeded = step => {
     const target=this.tourTargetFor(step);
+    if(step.expected!==undefined)return String(target?.value??'').trim()===step.expected;
+    if(step.minLength!==undefined)return String(target?.value??'').trim().length>=step.minLength;
     switch(step.target){
       case 'nav-patients':return this.state.view==='patients';
       case 'nav-agenda':return this.state.view==='agenda';
       case 'nav-dashboard':return this.state.view==='dashboard';
+      case 'patients-new':return this.state.modal?.type==='patient';
+      case 'patient-form-save':return this.state.view==='patient'&&this.state.selectedPatientId===this.tourDemoPatientId;
+      case 'patient-card':return this.state.view==='patient'&&this.state.selectedPatientId===this.tourDemoPatientId;
+      case 'patient-tab-overview':return this.state.patientTab==='overview';
+      case 'patient-tab-medications':return this.state.patientTab==='medications';
+      case 'patient-tab-consultations':return this.state.patientTab==='consultations';
+      case 'admin-medication-add':case 'action-medication':return this.state.modal?.type==='medication';
+      case 'medication-form-save':return !this.state.modal&&Boolean(this.state.data.patients.find(item=>item.id===this.tourDemoPatientId)?.medications?.some(item=>item.name===DEMO_MEDICATION_NAME));
+      case 'consultations-start':return this.state.view==='notebook'&&this.state.activeEncounter?.patientId===this.tourDemoPatientId;
+      case 'notebook-close':return this.state.view==='patient'&&!this.state.activeEncounter;
+      case 'patient-agendar':return this.state.modal?.type==='appointment'&&this.state.modal.draft.patientId===this.tourDemoPatientId;
+      case 'appointment-start':return new Date(this.state.modal?.draft?.start||0)>new Date();
+      case 'appointment-form-save':return this.state.appointmentDetails?.id===this.tourDemoAppointmentId;
+      case 'appointment-detail-close':return !this.state.appointmentDetails;
       case 'settings-button':return this.state.view==='settings';
       case 'patients-search':return document.activeElement===target;
       case 'patients-filter-review':return this.state.patientFilter==='review';
@@ -690,6 +737,12 @@ class App extends React.Component {
       left=placement==='right'?rect.right+gap:rect.left-width-gap;
       top=Math.max(pad,Math.min(innerHeight-height-pad,rect.top+rect.height/2-height/2));
     }
+    // Keep the patient, calendar and date visible while the mobile lesson asks
+    // the user to inspect the appointment and close its detail panel.
+    if(innerWidth<600&&step.target==='appointment-detail-close'){
+      left=pad;
+      top=innerHeight-height-pad;
+    }
     left=Math.max(pad,Math.min(innerWidth-width-pad,left));
     top=Math.max(pad,Math.min(innerHeight-height-pad,top));
     const marker={left,top,placement,arrowX:Math.max(20,Math.min(width-20,rect.left+rect.width/2-left)),arrowY:Math.max(20,Math.min(height-20,rect.top+rect.height/2-top)),badgeLeft:Math.max(5,Math.min(innerWidth-31,rect.right-12)),badgeTop:Math.max(5,Math.min(innerHeight-31,rect.top-12))};
@@ -703,15 +756,32 @@ class App extends React.Component {
     const target=this.tourTargetFor(step);
     if(!target){this.updateTourMarker();return;}
     target.setAttribute('data-tour-active-target','true');
-    target.scrollIntoView({block:'center',behavior:'auto'});
+    target.scrollIntoView({block:innerWidth<600&&target.getBoundingClientRect().height>200?'start':'center',behavior:'auto'});
     this.scheduleTourMarker();
     setTimeout(this.scheduleTourMarker,180);
   };
 
-  startTour = () => {
+  startTour = async () => {
     clearTimeout(this.tourAdvanceTimer);
-    const step=this.currentTraining().steps[0];
-    this.setState({modal:null,tourActive:true,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step?.view||'dashboard',mobileNav:innerWidth<=880&&step?.target?.startsWith('nav-')});
+    if(this.tourStartPending)return;
+    if(this.state.formSaving||this.state.activeEncounter)return this.notify('Cierre la consulta y espere a que termine el guardado antes de iniciar la práctica.','danger');
+    if(!this.state.tourActive&&this.state.remoteSaveStatus!=='saved'){
+      if(!['dirty','saving'].includes(this.state.remoteSaveStatus))return this.notify('Resuelva el aviso de guardado antes de iniciar la práctica.','danger');
+      this.tourStartPending=true;
+      const epoch=this.authEpoch;
+      this.notify('Preparando la práctica; espere a que terminen los cambios pendientes.');
+      try{
+        for(let attempt=0;attempt<150&&['dirty','saving'].includes(this.state.remoteSaveStatus);attempt++)await new Promise(resolve=>setTimeout(resolve,100));
+        if(!this.mounted||epoch!==this.authEpoch||this.state.modal?.type!=='help')return;
+        if(this.state.remoteSaveStatus!=='saved')return this.notify('No se pudo iniciar: revise el estado de guardado.','danger');
+      }finally{this.tourStartPending=false;}
+    }
+    const steps=this.currentTraining().steps;const step=steps[0];
+    if(!step)return this.notify('No hay pasos disponibles para sus permisos.','danger');
+    const sandbox=this.can('patientsView')&&this.can('patientsCreate');
+    this.tourSnapshot=sandbox?(this.state.tourSandbox&&this.tourSnapshot?this.tourSnapshot:{data:this.state.data,view:this.state.view,selectedPatientId:this.state.selectedPatientId,patientTab:this.state.patientTab,patientFilter:this.state.patientFilter,search:this.state.search,calendarDate:this.state.calendarDate,selectedCalendarIds:this.state.selectedCalendarIds}):null;
+    this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
+    this.setState({data:sandbox?structuredClone(this.tourSnapshot.data):this.state.data,modal:null,appointmentDetails:null,tourActive:true,tourSandbox:sandbox,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step.view,mobileNav:innerWidth<=880&&step.target.startsWith('nav-'),search:'',patientFilter:'all'});
   };
 
   advanceTourFromAction = index => {
@@ -721,11 +791,16 @@ class App extends React.Component {
     this.setState({tourIndex:index+1,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step.view,mobileNav:innerWidth<=880&&step.target.startsWith('nav-')});
   };
 
-  stopTour = () => {clearTimeout(this.tourAdvanceTimer);this.setState({tourActive:false,tourMarker:null,tourMissing:false,tourStepComplete:false});};
+  stopTour = () => {
+    clearTimeout(this.tourAdvanceTimer);
+    const original=this.tourSnapshot;
+    this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
+    this.setState({...(original||{}),tourActive:false,tourSandbox:false,tourMarker:null,tourMissing:false,tourStepComplete:false,modal:null,appointmentDetails:null,activeEncounter:null,remoteSaveStatus:'saved'});
+  };
 
   schedulePersist = () => {
     clearTimeout(this.persistTimer);
-    if(!this.state.remoteReady)return;
+    if(!this.state.remoteReady||this.state.tourSandbox)return;
     this.setState({remoteSaveStatus:'dirty'});
     this.persistTimer=setTimeout(()=>this.flushChanges().catch(()=>{}),900);
   };
@@ -852,7 +927,9 @@ class App extends React.Component {
   openMedication = (patient, medication = null) => {
     if (!this.can('medicationsManage') && !this.can('medicationsCapture')) return this.permissionDenied();
     if (medication && !this.can('medicationsManage')) return this.permissionDenied();
-    this.setState({ modal: { type: 'medication', patientId: patient.id, draft: medicationFormDefaults(patient, medication) }, modalError: '' });
+    const draft=medicationFormDefaults(patient,medication);
+    if(this.state.tourSandbox&&!medication)Object.assign(draft,{class:'Otro',indication:'Solo simulación; no administrar',frequency:'otra',customFrequency:'Solo demostración',route:'otra',isPrimary:false,notes:'Registro ficticio para capacitación'});
+    this.setState({ modal: { type: 'medication', patientId: patient.id, draft }, modalError: '' });
   };
 
   openDose = (patient, medicationId = null) => {
@@ -964,6 +1041,7 @@ class App extends React.Component {
   saveBillingSettingsForm = event => {event.preventDefault();this.notify('Seleccione una modalidad en Mi plan.','neutral');};
 
   checkConsultationPrompt = () => {
+    if(this.state.tourSandbox)return;
     const user = this.activeUser();
     if (!this.state.authenticatedUserId || !user || !this.can('consultationsManage') || this.state.activeEncounter) return;
     const appointment = appointmentReadyForConsultation(this.state.data, new Date());
@@ -1071,7 +1149,7 @@ class App extends React.Component {
       patientTab: 'consultations',
       encounterAutosaveStatus: 'saved',
     }, () => {
-      if (!signed && !encounter.__readOnly) this.flushChanges().then(()=>{if(epoch===this.authEpoch)this.notify('La nota quedó guardada como borrador.');}).catch(()=>{if(epoch===this.authEpoch)this.notify('La nota aún no se guardó. Revise el aviso de sincronización.','danger');});
+      if (!signed && !encounter.__readOnly) this.flushChanges().then(()=>{if(epoch===this.authEpoch)this.notify(this.state.tourSandbox?'Borrador de práctica: no se guardó en el servidor.':'La nota quedó guardada como borrador.');}).catch(()=>{if(epoch===this.authEpoch)this.notify('La nota aún no se guardó. Revise el aviso de sincronización.','danger');});
     });
   };
 
@@ -1302,7 +1380,7 @@ class App extends React.Component {
         <div><button className="back-button" onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/></button><span className=${`notebook-badge ${signed ? 'signed' : ''}`}><${Icon} name=${signed ? 'lock' : 'notebook'} size=${18}/> ${signed ? 'Nota firmada' : readOnly ? 'Vista de consulta' : 'Libreta de consulta'}</span><div><h1>${patient.preferredName || patient.name}</h1><p>${encounter.title}</p></div></div>
         <div className="notebook-toolbar-actions">
           <span>${signed || readOnly ? html`<span className="notebook-timer">${durationMinutes} min</span>` : html`<${ElapsedClock} start=${encounter.startedAt}/>`}</span>
-          <span role="status" className=${`autosave-state ${signed ? 'signed' : this.state.remoteSaveStatus}`}><${Icon} name=${signed ? 'lock' : this.state.remoteSaveStatus === 'error' ? 'alert' : 'check'} size=${15}/>${signed ? `Firmada ${formatDateTime(encounter.signedAt || encounter.endedAt)}` : readOnly ? 'Solo lectura' : this.state.remoteSaveStatus === 'error' ? 'Sin guardar: revise el aviso' : ['dirty','saving'].includes(this.state.remoteSaveStatus) ? 'Guardando…' : this.state.networkOffline ? 'Sin conexión: no cierre la página' : 'Guardado en el servidor'}</span>
+          <span role="status" className=${`autosave-state ${signed ? 'signed' : this.state.remoteSaveStatus}`}><${Icon} name=${signed ? 'lock' : this.state.remoteSaveStatus === 'error' ? 'alert' : 'check'} size=${15}/>${this.state.tourSandbox ? 'Borrador de práctica · no se guarda' : signed ? `Firmada ${formatDateTime(encounter.signedAt || encounter.endedAt)}` : readOnly ? 'Solo lectura' : this.state.remoteSaveStatus === 'error' ? 'Sin guardar: revise el aviso' : ['dirty','saving'].includes(this.state.remoteSaveStatus) ? 'Guardando…' : this.state.networkOffline ? 'Sin conexión: no cierre la página' : 'Guardado en el servidor'}</span>
           ${!readOnly ? html`<${Button} tone="secondary" icon="paperclip" onClick=${() => this.openDocumentUpload(patient)}>Adjuntar</${Button}>` : null}
           ${!readOnly && ['owner','doctor'].includes(this.activeUser()?.role) ? html`<${Button} icon="check" onClick=${this.finishConsultation}>Firmar y finalizar</${Button}>` : html`<${Button} tone="secondary" icon="chevronLeft" onClick=${this.closeConsultationNotebook}>Volver al expediente</${Button}>`}
         </div>
@@ -1319,7 +1397,7 @@ class App extends React.Component {
           ${field('clinicalImpression', 'Impresión clínica', 'Síntesis profesional de la consulta…', 5)}
           ${field('plan', 'Plan', 'Tratamiento, estudios, derivaciones, indicaciones y tareas…', 5)}
           ${field('followUp', 'Seguimiento', 'Próxima cita, señales de alarma y acuerdos…', 3)}
-          <footer className="notebook-paper-footer"><span>${signed ? 'Nota firmada conservada en el expediente. Para documentar información posterior, abra una nueva consulta.' : readOnly ? 'Contenido mostrado en modo solo lectura.' : 'La nota se guarda automáticamente. Al finalizar quedará firmada y cualquier cambio posterior deberá registrarse como una nueva versión.'}</span></footer>
+          <footer className="notebook-paper-footer"><span>${this.state.tourSandbox ? 'Práctica temporal: esta nota ficticia se descarta al salir del recorrido.' : signed ? 'Nota firmada conservada en el expediente. Para documentar información posterior, abra una nueva consulta.' : readOnly ? 'Contenido mostrado en modo solo lectura.' : 'La nota se guarda automáticamente. Al finalizar quedará firmada y cualquier cambio posterior deberá registrarse como una nueva versión.'}</span></footer>
         </main>
         ${readOnly ? html`<aside className="notebook-tools-panel notebook-readonly-tools"><h3>Información de la nota</h3><div className="notebook-meta-list"><div><span>Estado</span><b>${signed ? 'Firmada' : 'Solo lectura'}</b></div><div><span>Profesional</span><b>${signer?.name || patient.clinician || 'Profesional tratante'}</b></div><div><span>Inicio</span><b>${formatDateTime(encounter.startedAt)}</b></div><div><span>Finalización</span><b>${encounter.endedAt ? formatDateTime(encounter.endedAt) : 'No registrada'}</b></div><div><span>Duración</span><b>${durationMinutes} minutos</b></div><div><span>Versión</span><b>${version}</b></div></div><button onClick=${this.closeConsultationNotebook}><${Icon} name="chevronLeft"/><span>Volver a consultas</span></button><button onClick=${() => { clearInterval(this.encounterTimer); this.setState({ activeEncounter: null, view: 'patient', selectedPatientId: patient.id, patientTab: 'documents' }); }}><${Icon} name="folder"/><span>Ver documentos</span></button><div className="notebook-side-note"><b>Solo lectura</b><p>La nota firmada permanece íntegra. Las nuevas observaciones deben registrarse en otra consulta.</p></div></aside>` : html`<aside className="notebook-tools-panel"><h3>Acciones rápidas</h3><button onClick=${() => this.openAssessment(patient)}><${Icon} name="analytics"/><span>Registrar escala</span></button><button onClick=${() => this.openVitals(patient)}><${Icon} name="activity"/><span>Control físico</span></button><button onClick=${() => this.openMedication(patient)}><${Icon} name="medication"/><span>Medicamento</span></button><button onClick=${() => this.openPrescription(patient)}><${Icon} name="prescription"/><span>Nueva receta</span></button><button onClick=${() => this.openDocumentUpload(patient)}><${Icon} name="folder"/><span>Subir documento</span></button><div className="notebook-side-note"><b>Privacidad</b><p>Evite incluir información innecesaria. Diferencie lo referido por el paciente, lo observado y la información de terceros.</p></div></aside>`}
       </div>
@@ -1515,6 +1593,10 @@ class App extends React.Component {
   persistDataUpdate = async (patch, message) => {
     if(this.savingForm)return;
     if(!this.state.remoteReady)return this.notify('Inicie sesión antes de guardar.','danger');
+    if(this.state.tourSandbox){
+      this.setState({...patch,formSaving:false,remoteSaveStatus:'saved',modalError:''},()=>this.notify('Práctica: cambio visible solo aquí; no se guardó en el servidor.'));
+      return true;
+    }
     const epoch=this.authEpoch;const org=this.state.remoteOrganizationId;
     this.savingForm=true;clearTimeout(this.persistTimer);
     this.setState({formSaving:true,remoteSaveStatus:'saving',modalError:'',saveError:''});
@@ -1535,7 +1617,9 @@ class App extends React.Component {
   savePatientForm = event => {
     event.preventDefault();
     try {
+      if(this.state.tourSandbox&&this.state.modal.draft.name.trim()!==DEMO_PATIENT_NAME)throw new Error(`Use el nombre ficticio ${DEMO_PATIENT_NAME}.`);
       const result = createPatient(this.state.data, this.state.modal.draft);
+      if(this.state.tourSandbox)this.tourDemoPatientId=result.patientId;
       this.persistDataUpdate({ data: result.data, selectedPatientId: result.patientId, view: 'patient', patientTab: 'overview', modal: null, modalError: '' }, 'Paciente registrado correctamente.');
     } catch (error) { this.handleFormError(error); }
   };
@@ -1553,7 +1637,14 @@ class App extends React.Component {
     event.preventDefault();
     try {
       const patientId = this.state.modal.patientId;
+      if(this.state.tourSandbox&&this.state.modal.draft.name.trim()!==DEMO_MEDICATION_NAME)throw new Error(`Use el nombre ficticio ${DEMO_MEDICATION_NAME}.`);
       if (!this.can('medicationsManage') && this.can('medicationsCapture')) {
+        if(this.state.tourSandbox){
+          const result=addMedication(this.state.data,patientId,{...this.state.modal.draft,isPrimary:false});
+          const data={...result.data,patients:result.data.patients.map(patient=>patient.id===patientId?{...patient,medications:patient.medications.map(item=>item.id===result.medicationId?{...item,status:'pending_review',source:'reported',reviewedBy:null,reviewedAt:null,clinicalNotes:'',reportedNotes:this.state.modal.draft.notes||'Registro ficticio para capacitación'}:item),medication:this.state.data.patients.find(original=>original.id===patientId)?.medication}:patient)};
+          await this.persistDataUpdate({data,view:'patient',selectedPatientId:patientId,patientTab:'overview',modal:null},'Medicamento ficticio pendiente de revisión.');
+          return;
+        }
         this.setState({formSaving:true,modalError:''});
         await captureReportedMedication(this.state.remoteOrganizationId,patientId,this.state.modal.draft);
         const session=await getProductionSession();
@@ -1625,10 +1716,12 @@ class App extends React.Component {
     event.preventDefault();
     try {
       const draft=this.state.modal.draft;const previous=draft.id?this.state.data.appointments.find(item=>item.id===draft.id):null;
+      if(this.state.tourSandbox&&(draft.patientId!==this.tourDemoPatientId||new Date(draft.start)<=new Date()))throw new Error('Use el paciente demo y una fecha futura para esta práctica.');
       if(!previous&&!this.canCalendar(draft.calendarId,'Create'))return this.permissionDenied();
       if(previous&&(!this.canCalendar(previous.calendarId,'Edit')||(previous.calendarId!==draft.calendarId&&!this.canCalendar(draft.calendarId,'Create'))))return this.permissionDenied();
       if(previous&&draft.status==='cancelled'&&previous.status!=='cancelled'&&!this.canCalendar(previous.calendarId,'Cancel'))return this.permissionDenied();
       const result = saveAppointment(this.state.data, draft);
+      if(this.state.tourSandbox)this.tourDemoAppointmentId=result.appointment.id;
       this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
     } catch (error) { this.handleFormError(error); }
   };
@@ -2764,10 +2857,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     const position=marker?{left:marker.left,top:marker.top,'--tour-arrow-x':`${marker.arrowX}px`,'--tour-arrow-y':`${marker.arrowY}px`}:this.state.tourMissing?{left:Math.max(12,innerWidth/2-160),top:Math.max(12,innerHeight/2-120)}:{left:12,top:12,visibility:'hidden'};
     return html`${marker?html`<span className="training-target-pin" style=${{left:marker.badgeLeft,top:marker.badgeTop}} aria-hidden="true">${this.state.tourStepComplete?'✓':this.state.tourIndex+1}</span>`:null}
       <aside className=${`training-popover placement-${placement} ${this.state.tourStepComplete?'is-complete':''}`} data-tour-step=${this.state.tourIndex+1} style=${position} aria-label=${`Recorrido guiado para ${training.label}`}>
-        <div className="training-popover-head"><span className="training-live-dot"></span><span>LINKARE · GUÍA EN VIVO</span><button type="button" aria-label="Salir del recorrido" onClick=${this.stopTour}><${Icon} name="close" size=${17}/></button></div>
+        <div className="training-popover-head"><span className="training-live-dot"></span><span>${this.state.tourSandbox?'LINKARE · PRÁCTICA SEGURA':'LINKARE · GUÍA EN VIVO'}</span><button type="button" aria-label="Salir del recorrido" onClick=${this.stopTour}><${Icon} name="close" size=${17}/></button></div>
         <div className="training-popover-progress" aria-label=${`Paso ${this.state.tourIndex+1} de ${steps.length}`}><span style=${{width:`${((this.state.tourIndex+1)/steps.length)*100}%`}}></span></div>
         <div className="training-popover-body" aria-live="polite"><div className="training-popover-kicker"><span className="training-popover-icon"><${Icon} name=${step.icon} size=${17}/></span><span>PASO ${String(this.state.tourIndex+1).padStart(2,'0')} DE ${String(steps.length).padStart(2,'0')} · ${training.label.toUpperCase()}</span></div><h2>${step.title}</h2><p>${step.text}</p><div className="training-do"><${Icon} name=${this.state.tourStepComplete?'check':'mouse'} size=${20}/><div><small>${this.state.tourStepComplete?'¡BIEN HECHO!':'AHORA HAGA ESTO'}</small><strong>${this.state.tourStepComplete?'Avanzando al siguiente paso…':step.action}</strong></div></div></div>
-        <div className="training-popover-foot" role="status">${this.state.tourMissing?html`<span>No encuentro el control de este paso.</span><button type="button" onClick=${this.startTour}>Reiniciar</button>`:html`<span>${this.state.tourStepComplete?'Acción confirmada.':'Toque el control resaltado; la guía avanzará sola.'}</span>`}</div>
+        <div className="training-popover-foot" role="status">${this.state.tourMissing?html`<span>No encuentro el control de este paso.</span><button type="button" onClick=${this.startTour}>Reiniciar</button>`:html`<span>${this.state.tourStepComplete?'Acción confirmada.':this.state.tourSandbox?'Datos ficticios · toque el control resaltado para avanzar.':'Toque el control resaltado; la guía avanzará sola.'}</span>`}</div>
       </aside>`;
   }
 
@@ -2797,13 +2890,14 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     if(location.pathname!=='/' && location.pathname!=='/index.html')return this.renderStatePage('search','Página no encontrada','La dirección no corresponde a una sección de Linkare.',()=>{history.replaceState({},'','/');this.setView('dashboard');},'Ir al inicio');
     const v=this.state.view;const s=this.state.data.settings;let body;
     if(v==='notebook')body=this.renderConsultationNotebook();else if(v==='dashboard')body=this.renderDashboard();else if(v==='patients')body=this.renderPatients();else if(v==='patient')body=this.renderPatient();else if(v==='agenda')body=this.renderAgenda();else if(v==='payments')body=this.renderPayments();else if(v==='analytics')body=this.renderAnalytics();else if(v==='alerts')body=this.renderAlerts();else if(v==='settings')body=this.renderSettings();else body=this.renderStatePage('search','Sección no encontrada','Regrese al inicio para continuar.',()=>this.setView('dashboard'));
-    return html`<div className=${`app-shell ${s.largeText?'large-text-mode':''} ${s.reducedMotion?'reduced-motion-mode':''} ${this.state.tourActive?'training-active':''}`}><div className="app-frame">${this.renderTopbar()}${this.renderSaveBanner()}<main className="main-content">${body}</main><footer><span>Linkare · Gestión clínica</span><span>${this.state.remoteSaveStatus==='saved'?'Cambios guardados':'Revise el estado de guardado'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderConsultationPrompt()}${this.renderGuidedTour()}${this.state.toast?html`<div className=${`toast toast-${this.state.toastTone}`} role="status">${this.state.toast}</div>`:null}</div>`;
+    return html`<div className=${`app-shell ${s.largeText?'large-text-mode':''} ${s.reducedMotion?'reduced-motion-mode':''} ${this.state.tourActive?'training-active':''}`}><div className="app-frame">${this.renderTopbar()}${this.renderSaveBanner()}<main className="main-content">${body}</main><footer><span>Linkare · Gestión clínica</span><span>${this.state.tourSandbox?'Práctica temporal · nada se guarda':this.state.remoteSaveStatus==='saved'?'Cambios guardados':'Revise el estado de guardado'}</span></footer></div>${this.renderModal()}${this.renderAppointmentDetails()}${this.renderConsultationPrompt()}${this.renderGuidedTour()}${this.state.toast?html`<div className=${`toast toast-${this.state.toastTone}`} role="status">${this.state.toast}</div>`:null}</div>`;
   }
 
   showReceipt = order => this.setState({modal:{type:'receipt',order}});
 
   renderSaveBanner() {
     const state=this.state.remoteSaveStatus;
+    if(this.state.tourSandbox)return html`<div className="sync-banner training-sandbox-banner" role="status"><${Icon} name="shield" size=${17}/><span><b>Práctica con datos ficticios.</b> Paciente, medicamento, cuaderno y cita no se envían al servidor; se descartan al salir.</span><button type="button" onClick=${this.stopTour}>Salir de la práctica</button></div>`;
     if(this.state.networkOffline)return html`<div className="sync-banner warning" role="status">Sin conexión. No cierre esta ventana si tiene anotaciones pendientes.</div>`;
     if(state==='error')return html`<div className="sync-banner error" role="alert"><span>${this.state.saveError||'No se pudo guardar.'}</span><button onClick=${()=>this.flushChanges().catch(()=>{})}>Reintentar</button></div>`;
     if(['dirty','saving'].includes(state))return html`<div className="sync-banner" role="status"><span className="mini-spinner"></span> Guardando cambios…</div>`;
@@ -2868,14 +2962,16 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   };
 
   clearSessionView = () => {
+    this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
     this.authEpoch++;this.savingForm=false;this.persistedData=null;clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourIndex:0,helpTab:'video',passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {
     clearTimeout(this.persistTimer);
+    if(this.state.tourSandbox)return true;
     if(!this.state.remoteReady || !this.state.remoteOrganizationId)return;
     if(!navigator.onLine){this.setState({remoteSaveStatus:'offline'});throw new Error('Sin conexión. Mantenga esta ventana abierta.');}
     const org=this.state.remoteOrganizationId;const snapshot=this.state.data;const epoch=this.authEpoch;

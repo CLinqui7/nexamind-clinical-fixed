@@ -84,6 +84,12 @@ async function captureOwner(page) {
   images.dayAgenda = await shot(page, '[data-tour="dashboard-agenda"]');
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
   images.patients = await shot(page);
+  await page.getByRole('button', { name: 'Nuevo paciente', exact: true }).first().click();
+  await page.getByRole('dialog').getByLabel('Nombre completo').fill('Paciente de práctica');
+  await page.getByRole('dialog').getByRole('spinbutton', { name: 'Edad', exact: true }).fill('35');
+  await page.getByRole('dialog').getByLabel('Diagnóstico principal').fill('Caso ficticio para capacitación');
+  images.patientForm = await shot(page);
+  await page.keyboard.press('Escape');
   await page.locator('.patient-card').first().click();
   images.patient = await shot(page);
   await page.getByRole('tab', { name: 'Medicamentos', exact: true }).click();
@@ -93,6 +99,13 @@ async function captureOwner(page) {
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: 'Consultas', exact: true }).click();
   images.consultations = await shot(page);
+  await page.getByRole('button', { name: 'Iniciar consulta', exact: true }).first().click();
+  await page.locator('#encounter-freeNotes').fill('Nota ficticia: registrar lo referido, lo observado y lo pendiente.');
+  await page.locator('#encounter-reason').fill('Motivo de práctica sin datos reales.');
+  await page.locator('#encounter-medicationNotes').fill('Medicamento ficticio: solo demostración.');
+  images.notebook = await shot(page);
+  await page.locator('.notebook-toolbar .back-button').click();
+  await page.getByRole('tab', { name: 'Consultas', exact: true }).waitFor();
   await page.getByRole('tab', { name: 'Recetas', exact: true }).click();
   images.prescriptions = await shot(page);
   await page.getByRole('button', { name: 'Nueva receta', exact: true }).first().click();
@@ -122,6 +135,11 @@ async function captureSecretary(page) {
   images.dashboard = await shot(page);
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
   images.patients = await shot(page);
+  await page.getByRole('button', { name: 'Nuevo paciente', exact: true }).first().click();
+  await page.getByRole('dialog').getByLabel('Nombre completo').fill('Paciente de práctica');
+  await page.getByRole('dialog').getByRole('spinbutton', { name: 'Edad', exact: true }).fill('35');
+  images.patientForm = await shot(page);
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Por revisar', exact: true }).click();
   assert.ok(await page.getByText('Paciente de demostración', { exact: true }).count(), 'Secretary review filter must show the marked patient');
   assert.equal(await page.getByText('Ejemplo de capacitación', { exact: true }).count(), 0, 'Secretary review must not expose the private diagnosis');
@@ -129,6 +147,11 @@ async function captureSecretary(page) {
   await page.getByRole('button', { name: 'Todos', exact: true }).click();
   await page.locator('.patient-card').first().click();
   images.patient = await shot(page);
+  await page.getByRole('button', { name: 'Registrar medicamento informado' }).click();
+  await page.getByRole('dialog').locator('[data-tour="medication-form-identity"] input').first().fill('Medicamento ficticio');
+  await page.getByRole('dialog').locator('[data-tour="medication-form-dose"] input[type="number"]').fill('1');
+  images.reportedMedication = await shot(page);
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Agenda', exact: true }).click();
   images.agenda = await shot(page);
   await page.getByRole('button', { name: 'Nuevo evento', exact: true }).click();
@@ -147,9 +170,10 @@ const secretaryScenes = images => [
   ['01 · Bienvenida', 'Dos secretarias, dos cuentas', 'Cada secretaria entra con su propio correo y crea su contraseña desde la invitación. Nunca compartan la cuenta.', images.dashboard],
   ['02 · Inicio', 'Prioridades del día', 'El tablero administrativo muestra citas, confirmaciones y recordatorios sin abrir la historia clínica privada.', images.dashboard],
   ['03 · Pacientes', 'Buscar y registrar', 'Desde Pacientes busque por nombre, teléfono o seguro. Nuevo paciente abre solo los campos autorizados.', images.patients],
+  ['04 · Paciente ficticio', 'Complete la ficha demo', 'En el recorrido interactivo escribirá Paciente Demo Linkare y una edad de ejemplo. La práctica temporal se borra al salir.', images.patientForm],
   ['04 · Por revisar', 'Pendientes administrativos', 'Por revisar muestra pacientes con una cita marcada para revisión administrativa. Sin próxima cita es un filtro distinto.', images.review],
   ['05 · Ficha', 'Datos administrativos', 'La ficha muestra contacto, seguro y citas. Los datos clínicos reservados siguen fuera del alcance de Secretaría.', images.patient],
-  ['06 · Captura segura', 'Solo lo autorizado', 'Si tiene permiso, registre medicamentos informados para revisión médica y documentos administrativos. No emita nuevas recetas.', images.patient],
+  ['06 · Captura segura', 'Medicamento informado', 'Escriba nombre, dosis, unidad, frecuencia y fuente de lo que informa el paciente. Queda pendiente de revisión médica; no es una prescripción.', images.reportedMedication],
   ['06 · Agenda', 'Tres calendarios visibles', 'Active Doctor, Esposa y General según los permisos de su cuenta. Ocultar un filtro no borra ningún evento.', images.agenda],
   ['07 · Nuevo evento', 'Primero elija calendario', 'El formulario no preselecciona un destino. Elija el calendario antes de paciente, fecha, hora y tipo de evento.', images.event],
   ['08 · Confirmación', 'Compruebe su elección', 'El calendario seleccionado queda marcado claramente. Revise todo antes de crear la cita o el evento general.', images.selected],
@@ -165,10 +189,12 @@ const doctorScenes = images => [
   ['02 · Inicio', 'Revise prioridades', 'Las señales del tablero orientan la revisión. Abra el expediente antes de tomar decisiones clínicas.', images.dashboard],
   ['03 · Agenda del día', 'Lista clínica imprimible', 'Horario real, paciente, medicamento activo y cambio relevante. Se genera desde las citas y puede imprimirse desde Inicio.', images.dayAgenda],
   ['03 · Pacientes', 'Busque el expediente', 'Pacientes organiza la información y permite registrar una ficha nueva con datos clínicos iniciales.', images.patients],
+  ['04 · Paciente ficticio', 'Cree una ficha demo', 'El recorrido le pedirá nombre, edad y contexto ficticio. Nada de esa práctica se enviará a la base real.', images.patientForm],
   ['04 · Expediente', 'Evolución e historial', 'Abra la ficha para revisar medicamentos, dosis, evolución, documentos y consultas. Una nota firmada conserva su versión.', images.patient],
   ['05 · Tratamiento', 'Cambios trazables', 'Medicamentos, dosis y registros informados se revisan aquí. Una corrección mantiene el historial y no borra lo anterior.', images.medications],
   ['06 · Medicamento', 'Notas y mediodía', 'Registre dosis, frecuencia, notas y fecha. Active solo tras revisar; suspender conserva el historial y las recetas antiguas.', images.medicationForm],
-  ['06 · Consulta', 'Documente y firme', 'La libreta permite tomar notas durante la atención. Compruebe el guardado antes de firmar; una nota firmada no se reemplaza.', images.consultations],
+  ['06 · Consulta', 'Abra el cuaderno', 'Desde Consultas inicie la libreta del paciente ficticio. En trabajo real cada nota se vincula al expediente.', images.consultations],
+  ['07 · Cuaderno', 'Escriba y revise', 'Practique Notas libres, Motivo y Medicamentos y tolerabilidad. En un paciente real compruebe el guardado antes de firmar.', images.notebook],
   ['07 · Recetas', 'Versiones seguras', 'Cree, corrija o anule con motivo. Las recetas anuladas permanecen visibles como parte del historial.', images.prescriptions],
   ['08 · Receta nueva', 'Tratamiento como origen', 'Elija medicamentos existentes o agregue uno manualmente. La receta guarda una instantánea; observaciones internas no se imprimen.', images.prescriptionForm],
   ['09 · Documentos', 'Plantillas médicas', 'En Documentos use Nuevo documento: constancia, incapacidad, carta o formulario. El PDF privado queda vinculado al expediente.', images.documents],
