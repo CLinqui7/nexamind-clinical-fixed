@@ -1,6 +1,6 @@
 # Runbook de backfill y publicación compatible
 
-Estado actual: **IMPLEMENTED_NOT_DEPLOYED**. Este documento no autoriza producción.
+Estado actual: **DEPLOYED_AND_VERIFIED** desde 2026-10-03. Este documento no autoriza una importación FoxPro ni cambios productivos adicionales.
 
 ## Puerta única de aprobación
 
@@ -31,3 +31,12 @@ Antes de DDL, backfill, frontend o importación real se debe entregar y aprobar 
 - Después de activar: volver temporalmente al frontend compatible solo si ese escritor no interpreta páginas parciales como borrados. Conservar tablas/funciones derivadas para diagnóstico.
 - No restaurar un backup anterior a Fase 1 ni borrar pacientes importados/trabajo moderno. Una recuperación de datos requiere el respaldo actual aprobado y conciliación explícita.
 - No eliminar migraciones, funciones v3 ni proyecciones durante la primera publicación. Su retiro exige otra ventana y evidencia de que no quedan clientes antiguos.
+
+## Registro de publicación 2026-10-03
+
+- Respaldo previo: archivo lógico DPAPI local, SHA-256 `a7fe3f43e4d7f23a047e6f62e64d156b4d3720c078dbe83219d7c457589ea895`.
+- Proyecto: `fvucylgrqgxjqabacnlt`, región `us-east-1`; 157 registros canónicos antes y después.
+- Migraciones aplicadas: `20261003010000_historical_migration_v2.sql`, `20261003061842_patient_directory_performance.sql` y `20261003074514_lazy_profile_assets.sql`.
+- Frontend activo: `dpl_8WCH7urdq7PtVKfbUeERGJQyxj1z`; artefacto anterior conservado: `dpl_7714tidLwx8EpALAS4dPANaasRFf`.
+- Para recuperar solo el frontend, reasignar el alias productivo al artefacto anterior. No revertir las tablas aditivas: el cliente v3 permanece compatible y las proyecciones no son expedientes editables.
+- Si se detectara una alteración canónica, detener escrituras y usar el respaldo cifrado actual; no restaurar una copia anterior ni ejecutar el rollback FoxPro sin conciliación explícita.

@@ -1,0 +1,428 @@
+{
+  "status": "PRODUCTION_VERIFICATION",
+  "projectRef": "fvucylgrqgxjqabacnlt",
+  "region": "us-east-1",
+  "commit": "877f0308065685da8b1b5bf0fa97b80eb93a3e3d",
+  "deployment": {
+    "id": "dpl_8WCH7urdq7PtVKfbUeERGJQyxj1z",
+    "status": "READY",
+    "url": "https://nexamind-clinical-nsvodgnj0-clinqui7s-projects.vercel.app",
+    "productionUrl": "https://nexamind-clinical.vercel.app",
+    "previousDeploymentId": "dpl_7714tidLwx8EpALAS4dPANaasRFf"
+  },
+  "generatedAt": "2026-10-03T07:52:22.336Z",
+  "canonicalRecords": 157,
+  "organizations": [
+    {
+      "label": "org-1",
+      "canonicalPatients": 21,
+      "projectedPatients": 21,
+      "canonicalAppointments": 23,
+      "projectedAppointments": 23,
+      "projectionCountsMatch": true,
+      "state": {
+        "appointments_ready": true,
+        "patients_ready": true,
+        "listing_version": "45",
+        "policy_version": 1
+      },
+      "backfill": {
+        "appointments": {
+          "calls": 1,
+          "processed": 23,
+          "state": {
+            "updated_at": "2026-10-03T07:52:22.413374+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 45,
+            "appointments_ready": true
+          }
+        },
+        "patients": {
+          "calls": 1,
+          "processed": 21,
+          "state": {
+            "updated_at": "2026-10-03T07:52:22.519475+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 45,
+            "appointments_ready": true
+          }
+        }
+      },
+      "authenticated": {
+        "bootstrapReady": true,
+        "bootstrapBytes": 3070,
+        "profileAssetsBytes": 410834,
+        "profileAssetKeys": [
+          "clinicLogo",
+          "doctorPhoto"
+        ],
+        "bootstrapComponentBytes": {
+          "users": 1489,
+          "alerts": 2,
+          "patients": 2,
+          "payments": 2,
+          "settings": 247,
+          "calendars": 349,
+          "appointments": 2,
+          "organization": 477
+        },
+        "bootstrapComponentKeys": {
+          "users": null,
+          "alerts": null,
+          "patients": null,
+          "payments": null,
+          "settings": [
+            "activeUserId",
+            "largeText",
+            "palette",
+            "reducedMotion",
+            "reminderChannels",
+            "reminderHours",
+            "simpleMode",
+            "theme"
+          ],
+          "calendars": null,
+          "appointments": null,
+          "organization": [
+            "address",
+            "clinician",
+            "email",
+            "name",
+            "phone",
+            "prescriptionFooter",
+            "professionalLicense",
+            "specialty",
+            "updatedAt",
+            "website"
+          ]
+        },
+        "directoryItems": 20,
+        "directoryLimit": 20,
+        "directoryBytes": 7963,
+        "dashboardTotal": 21,
+        "agendaItems": 23,
+        "agendaBytes": 14947,
+        "detailOpened": true,
+        "detailClinicalIncluded": true
+      },
+      "secretaryClinicalExcluded": true
+    },
+    {
+      "label": "org-2",
+      "canonicalPatients": 1,
+      "projectedPatients": 1,
+      "canonicalAppointments": 1,
+      "projectedAppointments": 1,
+      "projectionCountsMatch": true,
+      "state": {
+        "appointments_ready": true,
+        "patients_ready": true,
+        "listing_version": "3",
+        "policy_version": 1
+      },
+      "backfill": {
+        "appointments": {
+          "calls": 1,
+          "processed": 1,
+          "state": {
+            "updated_at": "2026-10-03T07:52:24.746235+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 3,
+            "appointments_ready": true
+          }
+        },
+        "patients": {
+          "calls": 1,
+          "processed": 1,
+          "state": {
+            "updated_at": "2026-10-03T07:52:24.82568+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 3,
+            "appointments_ready": true
+          }
+        }
+      },
+      "authenticated": {
+        "bootstrapReady": true,
+        "bootstrapBytes": 2553,
+        "profileAssetsBytes": 71,
+        "profileAssetKeys": [
+          "clinicLogo"
+        ],
+        "bootstrapComponentBytes": {
+          "users": 1440,
+          "alerts": 2,
+          "patients": 2,
+          "payments": 2,
+          "settings": 147,
+          "calendars": 349,
+          "appointments": 2,
+          "organization": 110
+        },
+        "bootstrapComponentKeys": {
+          "users": null,
+          "alerts": null,
+          "patients": null,
+          "payments": null,
+          "settings": [
+            "activeUserId",
+            "largeText",
+            "reducedMotion",
+            "reminderChannels",
+            "reminderHours"
+          ],
+          "calendars": null,
+          "appointments": null,
+          "organization": [
+            "clinician",
+            "email",
+            "name",
+            "specialty"
+          ]
+        },
+        "directoryItems": 1,
+        "directoryLimit": 20,
+        "directoryBytes": 525,
+        "dashboardTotal": 1,
+        "agendaItems": 1,
+        "agendaBytes": 981,
+        "detailOpened": true,
+        "detailClinicalIncluded": true
+      },
+      "secretaryClinicalExcluded": true
+    },
+    {
+      "label": "org-3",
+      "canonicalPatients": 1,
+      "projectedPatients": 1,
+      "canonicalAppointments": 0,
+      "projectedAppointments": 0,
+      "projectionCountsMatch": true,
+      "state": {
+        "appointments_ready": true,
+        "patients_ready": true,
+        "listing_version": "2",
+        "policy_version": 1
+      },
+      "backfill": {
+        "appointments": {
+          "calls": 1,
+          "processed": 0,
+          "state": {
+            "updated_at": "2026-10-03T07:52:26.704969+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 2,
+            "appointments_ready": true
+          }
+        },
+        "patients": {
+          "calls": 1,
+          "processed": 1,
+          "state": {
+            "updated_at": "2026-10-03T07:52:26.785007+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 2,
+            "appointments_ready": true
+          }
+        }
+      },
+      "authenticated": {
+        "bootstrapReady": true,
+        "bootstrapBytes": 1425,
+        "profileAssetsBytes": 71,
+        "profileAssetKeys": [
+          "clinicLogo"
+        ],
+        "bootstrapComponentBytes": {
+          "users": 306,
+          "alerts": 2,
+          "patients": 2,
+          "payments": 2,
+          "settings": 147,
+          "calendars": 349,
+          "appointments": 2,
+          "organization": 116
+        },
+        "bootstrapComponentKeys": {
+          "users": null,
+          "alerts": null,
+          "patients": null,
+          "payments": null,
+          "settings": [
+            "activeUserId",
+            "largeText",
+            "reducedMotion",
+            "reminderChannels",
+            "reminderHours"
+          ],
+          "calendars": null,
+          "appointments": null,
+          "organization": [
+            "clinician",
+            "email",
+            "name",
+            "specialty"
+          ]
+        },
+        "directoryItems": 1,
+        "directoryLimit": 20,
+        "directoryBytes": 561,
+        "dashboardTotal": 1,
+        "agendaItems": 0,
+        "agendaBytes": 161,
+        "detailOpened": true,
+        "detailClinicalIncluded": true
+      },
+      "secretaryClinicalExcluded": null
+    },
+    {
+      "label": "org-4",
+      "canonicalPatients": 11,
+      "projectedPatients": 11,
+      "canonicalAppointments": 14,
+      "projectedAppointments": 14,
+      "projectionCountsMatch": true,
+      "state": {
+        "appointments_ready": true,
+        "patients_ready": true,
+        "listing_version": "26",
+        "policy_version": 1
+      },
+      "backfill": {
+        "appointments": {
+          "calls": 1,
+          "processed": 14,
+          "state": {
+            "updated_at": "2026-10-03T07:52:27.872161+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 26,
+            "appointments_ready": true
+          }
+        },
+        "patients": {
+          "calls": 1,
+          "processed": 11,
+          "state": {
+            "updated_at": "2026-10-03T07:52:27.953707+00:00",
+            "patients_ready": true,
+            "policy_version": 1,
+            "listing_version": 26,
+            "appointments_ready": true
+          }
+        }
+      },
+      "authenticated": {
+        "bootstrapReady": true,
+        "bootstrapBytes": 3128,
+        "profileAssetsBytes": 27370,
+        "profileAssetKeys": [
+          "clinicLogo",
+          "doctorPhoto"
+        ],
+        "bootstrapComponentBytes": {
+          "users": 1607,
+          "alerts": 2,
+          "patients": 2,
+          "payments": 2,
+          "settings": 246,
+          "calendars": 349,
+          "appointments": 2,
+          "organization": 417
+        },
+        "bootstrapComponentKeys": {
+          "users": null,
+          "alerts": null,
+          "patients": null,
+          "payments": null,
+          "settings": [
+            "activeUserId",
+            "largeText",
+            "palette",
+            "reducedMotion",
+            "reminderChannels",
+            "reminderHours",
+            "simpleMode",
+            "theme"
+          ],
+          "calendars": null,
+          "appointments": null,
+          "organization": [
+            "address",
+            "clinician",
+            "email",
+            "name",
+            "phone",
+            "prescriptionFooter",
+            "professionalLicense",
+            "specialty",
+            "updatedAt",
+            "website"
+          ]
+        },
+        "directoryItems": 11,
+        "directoryLimit": 20,
+        "directoryBytes": 3859,
+        "dashboardTotal": 11,
+        "agendaItems": 1,
+        "agendaBytes": 695,
+        "detailOpened": true,
+        "detailClinicalIncluded": true
+      },
+      "secretaryClinicalExcluded": true
+    }
+  ],
+  "privateTablesDirectAuthenticatedSelect": false,
+  "performance": {
+    "explain": {
+      "planningMs": 0.107,
+      "executionMs": 0.07,
+      "rootNode": "Limit",
+      "actualRows": 21,
+      "sharedHitBlocks": 3,
+      "sharedReadBlocks": 0
+    },
+    "pageBytes": 3792,
+    "pageRows": 21,
+    "concurrentReads1": {
+      "samples": 10,
+      "p50Ms": 78.27,
+      "p95Ms": 80.93,
+      "p99Ms": 80.93,
+      "maxMs": 80.93,
+      "errors": 0
+    },
+    "concurrentReads5": {
+      "samples": 50,
+      "p50Ms": 81.9,
+      "p95Ms": 86.59,
+      "p99Ms": 88.27,
+      "maxMs": 88.27,
+      "errors": 0
+    },
+    "concurrentReads20": {
+      "samples": 200,
+      "p50Ms": 82.17,
+      "p95Ms": 100.32,
+      "p99Ms": 105.61,
+      "maxMs": 107.05,
+      "errors": 0
+    },
+    "webProductionSmoke": {
+      "htmlSamples": 10,
+      "htmlP50Ms": 72.93,
+      "htmlP95Ms": 325.2,
+      "browserUsableMs": 1313.12,
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0
+    }
+  },
+  "canonicalUnchanged": true
+}
