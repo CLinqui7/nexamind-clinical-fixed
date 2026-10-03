@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { Client } = require('pg');
 
 const output = process.argv[2];
@@ -30,7 +31,7 @@ async function main() {
     format: 'linkare-logical-backup-v1',
     createdAt: new Date().toISOString(),
     projectRef: 'fvucylgrqgxjqabacnlt',
-    gitCommit: '263e0b881f32a8fbb46beaa49804f626313fb603',
+    gitCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     tables: {},
     schema: {},
   };
