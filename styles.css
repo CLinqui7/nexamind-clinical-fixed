@@ -2810,6 +2810,10 @@ body { background-color: var(--milk); }
 .channel-choice-grid label.active { border-color: #769fc1; background: #edf5fa; color: var(--navy); }
 .channel-choice-grid input { accent-color: var(--navy); }
 .reminder-preferences-form { padding: 15px; background: #f8fafb; border: 1px solid #e2e9ee; border-radius: 15px; margin-top: 12px; }
+.patient-reminder-hours { margin: 14px 0 4px; }
+.patient-reminder-hours > span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.patient-reminder-hours .reminder-settings-grid { margin-bottom: 12px; }
+.patient-reminder-hours .reminder-option { min-height: 50px; text-align: center; }
 
 /* Consultation prompt and notebook */
 .consultation-prompt { position: fixed; z-index: 95; right: 24px; bottom: 24px; width: min(620px,calc(100vw - 48px)); border: 1px solid #9fb9ce; border-radius: 20px; background: rgba(252,253,246,.98); box-shadow: 0 25px 70px rgba(5,49,110,.25); padding: 15px; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; gap: 13px; align-items: center; animation: promptIn .3s ease both; }

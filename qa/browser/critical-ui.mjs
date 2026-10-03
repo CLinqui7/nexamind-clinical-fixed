@@ -35,6 +35,10 @@ try {
   assert.equal(await insuranceToggle.getAttribute('aria-pressed'), 'true');
   assert.equal(await patientDialog.locator('.insurance-form-panel').count(), 1);
   await patientDialog.getByLabel('Aseguradora').fill('Seguro sintético QA');
+  const twoHourReminder=patientDialog.getByRole('button',{name:'2 horas antes',exact:true});
+  assert.equal(await twoHourReminder.getAttribute('aria-pressed'),'false');
+  await twoHourReminder.click();
+  assert.equal(await twoHourReminder.getAttribute('aria-pressed'),'true');
   assert.equal(errors.length, 0, errors.join('\n'));
   await patientDialog.getByRole('button', { name: 'Crear paciente', exact: true }).click();
   await page.getByText('Paciente registrado correctamente.', { exact: true }).waitFor();
@@ -62,18 +66,21 @@ try {
     return rpc('linkare_load_state_v3', { org });
   });
   assert.ok(persisted.payload.appointments.some(item => item.notes === 'Cita sintética crítica QA'));
+  assert.ok(persisted.payload.patients.find(item=>item.name==='Paciente crítico QA')?.notificationPreferences?.reminderHours?.includes(2));
   assert.equal(errors.length, 0, errors.join('\n'));
 
   console.log(JSON.stringify({
-    passed: 7,
+    passed: 9,
     checks: [
       'read-only bootstrap and directory hydration trigger zero save RPCs',
       'insurance plus reveals fields without blanking the modal',
       'insurance state remains controlled and accessible',
+      'patient reminder timing is selectable instead of fixed globally',
       'appointment patient search is a single combobox',
       'appointment form exposes explicit AM/PM selection',
       `appointment save is acknowledged in ${saveMilliseconds}ms`,
       'appointment remains persisted in isolated PostgreSQL',
+      'patient-specific reminder timing survives a server reload',
     ],
     scope: 'Playwright + isolated PostgreSQL; synthetic data only; no production writes',
   }, null, 2));
