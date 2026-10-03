@@ -1,5 +1,6 @@
 import { supabase, supabaseConfigured, assertSupabaseConfigured } from '../lib/supabase.js';
 import { StateWriter } from '../domain/state-writer.js';
+import { APPOINTMENT_KEYS, pick } from '../domain/records.js';
 
 export const appMode = 'production';
 export const productionMode = true;
@@ -74,6 +75,17 @@ export function resetPersistence(){activeOrganization=null;writer.reset();}
 export function saveProductionState(organizationId,payload){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
   return writer.save(payload);
+}
+/**
+ * Create one appointment without diffing and rewriting the rest of the loaded
+ * patient state. This keeps the calendar submit bounded to the two records it
+ * owns and prevents a second autosave from competing for the same locks.
+ */
+export function createProductionAppointment(organizationId,appointment,{includeClinical=false}={}){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  const changes=[{kind:'appointment',id:appointment.id,expectedRevision:0,deleted:false,payload:pick(appointment,APPOINTMENT_KEYS)}];
+  if(includeClinical && String(appointment.notes||'').trim())changes.push({kind:'appointment_clinical',id:appointment.id,expectedRevision:0,deleted:false,payload:{notes:String(appointment.notes).trim()}});
+  return rpc('linkare_save_changes_v3',{org:organizationId,changes});
 }
 export function captureReportedMedication(organizationId,patientId,draft){
   return rpc('linkare_capture_medication_v1',{org:organizationId,patient_id:patientId,input:draft});

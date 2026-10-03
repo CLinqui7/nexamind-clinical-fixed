@@ -116,6 +116,7 @@ import {
   loadDashboardSummary,
   loadProfileAssets,
   loadLegacyPatientHistory,
+  createProductionAppointment,
   saveProductionState,
   setPersistenceBaseline, mergePersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
@@ -585,14 +586,12 @@ class App extends React.Component {
     clearInterval(this.consultationPromptTimer);clearInterval(this.encounterTimer);document.body.style.overflow='';
   }
 
-  componentDidUpdate(_previousProps,previousState){
-    if(!this.state.remoteReady||this.state.view!=='agenda')return;
-    const calendarsChanged=(previousState.selectedCalendarIds||[]).join(',')!==(this.state.selectedCalendarIds||[]).join(',');
-    if(previousState.calendarDate!==this.state.calendarDate||previousState.calendarView!==this.state.calendarView||calendarsChanged)this.refreshAgendaRange();
-  }
-
   componentDidUpdate(prevProps,prevState) {
     if(prevState.data!==this.state.data && this.state.data!==this.persistedData && this.state.remoteReady && !this.state.tourSandbox)this.schedulePersist();
+    if(this.state.remoteReady&&this.state.view==='agenda'){
+      const calendarsChanged=(prevState.selectedCalendarIds||[]).join(',')!==(this.state.selectedCalendarIds||[]).join(',');
+      if(prevState.calendarDate!==this.state.calendarDate||prevState.calendarView!==this.state.calendarView||calendarsChanged)this.refreshAgendaRange();
+    }
     const overlay=Boolean(this.state.modal||this.state.appointmentDetails);
     if(overlay!==Boolean(prevState.modal||prevState.appointmentDetails))document.body.style.overflow=overlay?'hidden':'';
     if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view || prevState.modal?.type!==this.state.modal?.type))requestAnimationFrame(this.focusTourTarget);
@@ -1859,8 +1858,9 @@ class App extends React.Component {
     } catch (error) { this.handleFormError(error); }
   };
 
-  saveAppointmentForm = event => {
+  saveAppointmentForm = async event => {
     event.preventDefault();
+    if(this.state.formSaving)return;
     try {
       const draft=this.state.modal.draft;const previous=draft.id?this.state.data.appointments.find(item=>item.id===draft.id):null;
       if(this.state.tourSandbox&&(draft.patientId!==this.tourDemoPatientId||new Date(draft.start)<=new Date()))throw new Error('Use el paciente demo y una fecha futura para esta práctica.');
@@ -1869,8 +1869,27 @@ class App extends React.Component {
       if(previous&&draft.status==='cancelled'&&previous.status!=='cancelled'&&!this.canCalendar(previous.calendarId,'Cancel'))return this.permissionDenied();
       const result = saveAppointment(this.state.data, draft);
       if(this.state.tourSandbox)this.tourDemoAppointmentId=result.appointment.id;
-      this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
-    } catch (error) { this.handleFormError(error); }
+      if(previous||this.state.tourSandbox){
+        await this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
+        return;
+      }
+      if(['dirty','saving'].includes(this.state.remoteSaveStatus))await this.flushChanges();
+      const epoch=this.authEpoch;const organizationId=this.state.remoteOrganizationId;
+      this.setState({formSaving:true,remoteSaveStatus:'saving',modalError:'',saveError:''});
+      const revisions=await createProductionAppointment(organizationId,result.appointment,{includeClinical:this.can('clinicalEdit')&&this.can('appointmentsManage')});
+      if(epoch!==this.authEpoch||!this.mounted)return;
+      const savedAppointment={...result.appointment,__revision:revisions.find(item=>item.kind==='appointment'&&item.id===result.appointment.id)?.revision||1};
+      const nextData={...result.data,patients:this.state.data.patients,appointments:result.data.appointments.map(item=>item.id===savedAppointment.id?savedAppointment:item)};
+      const permissions=Object.fromEntries(PERMISSION_KEYS.map(key=>[key,this.can(key)]));
+      mergePersistenceBaseline({appointments:[savedAppointment]},revisions,permissions);
+      this.persistedData=nextData;this.directoryCache?.clear();
+      this.setState({data:nextData,modal:null,modalError:'',appointmentDetails:savedAppointment,formSaving:false,remoteSaveStatus:'saved'},()=>{
+        this.notify('Evento creado correctamente.');this.refreshDashboardSummary();this.refreshAgendaRange();
+      });
+    } catch (error) {
+      const detail=readableError(error);
+      this.setState({formSaving:false,remoteSaveStatus:'error',saveError:detail,modalError:'No se guardó la cita. '+detail});
+    }
   };
 
   saveMedicationStatusForm = event => {
