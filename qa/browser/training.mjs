@@ -65,33 +65,39 @@ try {
     await dialog.getByRole('tab', { name: 'Preguntas frecuentes' }).click();
     assert.ok(await dialog.getByText('¿Por qué falta un botón?').count());
     await dialog.getByRole('button', { name: 'Iniciar recorrido interactivo' }).click();
-    const rail = page.locator('.training-rail');
-    await rail.waitFor();
-    assert.equal(await rail.locator('.training-step-list span').count(), steps);
-    assert.equal(await rail.locator('.training-step-list button').count(), 0, 'future steps must not be clickable');
+    const guide = page.locator('.training-popover');
+    await guide.waitFor();
+    assert.equal(await guide.getByRole('button', { name: /Siguiente|Finalizar/ }).count(), 0, 'the tour must advance from real actions, never Next');
     for (let index = 0; index < steps; index++) {
       const chapterTarget=chapter[index].target;
-      const next = rail.getByRole('button', { name: index === steps - 1 ? 'Finalizar' : 'Siguiente' });
-      assert.equal(await next.isDisabled(), true, `${role} step ${index + 1}: Next must wait for action`);
+      await page.locator(`.training-popover[data-tour-step="${index+1}"]`).waitFor();
       const target = page.locator('[data-tour-active-target="true"]');
       await target.waitFor();
       assert.equal(await target.count(), 1);
-      await page.locator('.training-beacon').waitFor();
-      assert.ok(await page.locator('.training-connector > path[stroke]').getAttribute('d'));
-      const separated = await page.evaluate(() => {
+      await page.locator('.training-target-pin').waitFor();
+      const geometry = await page.evaluate(() => {
         const target = document.querySelector('[data-tour-active-target]')?.getBoundingClientRect();
-        const panel = document.querySelector('.training-rail')?.getBoundingClientRect();
-        return target && panel && (target.right <= panel.left + 1 || target.bottom <= panel.top + 1 || target.top >= panel.bottom - 1);
+        const panel = document.querySelector('.training-popover')?.getBoundingClientRect();
+        return {
+          separated:target && panel && (target.right <= panel.left + 1 || target.bottom <= panel.top + 1 || target.top >= panel.bottom - 1),
+          targetVisible:target && target.right>0 && target.left<innerWidth && target.bottom>0 && target.top<innerHeight,
+          cardVisible:panel && panel.left>=0 && panel.right<=innerWidth+1 && panel.top>=0 && panel.bottom<=innerHeight+1,
+        };
       });
-      assert.ok(separated, `${role} ${size.width}: guide overlaps highlighted control at step ${index + 1}`);
+      assert.ok(geometry.separated, `${role} ${size.width}: guide overlaps highlighted control at step ${index + 1}`);
+      assert.ok(geometry.targetVisible && geometry.cardVisible, `${role} ${size.width}: target or guide leaves the viewport at step ${index + 1}`);
       const space = await page.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth }));
       assert.ok(space.document <= space.width + 1, `${role} ${size.width}: horizontal overflow`);
+      if(index===0){
+        await page.evaluate(()=>document.querySelector('[data-tour="help-button"]').click());
+        assert.equal(await page.getByRole('dialog').count(),0,'non-target clicks must not change the screen');
+        assert.equal(await guide.getAttribute('data-tour-step'),'1');
+      }
       if (process.env.LINKARE_TOUR_SHOTS === '1' && [0, 7, 11].includes(index)) {
         await page.screenshot({ path: `${process.env.TEMP}/linkare-tour-${role}-${size.width}-${index + 1}.png` });
       }
       const calendarWasChecked=chapterTarget==='calendar-filter-first'?await target.locator('input').isChecked():null;
       await target.click();
-      await rail.locator('.training-step-status.done').waitFor();
       if(chapterTarget==='nav-patients')await page.getByRole('heading',{name:'Pacientes',exact:true}).waitFor();
       if(chapterTarget==='nav-agenda')await page.getByRole('heading',{name:'Calendarios',exact:true}).waitFor();
       if(chapterTarget==='calendar-filter-first')assert.notEqual(await target.locator('input').isChecked(),calendarWasChecked);
@@ -101,10 +107,10 @@ try {
       if(chapterTarget==='team-add-user')await page.getByRole('dialog',{name:'Agregar usuario'}).waitFor();
       if(chapterTarget==='team-permissions-custom')assert.equal(await page.getByRole('radio',{name:'Personalizados'}).isChecked(),true);
       if(chapterTarget==='help-guide-tab')assert.ok(await page.getByRole('dialog').locator('.training-guide section').count()>=6);
-      assert.equal(await next.isEnabled(), true, `${role} step ${index + 1}: action unlocks Next`);
-      await next.click();
+      if(index<steps-1)await page.locator(`.training-popover[data-tour-step="${index+2}"]`).waitFor();
+      else await guide.waitFor({state:'detached'});
     }
-    assert.equal(await rail.count(), 0);
+    assert.equal(await guide.count(), 0);
     assert.equal(await page.locator('[data-tour-active-target]').count(), 0);
     assert.deepEqual(errors, [], `${role} ${size.width} JavaScript errors`);
     await page.close();
@@ -113,11 +119,11 @@ try {
   await login(reduced, 'owner');
   await reduced.getByRole('button', { name: 'Ayuda', exact: true }).click();
   await reduced.getByRole('button', { name: 'Iniciar recorrido interactivo' }).click();
-  assert.equal(await reduced.locator('.training-rail').evaluate(element => getComputedStyle(element).animationName), 'none');
+  assert.equal(await reduced.locator('.training-popover').evaluate(element => getComputedStyle(element).animationName), 'none');
   await reduced.keyboard.press('Escape');
-  assert.equal(await reduced.locator('.training-rail').count(), 0);
+  assert.equal(await reduced.locator('.training-popover').count(), 0);
   await reduced.close();
-  console.log('TRAINING_QA_OK: video, gated guided actions, visual targets, role guides, desktop/tablet/mobile, no JS errors');
+  console.log('TRAINING_QA_OK: video, automatic action-driven guide, contextual targets, role guides, desktop/tablet/mobile, no JS errors');
 } finally {
   await browser.close();
 }

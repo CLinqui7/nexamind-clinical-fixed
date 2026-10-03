@@ -466,6 +466,8 @@ class App extends React.Component {
 
   componentWillUnmount() {
     this.mounted=false;this.authEpoch++;
+    clearTimeout(this.tourAdvanceTimer);
+    if(this.tourMarkerFrame)cancelAnimationFrame(this.tourMarkerFrame);
     window.removeEventListener('keydown',this.handleKeyDown);
     window.removeEventListener('online',this.handleOnline);window.removeEventListener('offline',this.handleOffline);window.removeEventListener('beforeunload',this.warnUnsaved);
     document.removeEventListener('click',this.handleTourInteraction,true);
@@ -484,10 +486,11 @@ class App extends React.Component {
     const overlay=Boolean(this.state.modal||this.state.appointmentDetails);
     if(overlay!==Boolean(prevState.modal||prevState.appointmentDetails))document.body.style.overflow=overlay?'hidden':'';
     if(this.state.tourActive && (!prevState.tourActive || prevState.tourIndex!==this.state.tourIndex || prevState.view!==this.state.view || prevState.modal?.type!==this.state.modal?.type))requestAnimationFrame(this.focusTourTarget);
+    if(this.state.tourActive && prevState.tourStepComplete!==this.state.tourStepComplete)this.scheduleTourMarker();
     if(prevState.tourActive && !this.state.tourActive)document.querySelectorAll('[data-tour-active-target]').forEach(node=>node.removeAttribute('data-tour-active-target'));
   }
 
-  handleKeyDown = event => {if(event.key==='Escape'){if(this.state.modal)this.closeModal();else if(this.state.appointmentDetails)this.setState({appointmentDetails:null});else if(this.state.tourActive)this.stopTour();}};
+  handleKeyDown = event => {if(event.key==='Escape'){if(this.state.tourActive)this.stopTour();else if(this.state.modal)this.closeModal();else if(this.state.appointmentDetails)this.setState({appointmentDetails:null});}};
 
   updateLoginDraft = (key, value) => {
     this.setState(prev => ({ loginDraft: { ...prev.loginDraft, [key]: value }, loginError: '' }));
@@ -616,14 +619,48 @@ class App extends React.Component {
   };
 
   handleTourInteraction = event => {
-    if(!this.state.tourActive || this.state.tourStepComplete)return;
+    if(!this.state.tourActive)return;
     const step=this.currentTraining().steps[this.state.tourIndex];
-    if(!step || event.type!==step.event)return;
+    if(!step)return;
     const target=this.tourTargetFor(step);
+    if(event.type==='click' && !target?.contains(event.target) && !event.target.closest('.training-popover')){
+      event.preventDefault();event.stopPropagation();return;
+    }
+    if(event.type==='click' && this.state.tourStepComplete && !event.target.closest('.training-popover')){
+      event.preventDefault();event.stopPropagation();return;
+    }
+    if(this.state.tourStepComplete || event.type!==step.event)return;
     if(!target || !target.contains(event.target) || event.target.disabled)return;
     const index=this.state.tourIndex;
-    // Allow the control's own React handler to run before updating the guide.
-    setTimeout(()=>{if(this.mounted&&this.state.tourActive&&this.state.tourIndex===index)this.setState({tourStepComplete:true,tourMissing:false});},0);
+    // Let the control's React handler run, then confirm that it actually changed the UI.
+    setTimeout(()=>{
+      if(!this.mounted||!this.state.tourActive||this.state.tourIndex!==index||!this.tourActionSucceeded(step))return;
+      this.setState({tourStepComplete:true,tourMissing:false},()=>{
+        const reduced=this.state.data.settings?.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.tourAdvanceTimer=setTimeout(()=>this.advanceTourFromAction(index),reduced?100:520);
+      });
+    },40);
+  };
+
+  tourActionSucceeded = step => {
+    const target=this.tourTargetFor(step);
+    switch(step.target){
+      case 'nav-patients':return this.state.view==='patients';
+      case 'nav-agenda':return this.state.view==='agenda';
+      case 'nav-dashboard':return this.state.view==='dashboard';
+      case 'settings-button':return this.state.view==='settings';
+      case 'patients-search':return document.activeElement===target;
+      case 'patients-filter-review':return this.state.patientFilter==='review';
+      case 'patients-filter-unscheduled':return this.state.patientFilter==='unscheduled';
+      case 'agenda-new-event':return this.state.modal?.type==='appointment';
+      case 'appointment-calendar-first':return Boolean(this.state.modal?.draft?.calendarId);
+      case 'appointment-cancel':case 'team-cancel':case 'help-close':return !this.state.modal;
+      case 'team-add-user':return this.state.modal?.type==='secretary';
+      case 'team-permissions-custom':return this.state.modal?.draft?.permissionMode==='custom';
+      case 'help-button':return this.state.modal?.type==='help';
+      case 'help-guide-tab':return this.state.modal?.type==='help'&&this.state.helpTab==='guide';
+      default:return true;
+    }
   };
 
   scheduleTourMarker = () => {
@@ -635,16 +672,27 @@ class App extends React.Component {
     if(!this.state.tourActive)return;
     const step=this.currentTraining().steps[this.state.tourIndex];
     const target=this.tourTargetFor(step);
-    const rail=document.querySelector('.training-rail');
-    if(!target || !rail || !target.getClientRects().length){if(this.state.tourStepComplete){if(this.state.tourMarker)this.setState({tourMarker:null});}else if(!this.state.tourMissing)this.setState({tourMissing:true,tourMarker:null});return;}
-    const rect=target.getBoundingClientRect(),panel=rail.getBoundingClientRect();
-    const below=panel.top>innerHeight/2;
-    const endX=below?Math.max(12,Math.min(innerWidth-12,rect.left+rect.width/2)):Math.min(innerWidth-12,rect.right+7);
-    const endY=below?Math.min(innerHeight-12,rect.bottom+7):Math.max(12,Math.min(innerHeight-12,rect.top+rect.height/2));
-    const startX=below?panel.left+Math.min(panel.width/2,220):panel.left-8;
-    const startY=below?panel.top-8:panel.top+Math.min(panel.height*.52,320);
-    const path=below?`M ${startX} ${startY} Q ${startX} ${Math.max(endY+35,startY-100)} ${endX} ${endY}`:`M ${startX} ${startY} Q ${(startX+endX)/2} ${startY} ${endX} ${endY}`;
-    const marker={path,left:Math.max(10,Math.min(innerWidth-142,rect.left)),top:rect.top>52?rect.top-47:rect.bottom+10};
+    const popover=document.querySelector('.training-popover');
+    if(!target || !popover || !target.getClientRects().length){
+      if(this.state.tourStepComplete){if(this.state.tourMarker)this.setState({tourMarker:null});}
+      else if(!this.state.tourMissing)this.setState({tourMissing:true,tourMarker:null});
+      return;
+    }
+    const rect=target.getBoundingClientRect(),card=popover.getBoundingClientRect();
+    const gap=18,pad=12,width=card.width,height=card.height;
+    const room={bottom:innerHeight-rect.bottom-pad,top:rect.top-pad,right:innerWidth-rect.right-pad,left:rect.left-pad};
+    const placement=room.bottom>=height+gap?'bottom':room.top>=height+gap?'top':room.right>=width+gap?'right':room.left>=width+gap?'left':room.bottom>=room.top?'bottom':'top';
+    let left,top;
+    if(placement==='bottom'||placement==='top'){
+      left=Math.max(pad,Math.min(innerWidth-width-pad,rect.left+rect.width/2-width/2));
+      top=placement==='bottom'?rect.bottom+gap:rect.top-height-gap;
+    }else{
+      left=placement==='right'?rect.right+gap:rect.left-width-gap;
+      top=Math.max(pad,Math.min(innerHeight-height-pad,rect.top+rect.height/2-height/2));
+    }
+    left=Math.max(pad,Math.min(innerWidth-width-pad,left));
+    top=Math.max(pad,Math.min(innerHeight-height-pad,top));
+    const marker={left,top,placement,arrowX:Math.max(20,Math.min(width-20,rect.left+rect.width/2-left)),arrowY:Math.max(20,Math.min(height-20,rect.top+rect.height/2-top)),badgeLeft:Math.max(5,Math.min(innerWidth-31,rect.right-12)),badgeTop:Math.max(5,Math.min(innerHeight-31,rect.top-12))};
     this.setState(prev=>JSON.stringify(prev.tourMarker)===JSON.stringify(marker)&&!prev.tourMissing?null:{tourMarker:marker,tourMissing:false});
   };
 
@@ -655,24 +703,25 @@ class App extends React.Component {
     const target=this.tourTargetFor(step);
     if(!target){this.updateTourMarker();return;}
     target.setAttribute('data-tour-active-target','true');
-    target.scrollIntoView({block:'center',behavior:'instant'});
+    target.scrollIntoView({block:'center',behavior:'auto'});
     this.scheduleTourMarker();
     setTimeout(this.scheduleTourMarker,180);
   };
 
   startTour = () => {
+    clearTimeout(this.tourAdvanceTimer);
     const step=this.currentTraining().steps[0];
     this.setState({modal:null,tourActive:true,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step?.view||'dashboard',mobileNav:innerWidth<=880&&step?.target?.startsWith('nav-')});
   };
 
-  goTourStep = index => {
-    if(!this.state.tourStepComplete)return;
-    const step=this.currentTraining().steps[index];
-    if(!step)return this.stopTour();
-    this.setState({tourIndex:index,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step.view,mobileNav:innerWidth<=880&&step.target.startsWith('nav-')});
+  advanceTourFromAction = index => {
+    if(!this.state.tourActive||!this.state.tourStepComplete||this.state.tourIndex!==index)return;
+    const step=this.currentTraining().steps[index+1];
+    if(!step){this.stopTour();this.notify('Recorrido completado. Puede repetirlo desde Ayuda.');return;}
+    this.setState({tourIndex:index+1,tourStepComplete:false,tourMissing:false,tourMarker:null,view:step.view,mobileNav:innerWidth<=880&&step.target.startsWith('nav-')});
   };
 
-  stopTour = () => this.setState({tourActive:false,tourMarker:null,tourMissing:false,tourStepComplete:false});
+  stopTour = () => {clearTimeout(this.tourAdvanceTimer);this.setState({tourActive:false,tourMarker:null,tourMissing:false,tourStepComplete:false});};
 
   schedulePersist = () => {
     clearTimeout(this.persistTimer);
@@ -2711,15 +2760,15 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     const steps=training.steps;const step=steps[this.state.tourIndex];
     if(!step)return null;
     const marker=this.state.tourMarker;
-    return html`${marker?html`<svg className="training-connector" aria-hidden="true" width="100%" height="100%"><defs><marker id="training-arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M 0 1 L 9 5.5 L 0 10" fill="none" stroke="#e26f45" strokeWidth="2.5"/></marker></defs><path d=${marker.path} fill="none" stroke="#e26f45" strokeWidth="3" strokeDasharray="7 6" markerEnd="url(#training-arrow)"/></svg><div className="training-beacon" aria-hidden="true" style=${{left:marker.left,top:marker.top}}><span className="training-beacon-pulse"></span>${step.event==='change'?'SELECCIONE AQUÍ':step.event==='focusin'?'TOQUE AQUÍ':'PULSE AQUÍ'}</div>`:null}
-    <aside className="training-rail" aria-label=${`Recorrido interactivo para ${training.label}`}>
-      <div className="training-rail-head"><div className="training-rail-brand"><span className="training-rail-mark"><${Icon} name="activity" size=${20}/></span><span><b>Linkare en acción</b><small>${training.label} · guía interactiva</small></span></div><button type="button" className="training-rail-close" aria-label="Cerrar recorrido" onClick=${this.stopTour}>×</button></div>
-      <div className="training-progress" aria-label=${`Paso ${this.state.tourIndex+1} de ${steps.length}`}><div style=${{width:`${((this.state.tourIndex+1)/steps.length)*100}%`}}></div></div>
-      <div className="training-rail-content" aria-live="polite" aria-atomic="true"><span className="training-count">PASO ${String(this.state.tourIndex+1).padStart(2,'0')} / ${String(steps.length).padStart(2,'0')}</span><span className="training-step-icon"><${Icon} name=${step.icon} size=${24}/></span><h2>${step.title}</h2><p>${step.text}</p><div className="training-action"><span className="training-action-number">${this.state.tourIndex+1}</span><strong>${step.action}</strong></div><div className=${`training-step-status ${this.state.tourStepComplete?'done':this.state.tourMissing?'missing':'pending'}`} role="status">${this.state.tourStepComplete?'✓ Acción completada. Puede continuar.':this.state.tourMissing?'No encontramos el control. Reinicie el recorrido.':'Siguiente se activa al realizar esta acción.'}</div><div className="training-tip"><${Icon} name="check" size=${16}/><span>${step.tip}</span></div></div>
-      <div className="training-step-list" aria-label="Progreso del recorrido">${steps.map((item,index)=>html`<span key=${item.title} aria-label=${`Paso ${index+1}: ${item.title}`} aria-current=${index===this.state.tourIndex?'step':null} className=${index===this.state.tourIndex?'active':index<this.state.tourIndex?'complete':''}>${index<this.state.tourIndex?'✓':index+1}</span>`)}</div>
-      <div className="training-rail-actions">${this.state.tourMissing?html`<${Button} tone="secondary" onClick=${this.startTour}>Reiniciar</${Button}>`:html`<span className="training-rail-hint">Realice el paso señalado<br/>para continuar</span>`}<${Button} disabled=${!this.state.tourStepComplete} icon=${this.state.tourIndex===steps.length-1?'check':'chevronRight'} onClick=${()=>this.goTourStep(this.state.tourIndex+1)}>${this.state.tourIndex===steps.length-1?'Finalizar':'Siguiente'}</${Button}></div>
-      <button type="button" className="training-open-guide" onClick=${()=>{this.stopTour();this.openHelp();}}>Volver a videos y guía rápida</button>
-    </aside>`;
+    const placement=marker?.placement||'bottom';
+    const position=marker?{left:marker.left,top:marker.top,'--tour-arrow-x':`${marker.arrowX}px`,'--tour-arrow-y':`${marker.arrowY}px`}:this.state.tourMissing?{left:Math.max(12,innerWidth/2-160),top:Math.max(12,innerHeight/2-120)}:{left:12,top:12,visibility:'hidden'};
+    return html`${marker?html`<span className="training-target-pin" style=${{left:marker.badgeLeft,top:marker.badgeTop}} aria-hidden="true">${this.state.tourStepComplete?'✓':this.state.tourIndex+1}</span>`:null}
+      <aside className=${`training-popover placement-${placement} ${this.state.tourStepComplete?'is-complete':''}`} data-tour-step=${this.state.tourIndex+1} style=${position} aria-label=${`Recorrido guiado para ${training.label}`}>
+        <div className="training-popover-head"><span className="training-live-dot"></span><span>LINKARE · GUÍA EN VIVO</span><button type="button" aria-label="Salir del recorrido" onClick=${this.stopTour}><${Icon} name="close" size=${17}/></button></div>
+        <div className="training-popover-progress" aria-label=${`Paso ${this.state.tourIndex+1} de ${steps.length}`}><span style=${{width:`${((this.state.tourIndex+1)/steps.length)*100}%`}}></span></div>
+        <div className="training-popover-body" aria-live="polite"><div className="training-popover-kicker"><span className="training-popover-icon"><${Icon} name=${step.icon} size=${17}/></span><span>PASO ${String(this.state.tourIndex+1).padStart(2,'0')} DE ${String(steps.length).padStart(2,'0')} · ${training.label.toUpperCase()}</span></div><h2>${step.title}</h2><p>${step.text}</p><div className="training-do"><${Icon} name=${this.state.tourStepComplete?'check':'mouse'} size=${20}/><div><small>${this.state.tourStepComplete?'¡BIEN HECHO!':'AHORA HAGA ESTO'}</small><strong>${this.state.tourStepComplete?'Avanzando al siguiente paso…':step.action}</strong></div></div></div>
+        <div className="training-popover-foot" role="status">${this.state.tourMissing?html`<span>No encuentro el control de este paso.</span><button type="button" onClick=${this.startTour}>Reiniciar</button>`:html`<span>${this.state.tourStepComplete?'Acción confirmada.':'Toque el control resaltado; la guía avanzará sola.'}</span>`}</div>
+      </aside>`;
   }
 
   renderAppointmentDetails() {
