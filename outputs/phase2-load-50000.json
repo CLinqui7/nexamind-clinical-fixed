@@ -1,0 +1,130 @@
+{
+  "status": "ISOLATED_SYNTHETIC_REHEARSAL",
+  "engine": "PGlite embedded PostgreSQL (not production Supabase)",
+  "generatedAt": "2026-10-03T06:57:46.748Z",
+  "patients": 50000,
+  "appointments": 100000,
+  "seed": {
+    "patientsMs": 2103.438,
+    "appointmentsMs": 3182.297
+  },
+  "directory": {
+    "samples": 40,
+    "p50Ms": 1.939,
+    "p95Ms": 2.897,
+    "p99Ms": 3.103,
+    "maxMs": 3.291
+  },
+  "accentSearch": {
+    "samples": 20,
+    "p50Ms": 1.555,
+    "p95Ms": 2.976,
+    "p99Ms": 2.976,
+    "maxMs": 4.106
+  },
+  "agendaRange200": {
+    "samples": 20,
+    "p50Ms": 0.687,
+    "p95Ms": 1.831,
+    "p99Ms": 1.831,
+    "maxMs": 3.364
+  },
+  "concurrentReads": {
+    "1": {
+      "samples": 5,
+      "p50Ms": 1.389,
+      "p95Ms": 1.876,
+      "p99Ms": 1.876,
+      "maxMs": 2.4
+    },
+    "5": {
+      "samples": 5,
+      "p50Ms": 7.635,
+      "p95Ms": 8.039,
+      "p99Ms": 8.039,
+      "maxMs": 9.75
+    },
+    "20": {
+      "samples": 5,
+      "p50Ms": 28.782,
+      "p95Ms": 29.135,
+      "p99Ms": 29.135,
+      "maxMs": 31.599
+    }
+  },
+  "concurrentWrites": {
+    "1": {
+      "samples": 3,
+      "p50Ms": 3.038,
+      "p95Ms": 3.038,
+      "p99Ms": 3.038,
+      "maxMs": 11.274
+    },
+    "5": {
+      "samples": 3,
+      "p50Ms": 8.76,
+      "p95Ms": 8.76,
+      "p99Ms": 8.76,
+      "maxMs": 12.295
+    },
+    "20": {
+      "samples": 3,
+      "p50Ms": 37.649,
+      "p95Ms": 37.649,
+      "p99Ms": 37.649,
+      "maxMs": 41.642
+    }
+  },
+  "bytes": {
+    "bootstrap": 1449,
+    "directoryPage20": 9289
+  },
+  "contracts": {
+    "pageItems": 20,
+    "pageLimit": 20,
+    "hasMore": true
+  },
+  "explain": [
+    {
+      "Plan": {
+        "Node Type": "Result",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Startup Cost": 0,
+        "Total Cost": 0.26,
+        "Plan Rows": 1,
+        "Plan Width": 32,
+        "Actual Startup Time": 1.351,
+        "Actual Total Time": 1.361,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Disabled": false,
+        "Shared Hit Blocks": 28,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning": {
+        "Shared Hit Blocks": 0,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.052,
+      "Triggers": [],
+      "Execution Time": 1.46
+    }
+  ]
+}

@@ -4,6 +4,10 @@ export class StateWriter {
   constructor(send){this.send=send;this.reset();}
   reset(){this.baseline=new Map();this.revisions=new Map();this.latest=null;this.running=null;this.clinical=false;this.diffOptions={allowDeletes:true};this.epoch=(this.epoch||0)+1;}
   seed(data,revisions,clinical,diffOptions={allowDeletes:true}){this.reset();this.clinical=clinical;this.diffOptions=diffOptions;this.baseline=projectRecords(data,clinical);this.revisions=new Map((revisions||[]).map(r=>[recordKey(r.kind,r.id),r.revision]));}
+  merge(data,revisions,clinical=this.clinical){
+    for(const [key,record] of projectRecords(data,clinical))this.baseline.set(key,record);
+    for(const rev of revisions||[])this.revisions.set(recordKey(rev.kind,rev.id),rev.revision);
+  }
   save(data){this.latest=projectRecords(data,this.clinical);if(this.running)return this.running;
     const epoch=this.epoch;
     this.running=(async()=>{

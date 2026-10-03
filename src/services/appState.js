@@ -8,8 +8,10 @@ export const publicAppUrl = String(import.meta.env.VITE_PUBLIC_APP_URL || 'https
 import { readableError } from '../domain/errors.js';
 export { readableError };
 
-async function rpc(name,args={}) {
-  const {data,error}=await assertSupabaseConfigured().rpc(name,args);
+async function rpc(name,args={},options={}) {
+  const request=assertSupabaseConfigured().rpc(name,args);
+  if(options.signal&&typeof request.abortSignal==='function')request.abortSignal(options.signal);
+  const {data,error}=await request;
   if(error) { const e=new Error(readableError(error));e.code=error.code;e.original=error.message;throw e; }
   return data;
 }
@@ -59,14 +61,15 @@ export function onAuthChange(callback) { return supabase?.auth.onAuthStateChange
 export function checkProductionAccess(organizationId) { return rpc('linkare_access_v3',{org:organizationId}); }
 export async function bootstrapAndLoadState(_unused,requestedOrganizationName=null) {
   const organizationId=await rpc('linkare_bootstrap_v3',{requested_name:requestedOrganizationName});
-  const result=await rpc('linkare_load_state_v3',{org:organizationId});
+  const result=await rpc('linkare_bootstrap_state_v4',{org:organizationId});
   if(!['owner','doctor','nurse','secretary'].includes(result?.memberRole) || !result?.userId)throw new Error('No hay un rol habilitado para su cuenta.');
   return result;
 }
 
 let activeOrganization=null;
 const writer=new StateWriter(changes=>rpc('linkare_save_changes_v3',{org:activeOrganization,changes}));
-export function setPersistenceBaseline(organizationId,data,revisions,clinical){activeOrganization=organizationId;writer.seed(data,revisions,clinical);}
+export function setPersistenceBaseline(organizationId,data,revisions,clinical){activeOrganization=organizationId;writer.seed(data,revisions,clinical,{allowDeletes:false});}
+export function mergePersistenceBaseline(data,revisions,clinical){writer.merge(data,revisions,clinical);}
 export function resetPersistence(){activeOrganization=null;writer.reset();}
 export function saveProductionState(organizationId,payload){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
@@ -78,8 +81,20 @@ export function captureReportedMedication(organizationId,patientId,draft){
 export function loadDailyAgenda(organizationId,date){
   return rpc('linkare_daily_agenda_v1',{org:organizationId,agenda_date:date});
 }
-export function loadLegacyPatientHistory(organizationId,patientId,offset=0,limit=100){
-  return rpc('linkare_legacy_patient_history_v1',{org:organizationId,p_patient_id:patientId,p_offset:offset,p_limit:limit});
+export function loadPatientDirectory(organizationId,{scope='recent',query='',cursor=null,asOf=null,limit=20,signal}={}){
+  return rpc('linkare_patient_directory_v1',{org:organizationId,p_scope:scope,p_query:query||null,p_cursor:cursor,p_as_of:asOf,p_limit:Math.min(20,limit)},{signal});
+}
+export function loadPatientDetail(organizationId,patientId,{signal}={}){
+  return rpc('linkare_patient_detail_v1',{org:organizationId,p_patient_id:patientId},{signal});
+}
+export function loadAgendaRange(organizationId,{start,end,calendarIds=null,cursor=null,limit=200,signal}={}){
+  return rpc('linkare_agenda_range_v1',{org:organizationId,p_start:start,p_end:end,p_calendar_ids:calendarIds?.length?calendarIds:null,p_cursor:cursor,p_limit:Math.min(200,limit)},{signal});
+}
+export function loadDashboardSummary(organizationId,{asOf=null,signal}={}){
+  return rpc('linkare_dashboard_summary_v1',{org:organizationId,p_as_of:asOf},{signal});
+}
+export function loadLegacyPatientHistory(organizationId,patientId,cursor=null,limit=20,scope='all'){
+  return rpc('linkare_legacy_patient_history_v2',{org:organizationId,p_patient_id:patientId,p_scope:scope,p_cursor:cursor,p_limit:Math.min(20,limit)});
 }
 export function archiveMedication(organizationId,patientId,medicationId,reason){
   return rpc('linkare_archive_medication_v1',{p_org:organizationId,p_patient_id:patientId,p_medication_id:medicationId,p_reason:reason});

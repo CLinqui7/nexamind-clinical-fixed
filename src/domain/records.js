@@ -24,10 +24,12 @@ export function projectRecords(data, clinical = false) {
   const add = (kind,id,payload) => out.set(recordKey(kind,id), {kind,id:String(id),payload});
   const can = key => typeof clinical==='boolean' ? clinical || ['patientsCreate','patientsEdit','appointmentsManage'].includes(key) : clinical?.[key]===true;
   if (can('settingsManage')) {
-    add('profile','clinic',pick(data.organization, PROFILE_KEYS));
-    add('settings','clinic',pick(data.settings, SETTINGS_KEYS));
+    if(data.organization)add('profile','clinic',pick(data.organization, PROFILE_KEYS));
+    if(data.settings)add('settings','clinic',pick(data.settings, SETTINGS_KEYS));
   }
   for (const patient of data.patients || []) {
+    // Directory rows are deliberately incomplete and must never become writes.
+    if(patient?.__summaryOnly===true)continue;
     if(can('patientsCreate') || can('patientsEdit')) add('patient_admin',patient.id,pick(patient,can('patientsEdit')?ADMIN_PATIENT_KEYS:ADMIN_PATIENT_KEYS.filter(k=>k!=='updatedAt')));
     if(['clinicalEdit','medicationsManage','documentsManage','prescriptionsCreate','prescriptionsEdit','consultationsManage'].some(can)) {
       const privateFields=Object.fromEntries(Object.entries(patient).filter(([k])=>!ADMIN_PATIENT_KEYS.includes(k) && !k.startsWith('__')));

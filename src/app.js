@@ -110,11 +110,16 @@ import {
   archivePatient,
   captureReportedMedication,
   loadDailyAgenda,
+  loadPatientDirectory,
+  loadPatientDetail,
+  loadAgendaRange,
+  loadDashboardSummary,
   loadLegacyPatientHistory,
   saveProductionState,
-  setPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
+  setPersistenceBaseline, mergePersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
 } from './services/appState.js';
+import {directoryPatient,mergePatients,directoryRange,PatientPageCache,PAGE_LIMIT} from './domain/patient-directory.js';
 import {
   CONFIDENTIALITY_LEVELS,
   DEATH_MANNER_OPTIONS,
@@ -359,7 +364,7 @@ class AppErrorBoundary extends React.Component {
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.authEpoch=0; this.mounted=false; this.persistTask=null;
+    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;
     const data=createEmptyData();
     this.state={
       data,authenticatedUserId:null,authView:'login',
@@ -377,6 +382,8 @@ class App extends React.Component {
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
       legacyHistoryByPatient:{},
+      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},
+      dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},
       tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
     };
   }
@@ -393,15 +400,75 @@ class App extends React.Component {
     if(!user || !['owner','doctor','nurse','secretary'].includes(user.role))throw new Error('Su cuenta no tiene acceso habilitado.');
     data.settings.activeUserId=user.id;
     this.persistedData=data;
-    setPersistenceBaseline(remote.organizationId,data,remote.revisions,Object.fromEntries(PERMISSION_KEYS.map(k=>[k,permissionAllowed(user,k)])));
+    const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,permissionAllowed(user,k)]));
+    setPersistenceBaseline(remote.organizationId,data,remote.revisions,permissions);
     clearTimeout(this.loadingTimer);
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{}},()=>{
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},projection:remote.projection,
+      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null}},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
-        this.loadIntegrationStatus();this.refreshDailyAgenda();this.checkConsultationPrompt();
+        this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
       });
+  };
+
+  refreshDashboardSummary = async () => {
+    const org=this.state.remoteOrganizationId;if(!org||!this.can('patientsView'))return;
+    const epoch=this.authEpoch;
+    try{const dashboardSummary=await loadDashboardSummary(org);if(epoch===this.authEpoch)this.setState({dashboardSummary});}catch(_){/* Directory remains independently usable. */}
+  };
+
+  refreshPatientDirectory = async ({scope,query,cursor,pageIndex=0,force=false}={}) => {
+    const org=this.state.remoteOrganizationId;if(!org||!this.can('patientsView'))return;
+    const current=this.state.patientDirectory;scope=scope||current.scope;query=query===undefined?current.query:query;cursor=cursor===undefined?(current.cursorStack?.[pageIndex]||null):cursor;
+    const permissionKey=JSON.stringify(this.activeUser()?.permissions||{});const cacheParts=[org,this.state.authenticatedUserId,permissionKey,scope,query||'',cursor||null];const cached=!force&&this.directoryCache.get(cacheParts);
+    if(cached)return this.applyDirectoryPage(cached,{scope,query,cursor,pageIndex});
+    this.directoryAbort?.abort();this.directoryAbort=new AbortController();const request=++this.directoryRequest;
+    this.setState({patientDirectory:{...current,scope,query,loading:true,error:''}});
+    try{
+      const result=await loadPatientDirectory(org,{scope,query,cursor,asOf:pageIndex?current.asOf:null,limit:PAGE_LIMIT,signal:this.directoryAbort.signal});
+      if(request!==this.directoryRequest)return;this.directoryCache.set(cacheParts,result);this.applyDirectoryPage(result,{scope,query,cursor,pageIndex});
+    }catch(error){if(error?.name!=='AbortError'&&request===this.directoryRequest)this.setState(previous=>({patientDirectory:{...previous.patientDirectory,loading:false,error:readableError(error)}}));}
+  };
+
+  applyDirectoryPage = (result,{scope,query,cursor,pageIndex}) => {
+    const summaries=(result.items||[]).map(directoryPatient);const cursors=(this.state.patientDirectory.cursorStack||[null]).slice(0,pageIndex+1);cursors[pageIndex]=cursor||null;
+    this.setState(previous=>({
+      data:{...previous.data,patients:mergePatients(previous.data.patients.filter(patient=>!patient.__summaryOnly&&patient.id===previous.selectedPatientId),summaries)},
+      patientDirectory:{...result,scope,query,items:summaries,cursorStack:cursors,pageIndex,nextCursor:result.nextCursor||null,loading:false,error:''},
+    }));
+  };
+
+  selectDirectoryScope = scope => {clearTimeout(this.patientSearchTimer);this.refreshPatientDirectory({scope,query:this.state.patientDirectory.query,cursor:null,pageIndex:0,force:true});};
+  changeDirectorySearch = query => {
+    this.setState(previous=>({patientDirectory:{...previous.patientDirectory,query,loading:true,error:''}}));clearTimeout(this.patientSearchTimer);
+    this.patientSearchTimer=setTimeout(()=>this.refreshPatientDirectory({query,cursor:null,pageIndex:0,force:true}),300);
+  };
+  nextDirectoryPage = () => {const d=this.state.patientDirectory;if(!d.hasMore||!d.nextCursor)return;const pageIndex=d.pageIndex+1;const cursorStack=[...d.cursorStack];cursorStack[pageIndex]=d.nextCursor;this.setState({patientDirectory:{...d,cursorStack}},()=>this.refreshPatientDirectory({cursor:d.nextCursor,pageIndex}));};
+  previousDirectoryPage = () => {const d=this.state.patientDirectory;if(d.pageIndex<1)return;const pageIndex=d.pageIndex-1;this.refreshPatientDirectory({cursor:d.cursorStack[pageIndex]||null,pageIndex});};
+
+  refreshAgendaRange = async () => {
+    const org=this.state.remoteOrganizationId;if(!org||!this.can('appointmentsManage'))return;
+    this.agendaAbort?.abort();this.agendaAbort=new AbortController();const request=++this.agendaRequest;const range=directoryRange(this.state.calendarDate,this.state.calendarView);
+    this.setState({agendaRange:{...this.state.agendaRange,loading:true,error:''}});
+    try{const result=await loadAgendaRange(org,{...range,calendarIds:this.state.selectedCalendarIds,signal:this.agendaAbort.signal});if(request!==this.agendaRequest)return;
+      const appointments=normalizeData({appointments:result.items||[]}).appointments;
+      const revisions=appointments.filter(item=>item.__revision).map(item=>({kind:'appointment',id:item.id,revision:item.__revision}));
+      const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,this.can(k)]));mergePersistenceBaseline({appointments},revisions,permissions);
+      const agendaPatients=appointments.filter(item=>item.patientSummary?.id).map(item=>directoryPatient(item.patientSummary));
+      this.setState(previous=>({data:{...previous.data,appointments,patients:mergePatients(previous.data.patients,agendaPatients)},agendaRange:{...result,loading:false,error:''}}));
+    }catch(error){if(error?.name!=='AbortError'&&request===this.agendaRequest)this.setState({agendaRange:{loading:false,error:readableError(error),hasMore:false,nextCursor:null}});}
+  };
+
+  loadMoreAgenda = async () => {
+    const current=this.state.agendaRange;if(!current.hasMore||!current.nextCursor)return;const range=directoryRange(this.state.calendarDate,this.state.calendarView);
+    this.setState({agendaRange:{...current,loading:true,error:''}});
+    try{const result=await loadAgendaRange(this.state.remoteOrganizationId,{...range,calendarIds:this.state.selectedCalendarIds,cursor:current.nextCursor});const more=normalizeData({appointments:result.items||[]}).appointments;
+      const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,this.can(k)]));mergePersistenceBaseline({appointments:more},more.filter(item=>item.__revision).map(item=>({kind:'appointment',id:item.id,revision:item.__revision})),permissions);
+      const agendaPatients=more.filter(item=>item.patientSummary?.id).map(item=>directoryPatient(item.patientSummary));
+      this.setState(previous=>({data:{...previous.data,appointments:[...previous.data.appointments,...more],patients:mergePatients(previous.data.patients,agendaPatients)},agendaRange:{...result,loading:false,error:''}}));
+    }catch(error){this.setState({agendaRange:{...current,loading:false,error:readableError(error)}});}
   };
 
   refreshDailyAgenda = async (date=toDateInput(new Date())) => {
@@ -474,6 +541,7 @@ class App extends React.Component {
 
   componentWillUnmount() {
     this.mounted=false;this.authEpoch++;
+    this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);
     clearTimeout(this.tourAdvanceTimer);
     if(this.tourMarkerFrame)cancelAnimationFrame(this.tourMarkerFrame);
     window.removeEventListener('keydown',this.handleKeyDown);
@@ -489,6 +557,12 @@ class App extends React.Component {
     clearInterval(this.accessTimer);window.removeEventListener('focus',this.validateSessionAccess);
     for(const timer of [this.persistTimer,this.toastTimer,this.loadingTimer,this.encounterSaveIndicatorTimer])clearTimeout(timer);
     clearInterval(this.consultationPromptTimer);clearInterval(this.encounterTimer);document.body.style.overflow='';
+  }
+
+  componentDidUpdate(_previousProps,previousState){
+    if(!this.state.remoteReady||this.state.view!=='agenda')return;
+    const calendarsChanged=(previousState.selectedCalendarIds||[]).join(',')!==(this.state.selectedCalendarIds||[]).join(',');
+    if(previousState.calendarDate!==this.state.calendarDate||previousState.calendarView!==this.state.calendarView||calendarsChanged)this.refreshAgendaRange();
   }
 
   componentDidUpdate(prevProps,prevState) {
@@ -819,7 +893,10 @@ class App extends React.Component {
   setView = view => {
     const required={patients:'patientsView',patient:'patientsView',agenda:'appointmentsManage',payments:'settingsManage',analytics:'analyticsView',alerts:'alertsView',settings:'settingsManage',notebook:'consultationsManage'};
     if(required[view]&&!this.can(required[view]))return this.permissionDenied();
-    this.setState({view,mobileNav:false,appointmentDetails:null});
+    this.setState({view,mobileNav:false,appointmentDetails:null},()=>{
+      if(view==='patients'&&!this.state.patientDirectory.items.length)this.refreshPatientDirectory();
+      if(view==='agenda')this.refreshAgendaRange();
+    });
     if(view==='payments')this.loadSubscriptionInvoices();
     if(view==='settings')this.refreshTeam();
     requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
@@ -853,11 +930,16 @@ class App extends React.Component {
     return false;
   };
 
-  openPatient = patientId => {
+  openPatient = async patientId => {
     if (!this.can('patientsView')) return this.permissionDenied();
-    const patient=this.state.data.patients.find(item=>item.id===patientId);
-    this.setState({ selectedPatientId: patientId, view: 'patient', patientTab: 'overview', chartMode: 'scales', timelineFilter: 'all', mobileNav: false, appointmentDetails: null });
-    if(patient?.dataQuality==='historical'&&!this.can('clinicalView'))this.loadPatientLegacyHistory(patientId);
+    const epoch=this.authEpoch;this.setState({ selectedPatientId: patientId, view: 'patient', patientTab: 'overview', chartMode: 'scales', timelineFilter: 'all', mobileNav: false, appointmentDetails: null,patientLoading:true });
+    try{
+      const result=await loadPatientDetail(this.state.remoteOrganizationId,patientId);if(epoch!==this.authEpoch)return;
+      const patient=normalizeData({patients:[result.patient]}).patients[0];const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,this.can(k)]));
+      mergePersistenceBaseline({patients:[patient]},result.revisions,permissions);
+      this.setState(previous=>({data:{...previous.data,patients:mergePatients(previous.data.patients.filter(item=>item.id!==patientId&&!item.__summaryOnly),[patient])},patientLoading:false}));
+      if(patient?.dataQuality==='historical'&&!this.can('clinicalView'))this.loadPatientLegacyHistory(patientId);
+    }catch(error){if(epoch===this.authEpoch){this.setState({patientLoading:false,view:'patients',selectedPatientId:null});this.notify(readableError(error),'danger');}}
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
   };
 
@@ -869,10 +951,10 @@ class App extends React.Component {
   loadPatientLegacyHistory = async (patientId,append=false) => {
     const current=this.state.legacyHistoryByPatient[patientId];
     if(current?.loading||(!append&&current?.loaded))return;
-    const offset=append?(current?.items?.length||0):0,epoch=this.authEpoch;
+    const cursor=append?(current?.nextCursor||null):null,epoch=this.authEpoch;
     this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),loading:true,error:''}}}));
     try{
-      const result=await loadLegacyPatientHistory(this.state.remoteOrganizationId,patientId,offset,100);
+      const result=await loadLegacyPatientHistory(this.state.remoteOrganizationId,patientId,cursor,20);
       if(epoch!==this.authEpoch)return;
       this.setState(previous=>{const before=previous.legacyHistoryByPatient[patientId]||{};return {legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...result,items:append?[...(before.items||[]),...(result.items||[])]:result.items||[],loading:false,loaded:true,error:''}}};});
     }catch(error){if(epoch===this.authEpoch)this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),loading:false,loaded:false,error:readableError(error)}}}));}
@@ -1034,7 +1116,7 @@ class App extends React.Component {
 
   saveGeneratedDocument = async event => {
     event.preventDefault();const {patientId,draft}=this.state.modal;this.setState({formSaving:true,modalError:''});
-    try{const result=await generateDocumentFromTemplate({organizationId:this.state.remoteOrganizationId,patientId,templateId:draft.templateId,title:draft.title,variables:draft.variables});const session=await getProductionSession();await this.applyProductionSession(session);this.setState({view:'patient',selectedPatientId:patientId,patientTab:'documents',formSaving:false,modal:null});if(result.url)window.open(result.url,'_blank','noopener,noreferrer');this.notify('Documento generado y guardado como PDF privado.');}
+    try{const result=await generateDocumentFromTemplate({organizationId:this.state.remoteOrganizationId,patientId,templateId:draft.templateId,title:draft.title,variables:draft.variables});await this.openPatient(patientId);this.setState({patientTab:'documents',formSaving:false,modal:null});if(result.url)window.open(result.url,'_blank','noopener,noreferrer');this.notify('Documento generado y guardado como PDF privado.');}
     catch(error){this.setState({formSaving:false,modalError:error.message||'No se pudo generar el documento.'});}
   };
 
@@ -1371,7 +1453,7 @@ class App extends React.Component {
   renderConsultationPrompt() {
     const appointment = this.state.appointmentPrompt;
     if (!appointment) return null;
-    const patient = this.state.data.patients.find(item => item.id === appointment.patientId);
+    const patient = this.state.data.patients.find(item => item.id === appointment.patientId)||appointment.patientSummary;
     return html`<aside className="consultation-prompt" role="alert"><div className="consultation-prompt-icon"><${Icon} name="notebook" size=${23}/></div><div><span>Consulta programada</span><b>${patient?.name || appointment.title}</b><small>${formatTime(appointment.start)} · ${appointment.type} · ${appointment.modality}</small></div><${Button} icon="play" onClick=${() => this.startConsultation(appointment)}>¿Ya está con el paciente?</${Button}><button className="prompt-later" onClick=${this.dismissConsultationPrompt}>Recordarme después</button></aside>`;
   }
 
@@ -1512,12 +1594,27 @@ class App extends React.Component {
     if (!calendar) return this.permissionDenied();
     // A new event must always make its destination explicit. Do not silently
     // place it in the first calendar the current user can edit.
-    this.setState({ modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, date, null, patientId,'') }, modalError: '' });
+    const selected=this.state.data.patients.find(patient=>patient.id===patientId);
+    this.setState({ modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, date, null, patientId,'') }, modalError: '',patientLookup:{query:selected?.name||'',items:selected?[selected]:this.state.patientDirectory.items,loading:false} });
   };
 
   openEditAppointment = appointment => {
     if (!this.canCalendar(appointment.calendarId,'Edit')) return this.permissionDenied();
-    this.setState({ appointmentDetails: null, modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, new Date(appointment.start), appointment) }, modalError: '' });
+    const selected=this.state.data.patients.find(patient=>patient.id===appointment.patientId)||appointment.patientSummary;
+    this.setState({ appointmentDetails: null, modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, new Date(appointment.start), appointment) }, modalError: '',patientLookup:{query:selected?.name||'',items:selected?[selected]:[],loading:false} });
+  };
+
+  changeAppointmentPatientSearch = query => {
+    this.setState({patientLookup:{...this.state.patientLookup,query,loading:true}});clearTimeout(this.patientLookupTimer);
+    this.patientLookupTimer=setTimeout(async()=>{this.patientLookupAbort?.abort();this.patientLookupAbort=new AbortController();
+      try{const result=await loadPatientDirectory(this.state.remoteOrganizationId,{scope:'all',query,limit:20,signal:this.patientLookupAbort.signal});this.setState({patientLookup:{query,items:(result.items||[]).map(directoryPatient),loading:false}});}
+      catch(error){if(error?.name!=='AbortError')this.setState({patientLookup:{query,items:[],loading:false}});}
+    },300);
+  };
+
+  selectAppointmentPatient = patientId => {
+    const patient=this.state.patientLookup.items.find(item=>item.id===patientId);
+    this.setState(previous=>({data:patient?{...previous.data,patients:mergePatients(previous.data.patients,[patient])}:previous.data,modal:previous.modal?{...previous.modal,draft:{...previous.modal.draft,patientId}}:null}));
   };
 
   handleDraftImage = async (event, key, options = {}) => {
@@ -1628,7 +1725,8 @@ class App extends React.Component {
       await saveProductionState(org,patch.data);
       if(epoch!==this.authEpoch||!this.mounted)return;
       this.persistedData=patch.data;
-      this.setState({...patch,formSaving:false,remoteSaveStatus:'saved'},()=>this.notify(message));
+      this.directoryCache?.clear();
+      this.setState({...patch,formSaving:false,remoteSaveStatus:'saved'},()=>{this.notify(message);this.refreshDashboardSummary?.();if(this.state.view==='patients')this.refreshPatientDirectory?.({force:true});if(this.state.view==='agenda')this.refreshAgendaRange?.();});
       return true;
     } catch(error) {
       if(epoch!==this.authEpoch||!this.mounted)return;
@@ -1671,9 +1769,7 @@ class App extends React.Component {
         }
         this.setState({formSaving:true,modalError:''});
         await captureReportedMedication(this.state.remoteOrganizationId,patientId,this.state.modal.draft);
-        const session=await getProductionSession();
-        await this.applyProductionSession(session);
-        this.setState({view:'patient',selectedPatientId:patientId,patientTab:'medications',formSaving:false,modal:null});
+        await this.openPatient(patientId);this.setState({patientTab:'medications',formSaving:false,modal:null});
         this.notify('Medicamento registrado como pendiente de revisión médica.');
         return;
       }
@@ -1858,7 +1954,7 @@ class App extends React.Component {
 
   saveMedicationArchive = async event => {
     event.preventDefault();const {patientId,draft}=this.state.modal;if(String(draft.reason||'').trim().length<3)return this.setState({modalError:'Escriba un motivo de al menos 3 caracteres.'});this.setState({formSaving:true,modalError:''});
-    try{await this.flushChanges();await archiveMedication(this.state.remoteOrganizationId,patientId,draft.medicationId,draft.reason);const session=await getProductionSession();await this.applyProductionSession(session);this.setState({view:'patient',selectedPatientId:patientId,patientTab:'medications',formSaving:false,modal:null});this.notify('Medicamento eliminado de la lista activa y conservado en el historial.');}
+    try{await this.flushChanges();await archiveMedication(this.state.remoteOrganizationId,patientId,draft.medicationId,draft.reason);await this.openPatient(patientId);this.setState({patientTab:'medications',formSaving:false,modal:null});this.notify('Medicamento eliminado de la lista activa y conservado en el historial.');}
     catch(error){this.setState({formSaving:false,modalError:error.message||'No se pudo eliminar el medicamento.'});}
   };
 
@@ -1871,9 +1967,7 @@ class App extends React.Component {
         this.setState({formSaving:true,modalError:''});
         await this.flushChanges();
         await archivePatient(this.state.remoteOrganizationId,patientId,draft.reason);
-        const session=await getProductionSession();
-        await this.applyProductionSession(session);
-        this.setState({view:'patients',selectedPatientId:null,modal:null,formSaving:false,patientFilter:'all'});
+        this.directoryCache.clear();this.setState({view:'patients',selectedPatientId:null,modal:null,formSaving:false},()=>this.selectDirectoryScope('archived'));
         this.notify('Paciente archivado y conservado en el historial.');
         return;
       }
@@ -1922,11 +2016,12 @@ class App extends React.Component {
 
   exportAnalytics = () => {
     if (!this.can('exportsManage')) return this.permissionDenied();
-    downloadCSV('nexamind-resultados.csv', analyticsRows(this.state.data));
-    this.notify('Resultados exportados en CSV.');
+    const rows=(this.state.patientDirectory.items||[]).map(patient=>({id:patient.id,nombre:patient.name,telefono:patient.phone,correo:patient.email,seguro:patient.insurance?.provider||'',archivado:patient.archived?'sí':'no',ultima_actividad_valida:patient.lastActivityOn||'',precision:patient.lastActivityPrecision||'',proxima_cita:patient.nextVisit||''}));
+    downloadCSV('linkare-pacientes-pagina-actual.csv',rows);
+    this.notify(`Página actual exportada (${rows.length} pacientes). No es un respaldo total.`);
   };
 
-  exportBackup = () => {if(!this.can('exportsManage'))return this.permissionDenied();downloadJSON(this.state.data,'linkare-respaldo-clinico.json');};
+  exportBackup = () => {if(!this.can('exportsManage'))return this.permissionDenied();this.notify('El respaldo total requiere el trabajo de exportación del servidor; la vista paginada no se descargará como si fuera completa.','danger');};
 
   importBackup = () => this.notify('La importación de expedientes se realiza mediante una migración controlada.','danger');
 
@@ -2021,10 +2116,10 @@ class App extends React.Component {
       />
       <div className="simple-help administrative-help" data-tour="secretary-privacy"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
       <div className="kpi-grid secretary-kpis">
-        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${todayAppointments.length} hint="programadas para hoy" icon="calendar" tone="blue"/>
+        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${this.state.dashboardSummary?.appointments?.today??todayAppointments.length} hint="programadas para hoy" icon="calendar" tone="blue"/>
         <${KpiCard} label="Por confirmar" value=${pending} hint="citas futuras pendientes" icon="clock" tone="purple"/>
         <${KpiCard} label="Recordatorios listos" value=${due.length} hint="requieren envío o revisión" icon="message" tone=${due.length ? 'coral' : 'teal'}/>
-        <${KpiCard} label="Pacientes" value=${patients.length} hint="expedientes administrativos" icon="patients" tone="blue"/>
+        <${KpiCard} label="Pacientes" value=${this.state.dashboardSummary?.patients?.total??patients.length} hint="expedientes no archivados" icon="patients" tone="blue"/>
       </div>
       <div className="dashboard-grid">
         <${Card} className="span-7" title="Agenda de hoy" action=${html`<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button>`}>
@@ -2043,6 +2138,15 @@ class App extends React.Component {
 
   renderDashboard() {
     if (!this.can('clinicalView')) return this.renderSecretaryDashboard();
+    {
+      const summary=this.state.dashboardSummary||{patients:{total:0,recent:0,withoutActivity:0,archived:0},appointments:{today:0,week:0}};
+      const recent=this.state.patientDirectory.items||[];const agenda=this.state.dailyAgenda?.items||[];
+      return html`<div className="view-enter"><${PageHeader} eyebrow="Vista principal" title=${`${greeting()}, ${this.state.data.organization?.clinician||'Doctor'}`} subtitle="Los totales se calculan en el servidor; esta pantalla no infiere métricas clínicas desde una página parcial." actions=${html`<div className="tour-actions-group"><${Button} tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}><${Button} icon="plus" onClick=${()=>this.openNewAppointment()}>Nueva cita</${Button}></div>`}/>
+        <div className="kpi-grid"><${KpiCard} label="Pacientes" value=${summary.patients.total} hint="expedientes no archivados" icon="patients" tone="purple"/><${KpiCard} label="Actividad reciente" value=${summary.patients.recent} hint=${`seis meses calendario · desde ${summary.cutoffDate?formatDate(summary.cutoffDate):'—'}`} icon="trend" tone="teal"/><${KpiCard} label="Sin actividad válida" value=${summary.patients.withoutActivity} hint="sin fechas inventadas" icon="alert" tone="coral"/><${KpiCard} label="Citas esta semana" value=${summary.appointments.week} hint=${`${summary.appointments.today} programadas hoy`} icon="calendar" tone="blue"/></div>
+        <div className="dashboard-grid"><${Card} className="span-7" title="Pacientes con actividad reciente" subtitle="Máximo 20, ordenados por la última actividad válida."><div className="priority-list">${recent.slice(0,6).map(patient=>html`<button key=${patient.id} className="priority-row" onClick=${()=>this.openPatient(patient.id)}><${Avatar} patient=${patient}/><div className="priority-main"><b>${patient.name}</b><small>${patient.phone||patient.email||'Sin contacto'}</small></div><div><span>Última actividad</span><b>${patient.lastActivityOn?formatDate(patient.lastActivityOn):'No registrada'}</b><small>${patient.lastActivityPrecision==='date'?'Precisión: fecha':'Precisión: fecha y hora'}</small></div><${Icon} name="chevronRight" size=${17}/></button>`)}</div><${Button} tone="secondary" onClick=${()=>this.setView('patients')}>Abrir directorio</${Button}></${Card}>
+        <${Card} className="span-5" title="Agenda de hoy"><div className="today-list">${agenda.length?agenda.slice(0,8).map(item=>html`<div key=${item.appointmentId} className="today-item"><time>${formatTime(item.start)}</time><div><b>${item.patientName}</b><small>${item.type||'Cita'}</small></div></div>`):html`<${EmptyState} icon="calendar" title="Sin citas hoy" text="No hay eventos programados."/>`}</div><${Button} tone="secondary" onClick=${()=>this.setView('agenda')}>Abrir agenda</${Button}></${Card}></div>
+      </div>`;
+    }
     const patients = this.state.data.patients.filter(item => !item.archived);
     const { appointments, alerts } = this.state.data;
     const summaries = patients.map(patient => getAssessmentSummary(patient)).filter(Boolean);
@@ -2127,36 +2231,20 @@ class App extends React.Component {
 
   renderPatients() {
     if (!this.can('patientsView')) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="Este usuario no tiene permiso para consultar pacientes."/>`;
-    const { patients, alerts, appointments } = this.state.data;
-    const clinicalVisible = this.can('clinicalView');
-    const administrativeReview = patientsNeedingAdministrativeReview(appointments);
-    const query = this.state.search.trim().toLowerCase();
-    const filtered = patients.filter(patient => {
-      const searchable = clinicalVisible
-        ? [patient.name, patient.diagnosis, patient.medication?.name, patient.diagnosisCode, patient.insurance?.provider]
-        : [patient.name, patient.phone, patient.email, patient.insurance?.provider, patient.insurance?.memberId];
-      const matchesSearch = !query || searchable.join(' ').toLowerCase().includes(query);
-      if (!matchesSearch) return false;
-      if (this.state.patientFilter === 'archived') return patient.archived;
-      if (patient.archived) return false;
-      if (this.state.patientFilter === 'active') return patient.status !== 'inactive';
-      if (this.state.patientFilter === 'review') return clinicalVisible ? getPatientPriority(patient, alerts).score >= 2 : administrativeReview.has(patient.id);
-      if (this.state.patientFilter === 'unscheduled') return !clinicalVisible && !patient.nextVisit;
-      return true;
-    });
+    const directory=this.state.patientDirectory;const patients=directory.items||[];const totals=this.state.dashboardSummary?.patients;
+    const scopes=[['recent','Recientes'],['all','Todos'],['no_activity','Sin actividad'],['archived','Archivados']];
+    if(this.state.projection&&!this.state.projection.ready)return html`<${EmptyState} icon="clock" title="Directorio en preparación" text="El índice seguro de pacientes debe terminar su carga autorizada antes de habilitar esta pantalla."/>`;
     return html`<div className="view-enter">
       <${PageHeader}
-        eyebrow=${clinicalVisible ? 'Expedientes clínicos' : 'Expedientes administrativos'}
+        eyebrow="Directorio seguro"
         title="Pacientes"
-        subtitle=${clinicalVisible ? 'Busque un paciente o cree un expediente nuevo. Las tarjetas resumen el seguimiento.' : 'Consulte contacto, cobertura y próxima cita sin mostrar información clínica restringida.'}
-        actions=${html`<div className="tour-actions-group" data-tour="patients-tools"><div className="search-box"><${Icon} name="search"/><input data-tour="patients-search" value=${this.state.search} onChange=${event => this.setState({ search: event.target.value })} placeholder=${clinicalVisible ? 'Buscar por nombre, diagnóstico o medicamento' : 'Buscar por nombre, teléfono o seguro'}/></div>${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}</div>`}
+        subtitle="La lista carga como máximo 20 personas por página. El expediente privado se solicita únicamente al abrirlo."
+        actions=${html`<div className="tour-actions-group" data-tour="patients-tools"><div className="search-box"><${Icon} name="search"/><input data-tour="patients-search" value=${directory.query||''} onChange=${event=>this.changeDirectorySearch(event.target.value)} placeholder="Buscar por nombre, teléfono, correo o seguro"/></div>${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}</div>`}
       />
-      <div className="patients-toolbar"><div><${Badge} tone="blue">${filtered.length} pacientes</${Badge}>${clinicalVisible ? html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && getPatientPriority(patient, alerts).score >= 2).length} por revisar</${Badge}>` : html`<${Badge} tone="warning">${patients.filter(patient => !patient.archived && administrativeReview.has(patient.id)).length} por revisar</${Badge}>`}</div><div className="segmented" aria-label="Filtrar pacientes">${[['all', 'Todos'], ['active', 'Activos'], ['review', 'Por revisar'], ...(!clinicalVisible ? [['unscheduled','Sin próxima cita']] : []), ['archived','Archivados']].map(([key, label]) => html`<button key=${key} data-tour=${`patients-filter-${key}`} className=${this.state.patientFilter === key ? 'active' : ''} onClick=${() => this.setState({ patientFilter: key })}>${label}</button>`)}</div></div>
-      ${filtered.length ? html`<div className="patient-grid">${filtered.map(patient => {
-        const summary = getAssessmentSummary(patient);
-        const priority = clinicalVisible ? getPatientPriority(patient, alerts) : null;
-        return html`<button key=${patient.id} data-tour=${patient.id === filtered[0]?.id ? 'patient-card' : null} className="patient-card" onClick=${() => this.openPatient(patient.id)}><div className="patient-card-top"><div className="patient-identity"><${Avatar} patient=${patient} size="lg"/><div><h3>${patient.name}</h3><span>${ageLabel(patient.age)}${clinicalVisible ? ` · ${patient.diagnosisCode}` : patient.phone ? ` · ${patient.phone}` : ''}</span></div></div>${clinicalVisible ? html`<${Badge} tone=${priority.tone} dot=${true}>${priority.label}</${Badge}>` : administrativeReview.has(patient.id) ? html`<${Badge} tone="warning">Por revisar</${Badge}>` : html`<${Badge} tone=${patient.insurance?.hasInsurance ? 'blue' : 'neutral'}>${patient.insurance?.hasInsurance ? 'Con seguro' : 'Particular'}</${Badge}>`}</div><p>${clinicalVisible ? patient.diagnosis : patient.insurance?.hasInsurance ? `${patient.insurance.provider || 'Seguro médico'} · ${patient.insurance.plan || 'Plan sin registrar'}` : 'Atención particular'}</p>${clinicalVisible ? html`<div className="patient-metrics"><div><span>Medicamento principal</span><b>${patient.medication?.name || 'Sin medicamento'}</b><small>${patient.medication?.dose || (patient.dataQuality==='historical'?'No registrado en la fuente histórica':'Agregue el tratamiento')}</small></div><div><span>${summary?.primary.code || 'Escala'}</span><b>${summary?.current ?? '—'}</b><small>${summary ? `Inicial ${summary.baseline}` : 'Sin medición'}</small></div><div><span>Mejoría observada</span><b className=${summary?.improvement >= 25 ? 'good-text' : ''}>${summary ? percent(summary.improvement) : '—'}</b><small>${summary?.label || 'Registrar evolución'}</small></div></div>` : html`<div className="patient-metrics admin-metrics"><div><span>Teléfono</span><b>${patient.phone || 'No registrado'}</b><small>${patient.email || 'Sin correo'}</small></div><div><span>Seguro</span><b>${patient.insurance?.hasInsurance ? patient.insurance.provider || 'Sí' : 'Particular'}</b><small>${patient.insurance?.memberId || 'Sin afiliación'}</small></div><div><span>Próxima cita</span><b>${patient.nextVisit ? relativeDate(patient.nextVisit) : 'Sin agendar'}</b><small>${patient.nextVisit ? formatDateTime(patient.nextVisit) : 'Requiere coordinación'}</small></div></div>`}<div className="patient-card-footer"><div><${Icon} name="calendar" size=${16}/><span>${patient.nextVisit ? `${relativeDate(patient.nextVisit)} · ${formatTime(patient.nextVisit)}` : 'Sin próxima cita'}</span></div><span>Abrir expediente <${Icon} name="chevronRight" size=${16}/></span></div></button>`;
-      })}</div>` : html`<${EmptyState} icon="search" title="No encontramos pacientes" text="Cambie el filtro o cree un expediente nuevo." action=${this.can('patientsCreate') ? html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}/>`}
+      <div className="patients-toolbar"><div><${Badge} tone="blue">${patients.length} en esta página</${Badge}>${totals?html`<${Badge} tone="neutral">${totals.total} no archivados</${Badge}>`:null}${directory.scope==='recent'&&directory.cutoffDate?html`<${Badge} tone="success">Desde ${formatDate(directory.cutoffDate)}</${Badge}>`:null}</div><div className="segmented" aria-label="Filtrar pacientes">${scopes.map(([key,label])=>html`<button key=${key} className=${directory.scope===key?'active':''} onClick=${()=>this.selectDirectoryScope(key)}>${label}</button>`)}</div></div>
+      ${directory.error?html`<div className="sync-banner warning" role="alert">${directory.error}</div>`:null}
+      ${directory.loading&&!patients.length?html`<${EmptyState} icon="clock" title="Cargando pacientes" text="Consultando el directorio protegido…"/>`:patients.length?html`<div className="patient-grid">${patients.map((patient,index)=>html`<button key=${patient.id} data-tour=${index===0?'patient-card':null} className="patient-card" onClick=${()=>this.openPatient(patient.id)}><div className="patient-card-top"><div className="patient-identity"><${Avatar} patient=${patient} size="lg"/><div><h3>${patient.name}</h3><span>${patient.phone||patient.email||'Sin contacto registrado'}</span></div></div><${Badge} tone=${patient.archived?'neutral':patient.lastActivityOn?'success':'warning'}>${patient.archived?'Archivado':patient.lastActivityOn?'Con actividad válida':'Sin actividad válida'}</${Badge}></div><div className="patient-metrics admin-metrics"><div><span>Última actividad válida</span><b>${patient.lastActivityOn?formatDate(patient.lastActivityOn):'No registrada'}</b><small>${patient.lastActivityPrecision==='date'?'Fecha histórica sin hora':patient.lastActivityOrigin||'Sin actividad'}</small></div><div><span>Seguro</span><b>${patient.insurance?.provider||'No registrado'}</b><small>${patient.dataQuality==='historical'?'Origen histórico':'Expediente actual'}</small></div><div><span>Próxima cita</span><b>${patient.nextVisit?relativeDate(patient.nextVisit):'Sin agendar'}</b><small>${patient.nextVisit?formatDateTime(patient.nextVisit):'No se inventó un horario'}</small></div></div><div className="patient-card-footer"><span>Abrir expediente por ID</span><span>Ver detalle <${Icon} name="chevronRight" size=${16}/></span></div></button>`)}</div>`:html`<${EmptyState} icon="search" title="No encontramos pacientes" text="Cambie la búsqueda o la pestaña."/>`}
+      <div className="modal-sticky-actions"><${Button} tone="secondary" disabled=${directory.loading||directory.pageIndex<1} onClick=${this.previousDirectoryPage}>Anterior</${Button}><span>Página ${directory.pageIndex+1}</span><${Button} tone="secondary" disabled=${directory.loading||!directory.hasMore} onClick=${this.nextDirectoryPage}>Siguiente</${Button}></div>
     </div>`;
   }
 
@@ -2203,7 +2291,8 @@ class App extends React.Component {
   renderPatient() {
     const { patients, alerts, appointments } = this.state.data;
     const patient = patients.find(item => item.id === this.state.selectedPatientId);
-    if (!patient) return html`<${EmptyState} icon="patients" title="Sin pacientes" text="Cree el primer expediente para comenzar." action=${html`<${Button} icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>`}/>`;
+    if (this.state.patientLoading) return html`<${EmptyState} icon="clock" title="Cargando expediente" text="Solicitando únicamente el paciente seleccionado…"/>`;
+    if (!patient) return html`<${EmptyState} icon="patients" title="Expediente no disponible" text="Vuelva al directorio e intente abrirlo de nuevo." action=${html`<${Button} onClick=${()=>this.setView('patients')}>Volver a pacientes</${Button}>`}/>`;
     if (!this.can('clinicalView')) return this.renderAdministrativePatient(patient);
     const summary = getAssessmentSummary(patient);
     const priority = getPatientPriority(patient, alerts);
@@ -2477,6 +2566,8 @@ class App extends React.Component {
             <div className="segmented">${[['month', 'Mes'], ['week', 'Semana'], ['day', 'Día']].map(([key, label]) => html`<button key=${key} className=${view === key ? 'active' : ''} onClick=${() => this.setState({ calendarView: key })}>${label}</button>`)}</div>
           </div>
           ${view === 'month' ? this.renderMonthCalendar(cursor, filteredAppointments) : view === 'week' ? this.renderWeekCalendar(cursor, filteredAppointments) : this.renderDayCalendar(cursor, filteredAppointments)}
+          ${this.state.agendaRange.error?html`<div className="sync-banner warning" role="alert">${this.state.agendaRange.error}</div>`:null}
+          ${this.state.agendaRange.hasMore?html`<${Button} tone="secondary" disabled=${this.state.agendaRange.loading} onClick=${this.loadMoreAgenda}>${this.state.agendaRange.loading?'Cargando…':'Cargar más eventos del periodo'}</${Button}>`:null}
           <div className="calendar-tip"><${Icon} name="help" size=${16}/><span>Seleccione un día para crear una cita. Abra una cita para editarla, cambiar su estado o preparar el recordatorio.</span></div>
         </${Card}>
         <${Card} className="upcoming-card" title="Próximas citas" action=${html`<${Badge} tone="blue">${upcoming.length}</${Badge}>`}>
@@ -2548,6 +2639,10 @@ class App extends React.Component {
 
   renderAnalytics() {
     if (!this.can('analyticsView')) return html`<${EmptyState} icon="shield" title="Acceso restringido" text="Este usuario no tiene permiso para consultar resultados generales."/>`;
+    {
+      const summary=this.state.dashboardSummary?.patients||{total:0,recent:0,withoutActivity:0,archived:0};
+      return html`<div className="view-enter"><${PageHeader} eyebrow="Métricas del servidor" title="Resumen del directorio" subtitle="Estos totales usan toda la proyección autorizada y no calculan resultados clínicos a partir de los 20 pacientes visibles." actions=${html`<${Button} tone="secondary" icon="download" onClick=${this.exportAnalytics}>Exportar página actual</${Button}>`}/><div className="kpi-grid"><${KpiCard} label="No archivados" value=${summary.total} hint="total del servidor" icon="patients" tone="purple"/><${KpiCard} label="Actividad reciente" value=${summary.recent} hint="seis meses calendario" icon="trend" tone="teal"/><${KpiCard} label="Sin actividad válida" value=${summary.withoutActivity} hint="fechas desconocidas preservadas" icon="alert" tone="coral"/><${KpiCard} label="Archivados" value=${summary.archived} hint="acceso explícito" icon="archive" tone="blue"/></div><div className="simple-help"><${Icon} name="download" size=${18}/><p><b>Alcance de exportación:</b> el botón descarga solo la página/filtro visibles. El respaldo total está bloqueado hasta contar con un job privado conciliado.</p></div></div>`;
+    }
     const { patients } = this.state.data;
     const summaries = patients.map(patient => ({ patient, summary: getAssessmentSummary(patient) })).filter(item => item.summary);
     const response = summaries.filter(item => item.summary.improvement >= 50).length;
@@ -2863,11 +2958,11 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   renderAppointmentFormModal() {
     const draft = this.state.modal.draft;
-    const patients = this.state.data.patients.filter(item => !item.archived);
+    const patients = this.state.patientLookup.items.filter(item => !item.archived);
     const calendarOptions=this.visibleCalendars().filter(calendar=>draft.id?calendar.id===draft.calendarId||this.canCalendar(calendar.id,'Create'):this.canCalendar(calendar.id,'Create'));
     const general=draft.eventType==='general';
     const typeOptions=general?['Evento general']:['Seguimiento','Primera consulta','Prioritaria','Seguridad','Laboratorios'];
-    return html`<${Modal} title=${draft.id ? 'Editar evento' : 'Nuevo evento'} subtitle="El calendario y el tipo de evento son obligatorios." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<fieldset className="calendar-choice-fieldset"><legend>${draft.id?'Calendario del evento':'¿En qué calendario quiere guardar este evento?'}</legend><p className="calendar-choice-hint">Elija una opción. Linkare no seleccionará un calendario por usted.</p><div className="calendar-choice-grid">${calendarOptions.map(calendar=>{const active=draft.calendarId===calendar.id;const icon=calendar.code==='wife'?'heart':calendar.code==='general'?'users':'activity';const description=calendar.code==='doctor'?'Agenda clínica principal':calendar.code==='wife'?'Agenda personal compartida':'Actividades y bloqueos generales';return html`<label key=${calendar.id} className=${`calendar-choice calendar-${calendar.code} ${active?'active':''}`}><input type="radio" name="appointmentCalendar" value=${calendar.id} checked=${active} required onChange=${event=>this.updateDraft('calendarId',event.target.value)}/><span className="calendar-choice-icon" aria-hidden="true"><${Icon} name=${icon} size=${22}/></span><span className="calendar-choice-copy"><b>${calendar.name}</b><small>${description}</small></span><span className="calendar-choice-check" aria-hidden="true"><${Icon} name="check" size=${17}/></span></label>`;})}</div>${!draft.calendarId?html`<p className="calendar-choice-required" role="status"><${Icon} name="alert" size=${15}/> Falta elegir el calendario.</p>`:html`<p className="calendar-choice-selected" role="status"><${Icon} name="check" size=${15}/> Calendario seleccionado: ${calendarOptions.find(calendar=>calendar.id===draft.calendarId)?.name||''}</p>`}</fieldset><div className="form-grid"><${FormField} label="Clase de evento" required=${true}><select value=${draft.eventType||'appointment'} onChange=${event=>{const eventType=event.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,eventType,type:eventType==='general'?'Evento general':prev.modal.draft.type==='Evento general'?'Seguimiento':prev.modal.draft.type}}}));}}><option value="appointment">Cita de paciente</option><option value="general">Evento general (sin paciente)</option></select></${FormField}></div><div data-tour="appointment-form-who-when">${general?html`<${FormField} label="Título del evento" required=${true}><input autoFocus value=${draft.title||''} onChange=${event=>this.updateDraft('title',event.target.value)} placeholder="Ej. compromiso personal o reunión" required/></${FormField}>`:html`<${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event=>this.updateDraft('patientId',event.target.value)} required><option value="">Seleccione…</option>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name}${patient.diagnosis?` · ${patient.diagnosis}`:''}</option>`)}</select></${FormField}>`}<div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}>${typeOptions.map(option=>html`<option key=${option}>${option}</option>`)}</select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option><option>No aplica</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option><option value="completed">Completado</option><option value="cancelled">Cancelado</option><option value="no_show">No se realizó</option></select></${FormField}></div>${!general?html`<${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus||'none'} onChange=${event=>this.updateDraft('adminReviewStatus',event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>`:null}${!general&&this.can('clinicalView')?html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>`:null}</div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear evento'}/></form></${Modal}>`;
+    return html`<${Modal} title=${draft.id ? 'Editar evento' : 'Nuevo evento'} subtitle="El calendario y el tipo de evento son obligatorios." onClose=${this.closeModal} size="lg"><form className="clinical-form" onSubmit=${this.saveAppointmentForm}>${this.renderModalError()}<fieldset className="calendar-choice-fieldset"><legend>${draft.id?'Calendario del evento':'¿En qué calendario quiere guardar este evento?'}</legend><p className="calendar-choice-hint">Elija una opción. Linkare no seleccionará un calendario por usted.</p><div className="calendar-choice-grid">${calendarOptions.map(calendar=>{const active=draft.calendarId===calendar.id;const icon=calendar.code==='wife'?'heart':calendar.code==='general'?'users':'activity';const description=calendar.code==='doctor'?'Agenda clínica principal':calendar.code==='wife'?'Agenda personal compartida':'Actividades y bloqueos generales';return html`<label key=${calendar.id} className=${`calendar-choice calendar-${calendar.code} ${active?'active':''}`}><input type="radio" name="appointmentCalendar" value=${calendar.id} checked=${active} required onChange=${event=>this.updateDraft('calendarId',event.target.value)}/><span className="calendar-choice-icon" aria-hidden="true"><${Icon} name=${icon} size=${22}/></span><span className="calendar-choice-copy"><b>${calendar.name}</b><small>${description}</small></span><span className="calendar-choice-check" aria-hidden="true"><${Icon} name="check" size=${17}/></span></label>`;})}</div>${!draft.calendarId?html`<p className="calendar-choice-required" role="status"><${Icon} name="alert" size=${15}/> Falta elegir el calendario.</p>`:html`<p className="calendar-choice-selected" role="status"><${Icon} name="check" size=${15}/> Calendario seleccionado: ${calendarOptions.find(calendar=>calendar.id===draft.calendarId)?.name||''}</p>`}</fieldset><div className="form-grid"><${FormField} label="Clase de evento" required=${true}><select value=${draft.eventType||'appointment'} onChange=${event=>{const eventType=event.target.value;this.setState(prev=>({modal:{...prev.modal,draft:{...prev.modal.draft,eventType,type:eventType==='general'?'Evento general':prev.modal.draft.type==='Evento general'?'Seguimiento':prev.modal.draft.type}}}));}}><option value="appointment">Cita de paciente</option><option value="general">Evento general (sin paciente)</option></select></${FormField}></div>${!general?html`<${FormField} label="Buscar paciente"><input value=${this.state.patientLookup.query} onChange=${event=>this.changeAppointmentPatientSearch(event.target.value)} placeholder="Nombre, teléfono, correo o seguro"/><small>${this.state.patientLookup.loading?'Buscando en el servidor…':'Máximo 20 resultados'}</small></${FormField}>`:null}<div data-tour="appointment-form-who-when">${general?html`<${FormField} label="Título del evento" required=${true}><input autoFocus value=${draft.title||''} onChange=${event=>this.updateDraft('title',event.target.value)} placeholder="Ej. compromiso personal o reunión" required/></${FormField}>`:html`<${FormField} label="Paciente" required=${true}><select value=${draft.patientId} onChange=${event=>this.selectAppointmentPatient(event.target.value)} required><option value="">Seleccione…</option>${patients.map(patient => html`<option key=${patient.id} value=${patient.id}>${patient.name}${patient.diagnosis?` · ${patient.diagnosis}`:''}</option>`)}</select></${FormField}>`}<div className="form-grid"><${FormField} label="Fecha y hora" required=${true}><input type="datetime-local" value=${draft.start} onChange=${event => this.updateDraft('start', event.target.value)} required/></${FormField}><${FormField} label="Duración"><select value=${draft.duration} onChange=${event => this.updateDraft('duration', event.target.value)}><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></${FormField}></div></div><div data-tour="appointment-form-details"><div className="form-grid form-grid-three"><${FormField} label="Tipo"><select value=${draft.type} onChange=${event => this.updateDraft('type', event.target.value)}>${typeOptions.map(option=>html`<option key=${option}>${option}</option>`)}</select></${FormField}><${FormField} label="Modalidad"><select value=${draft.modality} onChange=${event => this.updateDraft('modality', event.target.value)}><option>Presencial</option><option>Videollamada</option><option>No aplica</option></select></${FormField}><${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option><option value="completed">Completado</option><option value="cancelled">Cancelado</option><option value="no_show">No se realizó</option></select></${FormField}></div>${!general?html`<${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus||'none'} onChange=${event=>this.updateDraft('adminReviewStatus',event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>`:null}${!general&&this.can('clinicalView')?html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>`:null}</div><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear evento'}/></form></${Modal}>`;
   }
 
   renderReportModal() {
@@ -3020,10 +3115,10 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   clearSessionView = () => {
     this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
-    this.authEpoch++;this.savingForm=false;this.persistedData=null;clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearInterval(this.encounterTimer);resetPersistence();
+    this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {

@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -208,4 +208,106 @@ test('DB: historical migration is resumable, permission-scoped, reconciled and r
  await actor('owner');let loaded=await load();const historical=loaded.payload.patients.find(item=>item.id===patient);assert.equal(historical.dataQuality,'historical');assert.equal(historical.sourceSummary.system,'FoxPro');let history=(await db.query('select public.linkare_legacy_patient_history_v1($1,$2,0,100) data',[org,patient])).rows[0].data;assert.equal(history.items.length,2);assert.equal(history.clinicalIncluded,true);assert.match(JSON.stringify(history),/SYNTHETIC_PRIVATE_HISTORY/);
  await permissions('secretary',{patientsView:true});history=(await db.query('select public.linkare_legacy_patient_history_v1($1,$2,0,100) data',[org,patient])).rows[0].data;assert.equal(history.items.length,1);assert.equal(history.items[0].scope,'administrative');assert.doesNotMatch(JSON.stringify(history),/SYNTHETIC_PRIVATE_HISTORY/);await assert.rejects(()=>db.query('select * from linkare_private.legacy_history_v1'),e=>e.code==='42501');
  await db.exec('reset role;set role service_role');const rolled=(await db.query('select public.linkare_legacy_rollback_v2($1,$2,$3) data',[org,batch,backup])).rows[0].data;assert.equal(rolled.ok,true);assert.equal(rolled.patientsRemoved,1);assert.equal(rolled.historyRemoved,2);assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,patient])).rows[0].n,0);
+});
+
+test('DB: v4 bootstrap is small and the directory returns distinct recent patients in pages of 20',async()=>{
+ await actor('owner');
+ const changes=[];
+ for(let index=0;index<24;index+=1){
+  const id=`directory-${String(index).padStart(2,'0')}`,day=String((index%24)+1).padStart(2,'0');
+  changes.push({kind:'patient_admin',id,expectedRevision:0,payload:{id,name:index===0?'Álvarez Ñuñez QA':`Directory Patient ${String(index).padStart(2,'0')}`,phone:`7000${String(index).padStart(4,'0')}`}});
+  changes.push({kind:'patient_clinical',id,expectedRevision:0,payload:{diagnosis:`PRIVATE-${index}`,consultations:[{id:`visit-${index}-a`,status:'signed',signedBy:ids.owner,signedAt:`2026-09-${day}T16:00:00Z`,startedAt:`2026-09-${day}T15:00:00Z`},{id:`visit-${index}-b`,status:'signed',signedBy:ids.owner,signedAt:`2026-09-${day}T18:00:00Z`,startedAt:`2026-09-${day}T17:00:00Z`}]}});
+ }
+ changes.push({kind:'patient_admin',id:'directory-boundary',expectedRevision:0,payload:{id:'directory-boundary',name:'Exact Calendar Boundary'}});
+ changes.push({kind:'patient_clinical',id:'directory-boundary',expectedRevision:0,payload:{consultations:[{id:'boundary-visit',status:'signed',signedBy:ids.owner,signedAt:'2026-04-03T18:00:00Z',startedAt:'2026-04-03T17:00:00Z'}]}});
+ changes.push({kind:'patient_admin',id:'directory-before',expectedRevision:0,payload:{id:'directory-before',name:'Before Calendar Boundary'}});
+ changes.push({kind:'patient_clinical',id:'directory-before',expectedRevision:0,payload:{consultations:[{id:'before-visit',status:'signed',signedBy:ids.owner,signedAt:'2026-04-02T18:00:00Z',startedAt:'2026-04-02T17:00:00Z'}]}});
+ changes.push({kind:'patient_admin',id:'directory-future',expectedRevision:0,payload:{id:'directory-future',name:'Future Only'}});
+ changes.push({kind:'patient_clinical',id:'directory-future',expectedRevision:0,payload:{consultations:[{id:'future-visit',status:'signed',signedBy:ids.owner,signedAt:'2026-10-04T18:00:00Z',startedAt:'2026-10-04T17:00:00Z'}]}});
+ changes.push({kind:'patient_admin',id:'directory-no-activity',expectedRevision:0,payload:{id:'directory-no-activity',name:'No Movement QA'}});
+ await save(changes);
+ const boot=(await db.query('select public.linkare_bootstrap_state_v4($1) data',[org])).rows[0].data;
+ assert.equal(boot.projection.ready,true);assert.deepEqual(boot.payload.patients,[]);assert.deepEqual(boot.payload.appointments,[]);assert.ok(boot.revisions.every(item=>['profile','settings'].includes(item.kind)));
+ const asOf='2026-10-03T18:00:00Z';
+ const first=(await db.query("select public.linkare_patient_directory_v1($1,'recent',null,null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.equal(first.items.length,20);assert.equal(new Set(first.items.map(item=>item.id)).size,20);assert.equal(first.hasMore,true);assert.equal(first.cutoffDate,'2026-04-03');
+ const second=(await db.query("select public.linkare_patient_directory_v1($1,'recent',null,$2::jsonb,$3,20) data",[org,JSON.stringify(first.nextCursor),asOf])).rows[0].data;
+ assert.equal(first.items.some(item=>second.items.some(other=>other.id===item.id)),false);
+ const accent=(await db.query("select public.linkare_patient_directory_v1($1,'recent','alvarez nunez',null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.deepEqual(accent.items.map(item=>item.id),['directory-00']);
+ const boundary=(await db.query("select public.linkare_patient_directory_v1($1,'recent','exact calendar',null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.deepEqual(boundary.items.map(item=>item.id),['directory-boundary']);
+ const before=(await db.query("select public.linkare_patient_directory_v1($1,'recent','before calendar',null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.equal(before.items.length,0);
+ const future=(await db.query("select public.linkare_patient_directory_v1($1,'recent','future only',null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.equal(future.items.length,0);
+ const withoutActivity=(await db.query("select public.linkare_patient_directory_v1($1,'no_activity','no movement',null,$2,20) data",[org,asOf])).rows[0].data;
+ assert.deepEqual(withoutActivity.items.map(item=>item.id),['directory-no-activity']);
+ const revision=(await db.query("select revision,payload from public.linkare_records where organization_id=$1 and kind='patient_admin' and id='directory-01'",[org])).rows[0];
+ await save([{kind:'patient_admin',id:'directory-01',expectedRevision:revision.revision,payload:{...revision.payload,phone:'79990000'}}]);
+ await assert.rejects(()=>db.query("select public.linkare_patient_directory_v1($1,'recent',null,$2::jsonb,$3,20)",[org,JSON.stringify(first.nextCursor),asOf]),/CURSOR_STALE/);
+});
+
+test('DB: patient detail and range agenda keep tenant and clinical permissions server-side',async()=>{
+ await actor('owner');
+ const ownerDetail=(await db.query("select public.linkare_patient_detail_v1($1,'directory-00') data",[org])).rows[0].data;
+ assert.equal(ownerDetail.patient.diagnosis,'PRIVATE-0');assert.equal(ownerDetail.revisions.length,2);
+ await save([{kind:'appointment',id:'directory-agenda',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'directory-00',title:'Directory appointment',start:'2026-10-10T14:00:00Z',end:'2026-10-10T14:30:00Z',status:'confirmed'}},{kind:'appointment_clinical',id:'directory-agenda',expectedRevision:0,payload:{notes:'PRIVATE_APPOINTMENT_DIRECTORY'}}]);
+ let agenda=(await db.query("select public.linkare_agenda_range_v1($1,'2026-10-10T00:00:00Z','2026-10-11T00:00:00Z',array[$2]::uuid[],null,20) data",[org,calendarIds.doctor])).rows[0].data;
+ assert.equal(agenda.items.length,1);assert.equal(agenda.items[0].patientSummary.name,'Álvarez Ñuñez QA');assert.equal(agenda.items[0].notes,'PRIVATE_APPOINTMENT_DIRECTORY');
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true});
+ const secretaryDetail=(await db.query("select public.linkare_patient_detail_v1($1,'directory-00') data",[org])).rows[0].data;
+ assert.equal(secretaryDetail.patient.diagnosis,undefined);assert.equal(secretaryDetail.revisions.length,1);
+ agenda=(await db.query("select public.linkare_agenda_range_v1($1,'2026-10-10T00:00:00Z','2026-10-11T00:00:00Z',array[$2]::uuid[],null,20) data",[org,calendarIds.doctor])).rows[0].data;
+ assert.equal(agenda.items[0].notes,undefined);assert.equal(agenda.items[0].patientSummary.phone,'70000000');
+ await assert.rejects(()=>db.query('select * from linkare_private.patient_directory_v1'),e=>e.code==='42501');
+ await actor('other');await denied(()=>db.query("select public.linkare_patient_detail_v1($1,'directory-00')",[org]));
+});
+
+test('DB: dashboard counts the full directory rather than the visible page',async()=>{
+ await actor('owner');const summary=(await db.query("select public.linkare_dashboard_summary_v1($1,'2026-10-03T18:00:00Z') data",[org])).rows[0].data;
+ assert.ok(summary.patients.total>20);assert.ok(summary.patients.recent>20);assert.ok(summary.patients.withoutActivity>=1);assert.equal(summary.activityPolicyVersion,1);
+});
+
+test('DB: calendar cutoffs handle month ends and retracting the latest visit recalculates activity',async()=>{
+ await actor('owner');
+ const march=(await db.query("select public.linkare_patient_directory_v1($1,'recent',null,null,'2024-03-31T18:00:00Z',1) data",[org])).rows[0].data;
+ const leap=(await db.query("select public.linkare_patient_directory_v1($1,'recent',null,null,'2024-08-31T18:00:00Z',1) data",[org])).rows[0].data;
+ assert.equal(march.cutoffDate,'2023-09-30');assert.equal(leap.cutoffDate,'2024-02-29');
+ const consultations=[{id:'early-valid',status:'signed',signedBy:ids.owner,startedAt:'2026-08-01T16:00:00Z',signedAt:'2026-08-01T17:00:00Z'},{id:'latest-retracted',status:'signed',signedBy:ids.owner,startedAt:'2026-09-20T16:00:00Z',signedAt:'2026-09-20T17:00:00Z'}];
+ await save([{kind:'patient_admin',id:'directory-retraction',expectedRevision:0,payload:{id:'directory-retraction',name:'Retraction QA'}},{kind:'patient_clinical',id:'directory-retraction',expectedRevision:0,payload:{consultations}}]);
+ let listed=(await db.query("select public.linkare_patient_directory_v1($1,'recent','retraction qa',null,'2026-10-03T18:00:00Z',20) data",[org])).rows[0].data;assert.equal(listed.items[0].lastActivityOn,'2026-09-20');
+ await save([{kind:'patient_clinical',id:'directory-retraction',expectedRevision:1,payload:{consultations,consultationRetractions:[{resourceId:'latest-retracted',reason:'Synthetic correction'}]}}]);
+ listed=(await db.query("select public.linkare_patient_directory_v1($1,'recent','retraction qa',null,'2026-10-03T18:00:00Z',20) data",[org])).rows[0].data;assert.equal(listed.items[0].lastActivityOn,'2026-08-01');
+});
+
+test('DB: recent cohorts of 0, 1, 19, 20, 21 and 45 retain exact keyset semantics',async()=>{
+ await actor('owner');const changes=[];
+ for(let index=1;index<=45;index++){
+  const id=`cohort-${String(index).padStart(2,'0')}`,tags=['c45x'];if(index<=21)tags.push('c21x');if(index<=20)tags.push('c20x');if(index<=19)tags.push('c19x');if(index===1)tags.push('c1x');
+  changes.push({kind:'patient_admin',id,expectedRevision:0,payload:{id,name:`Synthetic ${tags.join(' ')} ${index}`}});
+  changes.push({kind:'patient_clinical',id,expectedRevision:0,payload:{consultations:[{id:`cohort-note-${index}`,status:'signed',signedBy:ids.owner,startedAt:'2026-09-01T16:00:00Z',signedAt:'2026-09-01T17:00:00Z'}]}});
+ }
+ await save(changes);const asOf='2026-10-03T18:00:00Z';
+ const page=async(query,cursor=null)=>(await db.query("select public.linkare_patient_directory_v1($1,'recent',$2,$3::jsonb,$4,20) data",[org,query,cursor?JSON.stringify(cursor):null,asOf])).rows[0].data;
+ assert.equal((await page('c0x')).items.length,0);assert.equal((await page('c1x')).items.length,1);assert.equal((await page('c19x')).items.length,19);
+ const twenty=await page('c20x');assert.equal(twenty.items.length,20);assert.equal(twenty.hasMore,false);
+ const twentyOne=await page('c21x');assert.equal(twentyOne.items.length,20);assert.equal(twentyOne.hasMore,true);assert.equal((await page('c21x',twentyOne.nextCursor)).items.length,1);
+ const first=await page('c45x'),second=await page('c45x',first.nextCursor),third=await page('c45x',second.nextCursor);assert.deepEqual([first.items.length,second.items.length,third.items.length],[20,20,5]);
+ assert.equal(new Set([...first.items,...second.items,...third.items].map(item=>item.id)).size,45);
+});
+
+test('DB: projection backfill resumes by key, becomes ready and is idempotent',async()=>{
+ await db.exec('reset role;set role service_role');
+ await db.query('delete from linkare_private.appointment_directory_v1 where organization_id=$1',[org]);
+ await db.query('delete from linkare_private.patient_directory_v1 where organization_id=$1',[org]);
+ await db.query('update linkare_private.patient_directory_state_v1 set appointments_ready=false,patients_ready=false where organization_id=$1',[org]);
+ for(const phase of ['appointments','patients']){
+  let cursor=null,more=true,guard=0;
+  while(more){const result=(await db.query('select public.linkare_projection_backfill_v1($1,$2,$3,2) data',[org,phase,cursor])).rows[0].data;cursor=result.nextId;more=result.hasMore;assert.ok(++guard<100);}
+ }
+ const ready=(await db.query('select appointments_ready,patients_ready,listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0];assert.equal(ready.appointments_ready,true);assert.equal(ready.patients_ready,true);
+ await db.query("select public.linkare_projection_backfill_v1($1,'patients',null,1000)",[org]);
+ const after=(await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0];assert.equal(after.listing_version,ready.listing_version);
+ await actor('owner');
 });

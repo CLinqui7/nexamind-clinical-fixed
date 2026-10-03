@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const base='http://127.0.0.1:4173',browser=await chromium.launch({channel:process.env.LINKARE_BROWSER||'msedge',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const login=async role=>{await page.locator('input[type=email]').fill(`${role}@example.invalid`);await page.locator('input[type=password]').fill('qa-password-123');await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).click();await page.getByRole('button',{name:'Pacientes',exact:true}).waitFor();};
-const openHistorical=async()=>{await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByText('Paciente histórico QA',{exact:true}).click();};
+const openHistorical=async()=>{await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByRole('button',{name:'Todos',exact:true}).click();await page.locator('[data-tour="patients-search"]').fill('Paciente histórico QA');await page.waitForTimeout(450);await page.getByText('Paciente histórico QA',{exact:true}).click();};
 const logout=async()=>{await page.locator('.profile-chip-button').click();await page.getByRole('button',{name:'Cerrar sesión',exact:true}).click();await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).waitFor();};
 try{
  const seeded=await page.request.post(`${base}/__qa`,{data:{control:true,seedLegacy:true}});assert.equal(seeded.ok(),true);
