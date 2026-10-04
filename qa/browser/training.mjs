@@ -38,11 +38,11 @@ try {
   await fixture.close();
 
   const cases = [
-    { role: 'secretary', size: { width: 1440, height: 900 }, steps: 22 },
-    { role: 'owner', size: { width: 1440, height: 900 }, steps: 32 },
-    { role: 'secretary', size: { width: 800, height: 1280 }, steps: 22, touch: true },
-    { role: 'owner', size: { width: 1280, height: 800 }, steps: 32, touch: true },
-    { role: 'secretary', size: { width: 390, height: 844 }, steps: 22, touch: true },
+    { role: 'secretary', size: { width: 1440, height: 900 }, steps: 23 },
+    { role: 'owner', size: { width: 1440, height: 900 }, steps: 33 },
+    { role: 'secretary', size: { width: 800, height: 1280 }, steps: 23, touch: true },
+    { role: 'owner', size: { width: 1280, height: 800 }, steps: 33, touch: true },
+    { role: 'secretary', size: { width: 390, height: 844 }, steps: 23, touch: true },
   ];
   for (const { role, size, steps, touch = false } of cases) {
     if(process.env.LINKARE_TOUR_ROLE&&role!==process.env.LINKARE_TOUR_ROLE)continue;
@@ -112,8 +112,10 @@ try {
       if(chapter[index].event==='input')await target.fill(chapter[index].expected||'Nota ficticia de capacitación, sin datos de personas reales.');
       else if(chapterTarget==='appointment-start'){
         const date=new Date(Date.now()+7*86400000);date.setHours(10,0,0,0);
-        const value=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T10:00`;
+        const value=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
         await target.fill(value);
+      } else if(await target.evaluate(node=>node.tagName==='SELECT')){
+        await target.selectOption(chapter[index].expected);
       } else await target.click();
       if(chapterTarget==='nav-patients')await page.getByRole('heading',{name:'Pacientes',exact:true}).waitFor();
       if(chapterTarget==='nav-agenda')await page.getByRole('heading',{name:'Calendarios',exact:true}).waitFor();

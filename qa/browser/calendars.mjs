@@ -30,17 +30,17 @@ try{
  await dialog.getByRole('button',{name:'Crear evento',exact:true}).click();
  await page.getByText('Evento creado correctamente.',{exact:true}).waitFor();
  await page.reload();await page.getByRole('button',{name:'Agenda',exact:true}).click();await page.getByRole('button',{name:'Día',exact:true}).click();
- await page.getByText(title,{exact:true}).waitFor();
+ await page.getByText(title,{exact:true}).first().waitFor();
  await page.getByText('General',{exact:true}).last().waitFor();
  for(const name of ['Doctor','Esposa'])await page.locator('.calendar-filter',{hasText:name}).click();
  assert.equal(await page.locator('.calendar-filter input:checked').count(),1);
- await page.getByText(title,{exact:true}).waitFor();
+ await page.getByText(title,{exact:true}).first().waitFor();
  for(const viewport of [{width:768,height:1024},{width:390,height:844}]){
   await page.setViewportSize(viewport);await page.getByText('Calendarios visibles',{exact:true}).waitFor();
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+1);assert.equal(overflow,false,`horizontal overflow at ${viewport.width}px`);
  }
  await page.setViewportSize({width:1440,height:1000});
  await page.locator('.profile-chip-button').click();await page.getByRole('button',{name:'Cerrar sesión',exact:true}).click();await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).waitFor();
- await login();await page.getByRole('button',{name:'Agenda',exact:true}).click();await page.getByRole('button',{name:'Día',exact:true}).click();await page.getByText(title,{exact:true}).waitFor();
+ await login();await page.getByRole('button',{name:'Agenda',exact:true}).click();await page.getByRole('button',{name:'Día',exact:true}).click();await page.getByText(title,{exact:true}).first().waitFor();
  console.log(JSON.stringify({passed:15,checks:['visible settings switch','all/custom mode during user creation','permission bulk selection has visible state','invite explains private password setup','existing Secretary permission can be changed','permission persists after reopening','three named calendars','all selected without reload','new event starts without implicit calendar','visual calendar choice is explicit','general event without patient','event persisted after refresh','combined filtering','responsive tablet/mobile','persisted after logout/login'],scope:'isolated PostgreSQL; no production writes'},null,2));
 }finally{await browser.close();}

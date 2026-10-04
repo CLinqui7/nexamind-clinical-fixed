@@ -1,6 +1,6 @@
 # Verificación de Cambios linkare
 
-Fuente: `Cambios linkare.docx`, revisado el 2 de octubre de 2026. Esta lista distingue código y pruebas de una operación real con proveedores externos o datos históricos. No contiene expedientes ni credenciales.
+Fuente: `Cambios linkare.docx`, revisión integral cerrada el 4 de octubre de 2026. Esta lista distingue código y pruebas de una operación real con proveedores externos o datos históricos. No contiene expedientes ni credenciales.
 
 | Solicitud | Estado verificable | Evidencia / límite |
 |---|---|---|
@@ -12,10 +12,10 @@ Fuente: `Cambios linkare.docx`, revisado el 2 de octubre de 2026. Esta lista dis
 | Agenda clínica del día en Inicio e impresión | Implementado | Hora real, paciente, medicamento activo y último cambio relevante desde RPC protegida. Envío manual por WhatsApp existe, pero no puede operar sin proveedor/teléfono. Envío **automático** diario de agenda no está habilitado. |
 | Plantillas médicas y PDF privado | Implementado | Constancia, incapacidad, carta y formulario versionados. Generación queda vinculada al paciente y protegida por permisos. |
 | Calendarios Doctor, Esposa y General | Implementado | Filtros combinables, permisos por calendario y selector obligatorio al crear. Recordatorio opcional a contactos personales requiere proveedor configurado. |
-| Video, guía y tutorial interactivo | Implementado | Videos originales por rol, guía rápida y recorrido que no tapa los controles; pruebas de escritorio/tablet/móvil con datos ficticios. No sustituye una capacitación presencial. |
+| Video, guía y tutorial interactivo | Implementado y corregido | Videos originales por rol, guía rápida y recorrido sin escrituras remotas. El recorrido ahora usa el formulario vigente, enseña AM/PM, acepta dosis con guiones y encuentra su paciente ficticio aun con el directorio paginado. Validado en escritorio, tablet y móvil. No sustituye una capacitación presencial. |
 | WhatsApp de soporte | Preparado, no activo | Falta número de soporte autorizado en `VITE_SUPPORT_WHATSAPP_NUMBER`; la ayuda no muestra un enlace a un número inventado. |
 | Validación Samsung | Parcial | Emulación táctil vertical 800×1280 y horizontal 1280×800; falta comprobación en un dispositivo Samsung físico. |
-| Migración histórica FoxPro | Preparación, no importación | Herramienta de dry-run y staging con IDs anteriores; no se recibió un export validado ni se importaron pacientes a producción. Requiere respaldo, conciliación y ensayo antes de tocar expedientes reales. |
+| Migración histórica FoxPro | Completada y conciliada | Lote `b121a91d-c2cc-4685-9b56-9856d1689924`: 5,347 pacientes, 140,202 entradas históricas y 98,813 filas conciliadas. Se preservaron 417 excepciones. Los 21 pacientes y 90 registros modernos preexistentes conservaron su huella. La fuente no contiene correo y no se inventaron direcciones. Los tratamientos de texto quedaron como historia de estado desconocido, no como medicación activa. |
 | Integración Calendar, seguros, alertas, reportes | Funcionalidad parcial existente | Sincronización Google saliente y feed ICS; seguro y reportes en UI. No existe sincronización bidireccional ni automatización integral de seguros. |
 
 ## Puertas de operación pendientes
@@ -23,5 +23,19 @@ Fuente: `Cambios linkare.docx`, revisado el 2 de octubre de 2026. Esta lista dis
 1. Configurar credenciales reales del proveedor de recordatorios y su plantilla aprobada; ejecutar una prueba con consentimiento y número autorizados. No reintentar mensajes ambiguos sin verificar el proveedor.
 2. Obtener el número de soporte autorizado; configurar la variable de Vercel y verificar el destino del botón.
 3. Decidir si se autoriza el envío automático de la agenda clínica por WhatsApp: expone datos de pacientes y tratamientos fuera de Linkare. Requiere destino del médico, consentimiento/política de privacidad, proveedor y prueba controlada.
-4. Para migración, recibir una exportación del sistema antiguo, validar la calidad, probar en staging y conciliar antes de cualquier importación real.
-5. Realizar aceptación con las cuentas reales de doctor y dos secretarias, y una inspección en tablet Samsung física, sin usar pacientes reales de prueba.
+4. No volver a ejecutar la importación FoxPro completada. Las 417 excepciones deben conservarse para revisión humana; no relacionarlas por similitud de nombre o teléfono.
+5. Realizar aceptación con las cuentas reales de doctor y dos secretarias, y una inspección en tablet Samsung física, sin modificar pacientes reales como prueba.
+
+## Revisión de regresión del 4 de octubre de 2026
+
+- Suite estática, unitaria y de compilación: `npm run check`.
+- Citas, AM/PM, búsqueda en un solo control, persistencia y recordatorios: `qa/browser/critical-ui.mjs` (9/9).
+- Correcciones de medicamentos, controles y borrados auditados: `qa/browser/corrections.mjs` (8/8).
+- Recetas desde tratamiento activo: `qa/browser/prescriptions.mjs` (5/5) e impresión/membrete (2/2).
+- Calendarios y permisos: `qa/browser/calendars.mjs` (15/15).
+- Módulos, permisos y persistencia: 11/11 y 9/9.
+- Historia FoxPro: 8/8.
+- Tablet Samsung equivalente: vertical y horizontal sin desbordamiento ni errores de ejecución.
+- Tutorial completo por rol: escritorio, tablet y móvil; paciente, medicamento, cuaderno y cita ficticios sin escrituras remotas.
+
+Las pruebas de navegador usan PostgreSQL aislado y datos sintéticos. La verificación productiva posterior al despliegue es de solo lectura.

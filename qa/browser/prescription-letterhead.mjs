@@ -42,15 +42,23 @@ try {
   await page.getByLabel('Diagnóstico principal').fill('QA impresión');
   await page.getByRole('button', { name: 'Crear paciente', exact: true }).click();
   await page.getByText('Paciente registrado correctamente.', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Nueva receta', exact: true }).click();
-  for (let index = 0; index < 3; index += 1) await page.getByRole('button', { name: 'Agregar otro medicamento', exact: true }).click();
+
   const medicines = ['A nocturna', 'B rescate', 'Z matutina', 'C mediodía'];
   const directions = ['cada noche', 'según necesidad (PRN)', 'cada mañana', 'al mediodía'];
-  const medicationInputs = page.getByRole('textbox', { name: /^Medicamento/ });
-  const directionInputs = page.getByLabel('Cómo tomarlo');
   for (let index = 0; index < medicines.length; index += 1) {
-    await medicationInputs.nth(index).fill(medicines[index]);
-    await directionInputs.nth(index).fill(directions[index]);
+    await page.getByRole('button', { name: 'Agregar medicamento', exact: true }).first().click();
+    dialog = page.getByRole('dialog', { name: 'Agregar medicamento' });
+    await dialog.getByRole('textbox', { name: 'Medicamento', exact: true }).fill(medicines[index]);
+    await dialog.getByRole('textbox', { name: 'Dosis', exact: true }).fill('10');
+    await dialog.getByLabel('Frecuencia').selectOption({ label: directions[index] });
+    await dialog.getByRole('button', { name: 'Agregar medicamento', exact: true }).click();
+    await page.getByText('Medicamento agregado al tratamiento.', { exact: true }).waitFor();
+  }
+
+  await page.getByRole('button', { name: 'Nueva receta', exact: true }).click();
+  for (let index = 0; index < medicines.length; index += 1) {
+    await page.getByLabel('Medicamento del tratamiento activo').selectOption({ label: `${medicines[index]} · 10 mg · ${directions[index]}` });
+    await page.locator('.prescription-item-editor').last().getByLabel('Cómo tomarlo').fill(directions[index]);
   }
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Guardar y abrir receta', exact: true }).click();

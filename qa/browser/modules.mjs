@@ -6,7 +6,7 @@ const checks=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
 const name='QA Modules '+Date.now(),diagnosis='SYNTHETIC_PRIVATE_DIAGNOSIS';
 const login=async role=>{await page.locator('input[type=email]').fill(role+'@example.invalid');await page.locator('input[type=password]').fill('qa-password-123');await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).click();await page.getByRole('button',{name:'Pacientes',exact:true}).waitFor();};
 const logout=async()=>{await page.locator('.profile-chip-button').click();await page.getByRole('button',{name:'Cerrar sesión',exact:true}).click();await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).waitFor();};
-const patient=async()=>{await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.locator('[data-tour="patients-search"]').fill(name);await page.waitForTimeout(450);await page.getByText(name,{exact:true}).click();};
+const patient=async()=>{await page.getByRole('button',{name:'Pacientes',exact:true}).click();await page.getByRole('button',{name:'Todos',exact:true}).click();await page.locator('[data-tour="patients-search"]').fill(name);await page.waitForTimeout(450);await page.getByText(name,{exact:true}).click();};
 const reload=async()=>{await page.reload();await patient();};
 const state=()=>page.evaluate(async()=>{
  const session=JSON.parse(localStorage.getItem('linkare-isolated-qa-session'));

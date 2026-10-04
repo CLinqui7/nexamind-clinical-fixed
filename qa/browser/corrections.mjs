@@ -44,13 +44,13 @@ try {
   await page.getByRole('button', { name: 'Agregar medicamento', exact: true }).first().click();
   let dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Medicamento', exact: true }).fill('Medicamento original');
-  await dialog.getByRole('spinbutton', { name: 'Dosis', exact: true }).fill('10');
+  await dialog.getByRole('textbox', { name: 'Dosis', exact: true }).fill('10');
   await dialogSubmit('Agregar medicamento');
   const medicationCard = page.locator('.medication-card').filter({ hasText: 'Medicamento original' });
   await medicationCard.getByRole('button', { name: 'Editar medicamento', exact: true }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Medicamento', exact: true }).fill('Medicamento corregido (QA)');
-  await dialog.getByRole('spinbutton', { name: 'Dosis', exact: true }).fill('20');
+  await dialog.getByRole('textbox', { name: 'Dosis', exact: true }).fill('20');
   await dialogSubmit('Guardar corrección');
   await page.locator('.medication-card').filter({ hasText: 'Medicamento corregido (QA)' }).waitFor();
   checks.push('medication full edit works and keeps the same record');
@@ -142,6 +142,9 @@ try {
 
   await page.reload();
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await page.locator('[data-tour="patients-search"]').fill(patientName);
+  await page.waitForTimeout(450);
   await page.locator('.patient-card').filter({ hasText: patientName }).click();
   await page.getByRole('tab', { name: /^Efectos y controles/ }).click();
   await page.getByText('Efectos y resultados eliminados', { exact: true }).waitFor();

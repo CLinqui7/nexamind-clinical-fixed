@@ -471,6 +471,12 @@ class App extends React.Component {
 
   selectDirectoryScope = scope => {clearTimeout(this.patientSearchTimer);this.refreshPatientDirectory({scope,query:this.state.patientDirectory.query,cursor:null,pageIndex:0,force:true});};
   changeDirectorySearch = query => {
+    if(this.state.tourSandbox){
+      const patient=this.state.data.patients.find(item=>item.id===this.tourDemoPatientId);
+      const matches=patient&&patient.name.toLocaleLowerCase('es').includes(String(query||'').trim().toLocaleLowerCase('es'));
+      this.setState(previous=>({patientDirectory:{...previous.patientDirectory,query,items:matches?[directoryPatient(patient)]:[],loading:false,error:'',pageIndex:0,nextCursor:null,hasMore:false}}));
+      return;
+    }
     this.setState(previous=>({patientDirectory:{...previous.patientDirectory,query,loading:true,error:''}}));clearTimeout(this.patientSearchTimer);
     this.patientSearchTimer=setTimeout(()=>this.refreshPatientDirectory({query,cursor:null,pageIndex:0,force:true}),300);
   };
@@ -732,7 +738,7 @@ class App extends React.Component {
       'patient-form-diagnosis':'[data-tour="patient-form-clinical"] input',
       'patient-form-save':'.modal form .form-actions button[type="submit"]',
       'medication-form-name':'[data-tour="medication-form-identity"] input',
-      'medication-form-dose':'[data-tour="medication-form-dose"] input[type="number"]',
+      'medication-form-dose':'[data-tour="medication-form-dose"] input',
       'medication-form-save':'.modal form .form-actions button[type="submit"]',
       'consultations-start':'.consultations-view .card-heading .button',
       'notebook-freeNotes':'#encounter-freeNotes',
@@ -741,6 +747,7 @@ class App extends React.Component {
       'notebook-close':'.notebook-toolbar .back-button',
       'patient-agendar':'[data-tour="patient-next-visit"] .button:last-child',
       'appointment-start':'[data-tour="appointment-form-who-when"] [data-appointment-date]',
+      'appointment-period':'[data-tour="appointment-form-who-when"] select[aria-label="AM o PM"]',
       'appointment-form-save':'.modal form .form-actions button[type="submit"]',
       'calendar-filter-first':'.calendar-filter-options .calendar-filter:first-child',
       'agenda-today':'.calendar-nav .today-button',
@@ -963,6 +970,13 @@ class App extends React.Component {
 
   openPatient = async patientId => {
     if (!this.can('patientsView')) return this.permissionDenied();
+    if(this.state.tourSandbox){
+      const patient=this.state.data.patients.find(item=>item.id===patientId);
+      if(!patient)return this.notify('El paciente ficticio ya no está disponible. Reinicie la práctica.','danger');
+      this.setState({selectedPatientId:patientId,view:'patient',patientTab:'overview',chartMode:'scales',timelineFilter:'all',mobileNav:false,appointmentDetails:null,patientLoading:false});
+      window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
+      return;
+    }
     const epoch=this.authEpoch;this.setState({ selectedPatientId: patientId, view: 'patient', patientTab: 'overview', chartMode: 'scales', timelineFilter: 'all', mobileNav: false, appointmentDetails: null,patientLoading:true });
     try{
       const result=await loadPatientDetail(this.state.remoteOrganizationId,patientId);if(epoch!==this.authEpoch)return;

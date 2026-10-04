@@ -27,6 +27,9 @@ const logout = async () => {
 };
 const openPatientMedications = async () => {
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await page.locator('[data-tour="patients-search"]').fill(name);
+  await page.waitForTimeout(450);
   await page.getByText(name, { exact: true }).click();
   await page.getByRole('tab', { name: 'Medicamentos', exact: true }).click();
 };
@@ -48,6 +51,9 @@ try {
   await page.getByText('Paciente registrado correctamente.', { exact: true }).waitFor();
   await page.reload();
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await page.locator('[data-tour="patients-search"]').fill(name);
+  await page.waitForTimeout(450);
   await page.getByText(name, { exact: true }).waitFor();
   checks.push('patient remains after immediate reload following success');
 
@@ -58,7 +64,7 @@ try {
     await page.getByRole('button', { name: 'Agregar medicamento', exact: true }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('textbox', { name: 'Medicamento', exact: true }).fill(medication.name);
-    await dialog.getByRole('spinbutton', { name: 'Dosis', exact: true }).fill(medication.dose);
+    await dialog.getByRole('textbox', { name: 'Dosis', exact: true }).fill(medication.dose);
     await dialog.getByRole('button', { name: 'Agregar medicamento', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
     await page.locator('.medication-card').filter({ hasText: medication.name }).waitFor();
@@ -109,6 +115,9 @@ try {
 
   await login('other@example.invalid');
   await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await page.locator('[data-tour="patients-search"]').fill(name);
+  await page.waitForTimeout(450);
   assert.equal(await page.getByText(name, { exact: true }).count(), 0);
   checks.push('second organization cannot see the first patient');
   await logout();
