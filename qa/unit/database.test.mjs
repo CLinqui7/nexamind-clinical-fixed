@@ -17,7 +17,7 @@ before(async()=>{
  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
- for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql','supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -347,4 +347,30 @@ test('DB: directory cursor bumps are coalesced and deferred until commit',async(
  const rolledBack=BigInt((await db.query('select listing_version from linkare_private.patient_directory_state_v1 where organization_id=$1',[org])).rows[0].listing_version);
  assert.equal(rolledBack,after);
  await actor('owner');
+});
+
+test('DB: consultation fee is projected, permission-scoped and cannot be changed without its explicit grant',async()=>{
+ await actor('owner');
+ await save([{kind:'patient_admin',id:'fee-patient',expectedRevision:0,payload:{id:'fee-patient',name:'Paciente Tarifa QA',phone:'70000000',consultationFeeCents:12000}}]);
+ let detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
+ assert.equal(detail.patient.consultationFeeCents,12000);
+ let directory=(await db.query("select public.linkare_patient_directory_v1($1,'all','Paciente Tarifa',null,null,20) data",[org])).rows[0].data;
+ assert.equal(directory.items[0].consultationFeeCents,12000);
+
+ await permissions('secretary',{patientsView:true,patientsEdit:true,consultationFeeView:false,consultationFeeEdit:false});
+ detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
+ assert.equal(detail.patient.consultationFeeCents,undefined);
+ directory=(await db.query("select public.linkare_patient_directory_v1($1,'all','Paciente Tarifa',null,null,20) data",[org])).rows[0].data;
+ assert.equal(directory.items[0].consultationFeeCents,undefined);
+ await assert.rejects(()=>save([{kind:'patient_admin',id:'fee-patient',expectedRevision:1,payload:{name:'Paciente Tarifa QA',consultationFeeCents:9000}}]),error=>error.code==='42501');
+ await save([{kind:'patient_admin',id:'fee-patient',expectedRevision:1,payload:{name:'Paciente Tarifa QA',phone:'71111111'}}]);
+
+ await actor('owner');
+ detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
+ assert.equal(detail.patient.consultationFeeCents,12000);
+ const revision=detail.revisions.find(item=>item.kind==='patient_admin').revision;
+ await permissions('secretary',{patientsView:true,patientsEdit:true,consultationFeeView:true,consultationFeeEdit:true});
+ await save([{kind:'patient_admin',id:'fee-patient',expectedRevision:revision,payload:{name:'Paciente Tarifa QA',phone:'71111111',consultationFeeCents:9000}}]);
+ detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
+ assert.equal(detail.patient.consultationFeeCents,9000);
 });

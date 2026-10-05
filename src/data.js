@@ -155,6 +155,7 @@ export function normalizePatient(patient = {}) {
     phone: patient.phone || '',
     email: patient.email || '',
     photo: patient.photo || '',
+    consultationFeeCents: patient.consultationFeeCents !== null && patient.consultationFeeCents !== undefined && patient.consultationFeeCents !== '' && Number.isSafeInteger(Number(patient.consultationFeeCents)) && Number(patient.consultationFeeCents) >= 0 ? Number(patient.consultationFeeCents) : null,
     insurance: {
       hasInsurance: Boolean(patient.insurance?.hasInsurance),
       provider: patient.insurance?.provider || '',

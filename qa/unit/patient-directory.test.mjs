@@ -4,10 +4,11 @@ import {directoryPatient,directoryRange,PatientPageCache,PAGE_LIMIT} from '../..
 import {projectRecords} from '../../src/domain/records.js';
 
 test('directory summaries cannot be projected into clinical or administrative writes',()=>{
- const patient=directoryPatient({id:'p1',name:'Resumen',lastActivityOn:'2026-04-03'});
+ const patient=directoryPatient({id:'p1',name:'Resumen',lastActivityOn:'2026-04-03',consultationFeeCents:12000});
  assert.equal(patient.__summaryOnly,true);
  assert.equal(projectRecords({patients:[patient]},true).size,0);
  assert.equal(PAGE_LIMIT,20);
+ assert.equal(patient.consultationFeeCents,12000);
 });
 
 test('patient page cache is LRU bounded',()=>{

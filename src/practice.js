@@ -66,6 +66,8 @@ export const PERMISSION_CATALOG = [
   { key: 'patientsView', group: 'Pacientes', label: 'Ver pacientes', description: 'Consultar la lista y la ficha administrativa.' },
   { key: 'patientsCreate', group: 'Pacientes', label: 'Crear pacientes', description: 'Registrar expedientes nuevos.' },
   { key: 'patientsEdit', group: 'Pacientes', label: 'Editar datos administrativos', description: 'Actualizar contacto, seguro y fotografía.' },
+  { key: 'consultationFeeView', group: 'Pacientes', label: 'Ver tarifa de consulta', description: 'Consultar el monto habitual acordado para el paciente.' },
+  { key: 'consultationFeeEdit', group: 'Pacientes', label: 'Editar tarifa de consulta', description: 'Registrar o actualizar el monto habitual de la consulta.' },
   { key: 'appointmentsManage', group: 'Agenda', label: 'Gestionar agenda completa', description: 'Permiso histórico para personal clínico; Secretaría se configura por calendario.' },
   { key: 'remindersManage', group: 'Agenda', label: 'Gestionar recordatorios', description: 'Abrir WhatsApp y marcar recordatorios enviados.' },
   { key: 'clinicalView', group: 'Información clínica', label: 'Ver información clínica', description: 'Consultar diagnósticos, escalas, tratamiento y controles.' },

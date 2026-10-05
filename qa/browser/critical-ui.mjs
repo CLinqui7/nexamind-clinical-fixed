@@ -29,6 +29,7 @@ try {
   await patientDialog.getByLabel('Nombre completo').fill('Paciente crítico QA');
   await patientDialog.getByRole('spinbutton', { name: 'Edad', exact: true }).fill('30');
   await patientDialog.getByLabel('Diagnóstico principal').fill('Diagnóstico sintético QA');
+  await patientDialog.getByLabel('Tarifa habitual de consulta (USD)').fill('120');
   const insuranceToggle = patientDialog.locator('[data-tour="patient-form-insurance-toggle"]');
   assert.equal(await insuranceToggle.getAttribute('aria-pressed'), 'false');
   await insuranceToggle.click();
@@ -42,9 +43,11 @@ try {
   assert.equal(errors.length, 0, errors.join('\n'));
   await patientDialog.getByRole('button', { name: 'Crear paciente', exact: true }).click();
   await page.getByText('Paciente registrado correctamente.', { exact: true }).waitFor();
+  await page.getByText('Consulta $120', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Agendar', exact: true }).click();
   const appointmentDialog = page.getByRole('dialog', { name: 'Nuevo evento' });
-  await appointmentDialog.getByText('Paciente seleccionado', { exact: true }).waitFor();
+  await appointmentDialog.getByText('Paciente crítico QA', { exact: true }).waitFor();
+  await appointmentDialog.getByText('Tarifa habitual: $120', { exact: true }).waitFor();
   assert.equal(await appointmentDialog.getByRole('combobox', { name: 'Paciente' }).count(), 1);
   assert.equal(await appointmentDialog.getByLabel('AM o PM', { exact: true }).count(), 1);
   await appointmentDialog.getByLabel('AM o PM', { exact: true }).selectOption('PM');
@@ -67,20 +70,23 @@ try {
   });
   assert.ok(persisted.payload.appointments.some(item => item.notes === 'Cita sintética crítica QA'));
   assert.ok(persisted.payload.patients.find(item=>item.name==='Paciente crítico QA')?.notificationPreferences?.reminderHours?.includes(2));
+  assert.equal(persisted.payload.patients.find(item=>item.name==='Paciente crítico QA')?.consultationFeeCents,12000);
   assert.equal(errors.length, 0, errors.join('\n'));
 
   console.log(JSON.stringify({
-    passed: 9,
+    passed: 11,
     checks: [
       'read-only bootstrap and directory hydration trigger zero save RPCs',
       'insurance plus reveals fields without blanking the modal',
       'insurance state remains controlled and accessible',
       'patient reminder timing is selectable instead of fixed globally',
+      'consultation fee is visible in the patient record and appointment flow',
       'appointment patient search is a single combobox',
       'appointment form exposes explicit AM/PM selection',
       `appointment save is acknowledged in ${saveMilliseconds}ms`,
       'appointment remains persisted in isolated PostgreSQL',
       'patient-specific reminder timing survives a server reload',
+      'consultation fee survives a server reload as exact integer cents',
     ],
     scope: 'Playwright + isolated PostgreSQL; synthetic data only; no production writes',
   }, null, 2));

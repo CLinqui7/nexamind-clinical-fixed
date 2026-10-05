@@ -7,7 +7,9 @@ export function directoryPatient(row={}){
     archived:row.archived===true,dataQuality:row.dataQuality||null,hasLegacyRecord:row.hasLegacyRecord===true,
     lastActivityOn:row.lastActivityOn||null,lastActivityAt:row.lastActivityAt||null,
     lastActivityPrecision:row.lastActivityPrecision||null,lastActivityOrigin:row.lastActivityOrigin||null,
-    nextVisit:row.nextAppointmentAt||null,__summaryOnly:true,
+    nextVisit:row.nextAppointmentAt||null,
+    consultationFeeCents:row.consultationFeeCents!==null&&row.consultationFeeCents!==undefined&&row.consultationFeeCents!==''&&Number.isSafeInteger(Number(row.consultationFeeCents))?Number(row.consultationFeeCents):null,
+    __summaryOnly:true,
   };
 }
 

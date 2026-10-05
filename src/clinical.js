@@ -1,5 +1,6 @@
 import { COMMON_ADVERSE_EFFECTS, FREQUENCIES, SCALE_CATALOG, normalizePatient } from './data.js';
 import { normalizeDeathRecord, normalizeNotificationPreferences, patientExtensionDefaults } from './v2features.js';
+import { embeddedConsultationFee, patientConsultationFee, parseConsultationFeeInput, consultationFeeInput } from './domain/consultation-fee.js';
 import {
   addMinutes,
   calculateBMI,
@@ -98,7 +99,7 @@ function updateNextVisit(data, patientId) {
 
 export function patientFormDefaults() {
   return {
-    name: '', age: '', sex: 'No registrado', phone: '', email: '', photo: '',
+    name: '', age: '', sex: 'No registrado', phone: '', email: '', photo: '', consultationFee: '',
     diagnosis: '', diagnosisCode: '', risk: 'low', status: 'stable',
     scaleCode: 'PHQ-9', initialScore: '', nextVisit: '', notes: '',
     hasInsurance: false, insuranceProvider: '', insurancePlan: '', insuranceMemberId: '',
@@ -113,9 +114,12 @@ export function patientFormDefaults() {
 }
 
 export function patientEditFormDefaults(patient) {
+  const embedded = embeddedConsultationFee(patient?.name);
+  const fee = patientConsultationFee(patient);
   return {
-    name: patient?.name || '', age: patient?.age ?? '', sex: patient?.sex || 'No registrado',
+    name: embedded.name || '', age: patient?.age ?? '', sex: patient?.sex || 'No registrado',
     phone: patient?.phone || '', email: patient?.email || '', photo: patient?.photo || '',
+    consultationFee: consultationFeeInput(fee.cents), consultationFeeWasInName: fee.inferred,
     diagnosis: patient?.diagnosis || '', diagnosisCode: patient?.diagnosisCode || '',
     risk: patient?.risk || 'low', status: patient?.status || 'stable', notes: '',
     hasInsurance: Boolean(patient?.insurance?.hasInsurance),
@@ -267,6 +271,7 @@ export function createPatient(data, draft) {
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
     photo: draft.photo || '',
+    consultationFeeCents: parseConsultationFeeInput(draft.consultationFee),
     preferredName: cleanText(draft.preferredName),
     pronouns: cleanText(draft.pronouns),
     sexAssignedAtBirth: draft.sexAssignedAtBirth || 'No registrado',
@@ -406,6 +411,7 @@ export function updatePatientProfile(data, patientId, draft) {
     phone: cleanText(draft.phone),
     email: cleanText(draft.email),
     photo: draft.photo ?? patient.photo,
+    consultationFeeCents: draft.consultationFee === undefined ? patient.consultationFeeCents : parseConsultationFeeInput(draft.consultationFee),
     preferredName: cleanText(draft.preferredName),
     pronouns: cleanText(draft.pronouns),
     sexAssignedAtBirth: draft.sexAssignedAtBirth || 'No registrado',
