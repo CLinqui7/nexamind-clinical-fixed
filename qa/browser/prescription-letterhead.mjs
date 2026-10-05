@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 const browser = await chromium.launch({ channel: process.env.LINKARE_BROWSER || 'msedge', headless: true });
 const page = await browser.newPage();
@@ -81,6 +82,19 @@ try {
   for (const forbidden of ['Edad', 'Diagnóstico', 'Seguro médico', '40 años', 'SENSITIVE_DIAGNOSIS_DO_NOT_PRINT', 'SENSITIVE_DX_DO_NOT_PRINT', 'SENSITIVE_INSURER_DO_NOT_PRINT', 'SENSITIVE_PLAN_DO_NOT_PRINT']) assert.doesNotMatch(text, new RegExp(forbidden));
   checks.push('printed prescription shows all phones, one header JVPM and intake-time medication order');
   checks.push('printed prescription contains the patient name but excludes age, diagnosis, DX and insurance');
+  await prescription.close();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Guardar PDF', exact: true }).click();
+  const download = await downloadPromise;
+  const pdfPath = await download.path();
+  assert.ok(pdfPath);
+  const pdf = fs.readFileSync(pdfPath);
+  assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
+  assert.ok(pdf.length > 1000);
+  assert.match(download.suggestedFilename(), /^Receta_RX-\d{4}-\d+_QA_Letterhead_\d+\.pdf$/);
+  await page.getByText(/PDF descargado: Receta_RX-/).waitFor();
+  checks.push('Guardar PDF downloads a valid PDF file beside the existing print action');
 
   console.log(JSON.stringify({ passed: checks.length, checks, scope: 'Isolated browser + PostgreSQL; no production writes' }, null, 2));
 } finally {

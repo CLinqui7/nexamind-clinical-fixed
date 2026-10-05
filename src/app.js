@@ -95,6 +95,7 @@ import {
   whatsappReminderUrl,
   voidPrescription,
 } from './practice.js';
+import { downloadPrescriptionPdf } from './prescription-pdf.js';
 import {
   createWompiPaymentLink,
   fetchWompiAppInfo,
@@ -380,7 +381,7 @@ class App extends React.Component {
       wompiBusy:false,wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},billingError:'',billingLoading:false,
       teamInvites:[],teamBusy:false,view:'dashboard',selectedPatientId:null,patientTab:'overview',patientFilter:'all',search:'',mobileNav:false,
       modal:null,modalError:'',appointmentDetails:null,appointmentPrompt:null,promptDismissedFor:null,
-      activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,
+      activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,prescriptionPdfBusyId:null,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
@@ -2021,6 +2022,23 @@ class App extends React.Component {
     printWindow.document.close();
   };
 
+  savePrescriptionPdf = async (prescription, patientId = this.state.selectedPatientId) => {
+    if (this.state.prescriptionPdfBusyId) return;
+    let patient = this.state.data.patients.find(item => item.id === patientId);
+    if (!patient || !prescription) return this.notify('No se encontró la receta para guardar como PDF.', 'danger');
+    this.setState({ prescriptionPdfBusyId: prescription.id });
+    try {
+      await this.refreshProfileAssets({ required: false });
+      patient = this.state.data.patients.find(item => item.id === patientId) || patient;
+      const filename = await downloadPrescriptionPdf(this.state.data, patient, prescription);
+      this.notify(`PDF descargado: ${filename}`);
+    } catch (error) {
+      this.notify(error instanceof Error ? error.message : 'No se pudo generar el PDF de la receta.', 'danger');
+    } finally {
+      this.setState({ prescriptionPdfBusyId: null });
+    }
+  };
+
   updateAppointmentStatus = (appointmentId, status) => {
     const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
     if (!appointment||!this.canCalendar(appointment.calendarId,status==='cancelled'?'Cancel':'Edit')) return this.permissionDenied();
@@ -2534,7 +2552,7 @@ class App extends React.Component {
           ${prescriptions.length ? html`<div className="prescription-list">${prescriptions.map(prescription => {
             const voided=prescription.status==='voided'||Boolean(prescription.archivedAt);
             const reason=prescription.voidReason||prescription.archiveReason||'Anulación histórica';
-            return html`<article key=${prescription.id} className=${`prescription-card ${voided?'prescription-voided':''}`}><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small>${voided?html`<p><${Badge} tone="danger">Receta anulada</${Badge}></p><small>Motivo: ${reason}${prescription.voidedAt||prescription.archivedAt?` · ${formatDateTime(prescription.voidedAt||prescription.archivedAt)}`:''}</small>`:null}</div><div className="prescription-card-items">${prescription.items.slice(0,3).map(item=>html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit')&&!voided?html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.openVoidPrescription(patient,prescription)}><${Icon} name="alert" size=${16}/> Anular receta</button>`:null}<${Button} tone="secondary" icon="print" onClick=${()=>this.printPrescription(prescription,patient.id)}>Imprimir</${Button}></article>`;
+            return html`<article key=${prescription.id} className=${`prescription-card ${voided?'prescription-voided':''}`}><div className="prescription-card-icon"><${Icon} name="prescription" size=${22}/></div><div><span>${prescription.number}</span><h4>${formatLongDate(prescription.date)}</h4><p>${prescription.items.length} indicación(es) · ${prescription.diagnosis || patient.diagnosis}</p><small>Emitida por ${prescription.doctorName || this.state.data.organization.clinician}</small>${voided?html`<p><${Badge} tone="danger">Receta anulada</${Badge}></p><small>Motivo: ${reason}${prescription.voidedAt||prescription.archivedAt?` · ${formatDateTime(prescription.voidedAt||prescription.archivedAt)}`:''}</small>`:null}</div><div className="prescription-card-items">${prescription.items.slice(0,3).map(item=>html`<span key=${item.id}><b>${item.medication}</b> ${item.strength}</span>`)}</div>${this.can('prescriptionsEdit')&&!voided?html`<${Button} tone="secondary" icon="edit" onClick=${()=>this.editPrescription(patient,prescription)}>Editar receta</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.openVoidPrescription(patient,prescription)}><${Icon} name="alert" size=${16}/> Anular receta</button>`:null}<${Button} tone="secondary" icon="print" onClick=${()=>this.printPrescription(prescription,patient.id)}>Imprimir</${Button}><${Button} tone="secondary" icon="download" disabled=${this.state.prescriptionPdfBusyId===prescription.id} onClick=${()=>this.savePrescriptionPdf(prescription,patient.id)}>${this.state.prescriptionPdfBusyId===prescription.id?'Generando PDF…':'Guardar PDF'}</${Button}></article>`;
           })}</div>` : html`<${EmptyState} icon="prescription" title="Aún no hay recetas" text="La receta se genera con el membrete configurado por el médico." action=${this.can('prescriptionsCreate') ? html`<${Button} icon="plus" onClick=${() => this.openPrescription(patient)}>Crear primera receta</${Button}>` : null}/>`}
         </${Card}>
       </div>`;
