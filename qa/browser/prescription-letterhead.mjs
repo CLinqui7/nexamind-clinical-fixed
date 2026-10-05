@@ -39,7 +39,11 @@ try {
   await page.getByRole('button', { name: 'Nuevo paciente', exact: true }).first().click();
   await page.getByLabel('Nombre completo').fill(patientName);
   await page.getByRole('spinbutton', { name: 'Edad', exact: true }).fill('40');
-  await page.getByLabel('Diagnóstico principal').fill('QA impresión');
+  await page.getByLabel('Diagnóstico principal').fill('SENSITIVE_DIAGNOSIS_DO_NOT_PRINT');
+  await page.getByLabel('Código diagnóstico').fill('SENSITIVE_DX_DO_NOT_PRINT');
+  await page.locator('[data-tour="patient-form-insurance-toggle"]').click();
+  await page.getByLabel('Aseguradora').fill('SENSITIVE_INSURER_DO_NOT_PRINT');
+  await page.getByLabel('Plan', { exact: true }).fill('SENSITIVE_PLAN_DO_NOT_PRINT');
   await page.getByRole('button', { name: 'Crear paciente', exact: true }).click();
   await page.getByText('Paciente registrado correctamente.', { exact: true }).waitFor();
 
@@ -64,6 +68,7 @@ try {
   await page.getByRole('button', { name: 'Guardar y abrir receta', exact: true }).click();
   const prescription = await popupPromise;
   await prescription.waitForLoadState('domcontentloaded');
+  await prescription.getByText(patientName, { exact: true }).waitFor();
   const html = await prescription.content();
   const text = await prescription.locator('body').innerText();
   for (const number of numbers) assert.match(text, new RegExp(number));
@@ -72,7 +77,10 @@ try {
   assert.ok(text.indexOf('Z matutina') < text.indexOf('C mediodía'));
   assert.ok(text.indexOf('C mediodía') < text.indexOf('A nocturna'));
   assert.ok(text.indexOf('A nocturna') < text.indexOf('B rescate'));
+  assert.match(text, new RegExp(patientName));
+  for (const forbidden of ['Edad', 'Diagnóstico', 'Seguro médico', '40 años', 'SENSITIVE_DIAGNOSIS_DO_NOT_PRINT', 'SENSITIVE_DX_DO_NOT_PRINT', 'SENSITIVE_INSURER_DO_NOT_PRINT', 'SENSITIVE_PLAN_DO_NOT_PRINT']) assert.doesNotMatch(text, new RegExp(forbidden));
   checks.push('printed prescription shows all phones, one header JVPM and intake-time medication order');
+  checks.push('printed prescription contains the patient name but excludes age, diagnosis, DX and insurance');
 
   console.log(JSON.stringify({ passed: checks.length, checks, scope: 'Isolated browser + PostgreSQL; no production writes' }, null, 2));
 } finally {

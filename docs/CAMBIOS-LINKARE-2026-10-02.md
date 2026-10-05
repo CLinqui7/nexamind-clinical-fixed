@@ -1,6 +1,6 @@
 # Verificación de Cambios linkare
 
-Fuente: `Cambios linkare.docx`, revisión integral cerrada el 4 de octubre de 2026. Esta lista distingue código y pruebas de una operación real con proveedores externos o datos históricos. No contiene expedientes ni credenciales.
+Fuente: `Cambios linkare.docx`, revisión integral actualizada el 5 de octubre de 2026. Esta lista distingue código y pruebas de una operación real con proveedores externos o datos históricos. No contiene expedientes ni credenciales.
 
 | Solicitud | Estado verificable | Evidencia / límite |
 |---|---|---|
@@ -8,7 +8,7 @@ Fuente: `Cambios linkare.docx`, revisión integral cerrada el 4 de octubre de 20
 | Citas sin confirmar y pendientes de revisión | Implementado | Inicio de Secretaría y filtros de Agenda. Pacientes ahora tiene un filtro separado **Por revisar** para la marca administrativa de citas, sin usar datos clínicos. |
 | Permisos de Secretaría y captura de medicamentos | Implementado y probado en PostgreSQL aislado | Secretaría no recibe historia privada; puede capturar medicamentos pendientes de revisión, no activarlos. Permisos se comprueban en servidor. Prueba con cuentas reales de producción pendiente. |
 | Medicamentos en receta, mediodía, notas, estados activo/suspendido | Implementado | Selector al crear receta, frecuencia de mediodía, notas visibles, historial de dosis y estados. Las recetas son instantáneas independientes. |
-| Recetas asociadas al expediente, anulación sin borrado, impresión | Implementado | Historial y motivo de anulación; firma y sello; observaciones internas fuera de la impresión. Pruebas de base y de impresión pasan. |
+| Recetas asociadas al expediente, anulación sin borrado, impresión | Implementado y protegido por regresión | Historial y motivo de anulación; firma y sello; observaciones internas fuera de la impresión. La receta impresa recibe únicamente el nombre del paciente: no imprime edad, diagnóstico, código DX, seguro ni sus valores. |
 | Agenda clínica del día en Inicio e impresión | Implementado | Hora real, paciente, medicamento activo y último cambio relevante desde RPC protegida. Envío manual por WhatsApp existe, pero no puede operar sin proveedor/teléfono. Envío **automático** diario de agenda no está habilitado. |
 | Plantillas médicas y PDF privado | Implementado | Constancia, incapacidad, carta y formulario versionados. Generación queda vinculada al paciente y protegida por permisos. |
 | Calendarios Doctor, Esposa y General | Implementado | Filtros combinables, permisos por calendario y selector obligatorio al crear. Recordatorio opcional a contactos personales requiere proveedor configurado. |
@@ -39,3 +39,13 @@ Fuente: `Cambios linkare.docx`, revisión integral cerrada el 4 de octubre de 20
 - Tutorial completo por rol: escritorio, tablet y móvil; paciente, medicamento, cuaderno y cita ficticios sin escrituras remotas.
 
 Las pruebas de navegador usan PostgreSQL aislado y datos sintéticos. La verificación productiva posterior al despliegue es de solo lectura.
+
+## Revisión de receta del 5 de octubre de 2026
+
+La fotografía reportada corresponde a la plantilla anterior a `53c1487`, que todavía mostraba Edad, Diagnóstico y Seguro médico. El código y el bundle productivo posteriores ya habían retirado esos campos, pero una pestaña abierta antes del despliegue puede seguir generando ventanas `about:blank` con el JavaScript antiguo hasta recargarse.
+
+- El generador de impresión ahora reduce explícitamente el paciente a `name` antes de construir el documento.
+- La prueba unitaria inyecta edad, diagnóstico, DX, aseguradora y plan con marcadores únicos y exige que ninguno aparezca en el HTML.
+- La prueba real de navegador crea un paciente sintético con esos datos, genera una receta desde tratamiento activo y verifica la ventana imprimible.
+- Resultado: el nombre y los medicamentos aparecen; edad, diagnóstico, DX y seguro no aparecen.
+- La página principal y `index.html` se sirven con `Cache-Control: no-store, max-age=0` para evitar reutilizar HTML anterior al abrir o recargar la aplicación.
