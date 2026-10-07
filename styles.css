@@ -3443,6 +3443,29 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .reduced-motion-mode .training-popover { animation:none !important; }
 .reduced-motion-mode .training-popover-progress span { transition:none !important; }
 
+.patient-management-panel { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:15px; margin:16px 0; padding:17px 19px; border:1px solid #d9e5ec; border-radius:18px; background:linear-gradient(125deg,#f8fbfd,#fff); box-shadow:0 8px 26px rgba(5,49,110,.05); }
+.patient-management-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; color:#174f85; background:#e9f2f9; }
+.patient-management-copy { min-width:0; }
+.patient-management-copy h2 { margin:3px 0 4px; color:#193b57; font-size:15px; }
+.patient-management-copy p { margin:0; color:#5c7184; font-size:12px; line-height:1.5; }
+.patient-management-copy small { display:block; margin-top:6px; color:#4e6478; font-size:11px; overflow-wrap:anywhere; }
+.patient-management-delete { color:#a53245; border-color:#e7bdc5; background:#fff; white-space:nowrap; }
+.patient-management-delete:hover { border-color:#bf5262; background:#fff6f7; }
+.patient-management-panel.is-archived { border-color:#d5dde4; background:#f7f9fa; }
+.patient-management-panel.is-archived .patient-management-icon { color:#596e7e; background:#e7edf0; }
+.button-danger { color:#fff; background:#a72d43; box-shadow:0 8px 20px rgba(167,45,67,.18); }
+.button-danger:hover { background:#8f2135; }
+.patient-archive-review { display:flex; align-items:flex-start; gap:13px; padding:16px; border:1px solid #edc3ca; border-radius:15px; background:#fff7f8; color:#713041; }
+.patient-archive-review-icon { display:grid; place-items:center; flex:0 0 38px; height:38px; border-radius:12px; color:#a72d43; background:#f9e1e5; }
+.patient-archive-review b { display:block; margin:2px 0 9px; font-size:15px; }
+.patient-archive-review p { margin:6px 0; line-height:1.5; overflow-wrap:anywhere; font-size:12px; }
+.patient-archive-review strong { color:#522634; }
+.patient-archive-consequences { margin:15px 0; color:#475e72; font-size:12px; line-height:1.6; }
+.patient-archive-check { display:flex; align-items:flex-start; gap:10px; padding:13px 14px; border:1px solid #dce6ed; border-radius:13px; background:#f7fafc; color:#274158; font-size:12px; line-height:1.45; cursor:pointer; }
+.patient-archive-check input { flex:0 0 auto; width:17px; height:17px; margin:0; accent-color:#a72d43; }
+.patient-archive-check:focus-within { border-color:#a72d43; box-shadow:0 0 0 3px rgba(167,45,67,.12); }
+@media(max-width:700px) { .patient-management-panel { grid-template-columns:44px minmax(0,1fr); padding:15px; } .patient-management-delete { grid-column:1/-1; width:100%; } .patient-archive-actions { align-items:stretch; } .patient-archive-actions > div { width:100%; } .patient-archive-actions .button { width:100%; } }
+
 /* Responsive workspace: usable navigation and calendar inside Safari's dynamic viewport. */
 .nav-links { display:flex; align-items:center; gap:4px; }
 .mobile-nav-heading, .mobile-nav-tools, .mobile-event-count, .week-mobile { display:none; }

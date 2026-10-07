@@ -1,14 +1,16 @@
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import assert from 'node:assert/strict';
 
-const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const browserEngine = process.env.LINKARE_BROWSER_ENGINE === 'webkit' ? webkit : chromium;
+const browser = await browserEngine.launch(browserEngine === webkit ? { headless: true } : { channel: process.env.LINKARE_BROWSER || 'msedge', headless: true });
 const page = await browser.newPage();
 const consoleErrors = [];
+let browserStage = 'owner';
 page.on('pageerror', error => console.error('PAGE ERROR:', error));
 page.on('console', message => {
   if (message.type() === 'error') {
-    consoleErrors.push(message.text());
-    console.error('BROWSER ERROR:', message.text());
+    consoleErrors.push(`${browserStage}: ${message.text()}`);
+    console.error('BROWSER ERROR:', browserStage, message.text());
   }
 });
 const checks = [];
@@ -152,15 +154,52 @@ try {
   await page.getByText('Documentos eliminados', { exact: true }).waitFor();
   checks.push('all corrections and archived records persist after reload');
 
-  await page.getByRole('button', { name: 'Datos y seguro', exact: true }).click();
-  await page.getByRole('button', { name: 'Archivar paciente', exact: true }).click();
+  await page.getByRole('button', { name: 'Eliminar paciente', exact: true }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel(/^Motivo/).fill('Expediente QA creado para pruebas');
-  await dialog.getByRole('button', { name: 'Archivar paciente', exact: true }).click();
+  await dialog.getByLabel('Motivo de eliminación').fill('Expediente QA creado para pruebas');
+  await dialog.getByRole('button', { name: 'Revisar eliminación', exact: true }).click();
+  await page.getByRole('dialog', { name: '¿Seguro que desea eliminar a este paciente?' }).waitFor();
+  assert.equal(await dialog.getByRole('button', { name: 'Sí, eliminar paciente', exact: true }).isDisabled(), true);
+  await dialog.getByRole('button', { name: 'Volver al motivo', exact: true }).click();
+  assert.equal(await dialog.getByLabel('Motivo de eliminación').inputValue(), 'Expediente QA creado para pruebas');
+  await dialog.getByRole('button', { name: 'Revisar eliminación', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await page.getByRole('button', { name: 'Eliminar paciente', exact: true }).waitFor();
+  checks.push('cancel and back leave the patient active without running the archive RPC');
+
+  browserStage = 'switching to secretary';
+  await page.locator('.profile-chip-button').click();
+  await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+  await page.getByRole('button', { name: 'Ingresar a Linkare', exact: true }).waitFor();
+  await page.locator('input[type=email]').fill('secretary@example.invalid');
+  await page.locator('input[type=password]').fill('qa-password-123');
+  await page.getByRole('button', { name: 'Ingresar a Linkare', exact: true }).click();
+  browserStage = 'secretary dashboard';
+  await page.getByRole('button', { name: 'Pacientes', exact: true }).click();
+  browserStage = 'secretary directory';
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await page.locator('[data-tour="patients-search"]').fill(patientName);
+  await page.waitForTimeout(450);
+  await page.locator('.patient-card').filter({ hasText: patientName }).click();
+  browserStage = 'secretary patient';
+  await page.getByText('Ficha administrativa', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Eliminar paciente', exact: true }).waitFor();
+  checks.push('authorized Secretary sees the same management module without clinical chart access');
+  await page.setViewportSize({ width: 390, height: 664 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'patient management overflows a phone viewport');
+
+  await page.getByRole('button', { name: 'Eliminar paciente', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Motivo de eliminación').fill('Expediente QA creado para pruebas');
+  await dialog.getByRole('button', { name: 'Revisar eliminación', exact: true }).click();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'confirmation overflows a phone viewport');
+  await dialog.getByLabel('He comprobado que es el paciente correcto y entiendo las consecuencias.').check();
+  await dialog.getByRole('button', { name: 'Sí, eliminar paciente', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Archivados', exact: true }).click();
   await page.getByText(patientName, { exact: true }).waitFor();
-  checks.push('patient can be archived and found in the archived filter');
+  checks.push('patient removal requires reason, review and explicit second confirmation; archived record remains available');
+  checks.push('patient management and confirmation fit a 390px phone viewport');
 
   assert.deepEqual(consoleErrors, []);
   checks.push('correction and archive workflows render without browser console errors');

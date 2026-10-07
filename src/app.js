@@ -1202,7 +1202,8 @@ class App extends React.Component {
   openClinicalArchive = (patient, resource, recordId, label, patientTab) => {
     const permission = resource === 'patient' ? 'patientsEdit' : resource === 'document' ? 'documentsManage' : resource === 'consultation' ? 'consultationsManage' : 'clinicalEdit';
     if (!this.can(permission)) return this.permissionDenied();
-    this.setState({ modal: { type: 'clinicalArchive', patientId: patient.id, resource, recordId, patientTab, draft: { label, reason: '' } }, modalError: '' });
+    if (resource === 'patient' && patient.archived) return this.notify('Este paciente ya está archivado.', 'danger');
+    this.setState({ modal: { type: 'clinicalArchive', patientId: patient.id, resource, recordId, patientTab, stage: 'reason', draft: { label, reason: '', confirmed: false } }, modalError: '' });
   };
 
   openDocumentEdit = (patient, document) => {
@@ -2135,15 +2136,29 @@ class App extends React.Component {
 
   saveClinicalArchive = async event => {
     event.preventDefault();
-    const { patientId, resource, recordId, patientTab, draft } = this.state.modal;
+    const modal = this.state.modal;
+    if (!modal || modal.type !== 'clinicalArchive' || this.state.formSaving || this.patientArchiveInFlight) return;
+    const { patientId, resource, recordId, patientTab, draft } = modal;
     try {
-      if(String(draft.reason||'').trim().length<3)throw new Error('Escribe un motivo de al menos 3 caracteres.');
+      const reason = String(draft.reason || '').trim();
+      if (reason.length < (resource === 'patient' ? 10 : 3)) throw new Error(resource === 'patient' ? 'Explique el motivo con al menos 10 caracteres.' : 'Escribe un motivo de al menos 3 caracteres.');
       if (resource === 'patient') {
+        if (!this.can('patientsEdit')) return this.permissionDenied();
+        const patient = this.state.data.patients.find(item => item.id === patientId);
+        if (!patient || patient.archived) throw new Error('El paciente ya no está activo. Actualice el expediente antes de continuar.');
+        if (modal.stage !== 'confirm') {
+          this.setState(previous => ({ modal: { ...previous.modal, stage: 'confirm', draft: { ...previous.modal.draft, reason, confirmed: false } }, modalError: '' }));
+          return;
+        }
+        if (!draft.confirmed) throw new Error('Confirme que revisó el paciente y las consecuencias.');
+        this.patientArchiveInFlight = true;
         this.setState({formSaving:true,modalError:''});
         await this.flushChanges();
-        await archivePatient(this.state.remoteOrganizationId,patientId,draft.reason);
+        await archivePatient(this.state.remoteOrganizationId,patientId,reason);
         this.directoryCache.clear();this.setState({view:'patients',selectedPatientId:null,modal:null,formSaving:false},()=>this.selectDirectoryScope('archived'));
-        this.notify('Paciente archivado y conservado en el historial.');
+        this.refreshDashboardSummary();
+        this.refreshDailyAgenda();
+        this.notify('Paciente eliminado de la lista activa. El expediente y el motivo se conservaron en el historial.');
         return;
       }
       if (resource === 'document') {
@@ -2151,10 +2166,11 @@ class App extends React.Component {
         const document = patient?.documents?.find(item => item.id === recordId);
         if (document) await deletePatientDocumentFile(document);
       }
-      const result = archiveClinicalRecord(this.state.data, patientId, resource, recordId, draft.reason);
+      const result = archiveClinicalRecord(this.state.data, patientId, resource, recordId, reason);
       const labels = { adverseEvent: 'Efecto retirado', lab: 'Resultado retirado', vital: 'Control retirado', assessment: 'Medición retirada', document: 'Documento archivado', consultation: 'Consulta retirada' };
       await this.persistDataUpdate({ data: result.data, patientTab: patientTab || this.state.patientTab, modal: null, modalError: '' }, `${labels[resource] || 'Registro retirado'} y conservado en el historial.`);
     } catch (error) { this.setState({formSaving:false});this.handleFormError(error); }
+    finally { if (resource === 'patient') this.patientArchiveInFlight = false; }
   };
 
   updateAppointmentReview = (appointmentId, adminReviewStatus) => {
@@ -2293,7 +2309,7 @@ class App extends React.Component {
         eyebrow="Vista de secretaría"
         title=${`${greeting()}, ${user?.name?.split(' ')[0] || 'Secretaría'}`}
         subtitle="Aquí están las citas, confirmaciones y recordatorios. La información clínica permanece protegida según los permisos asignados."
-        actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.canAnyCalendar('Create') ? html`<${Button} icon="plus" onClick=${() => this.openNewAppointment()}>Nuevo evento</${Button}>` : null}</div>`}
+        actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} key="new-patient" tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.canAnyCalendar('Create') ? html`<${Button} key="new-event" icon="plus" onClick=${() => this.openNewAppointment()}>Nuevo evento</${Button}>` : null}</div>`}
       />
       <div className="simple-help administrative-help" data-tour="secretary-privacy"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
       <div className="kpi-grid secretary-kpis">
@@ -2303,7 +2319,7 @@ class App extends React.Component {
         <${KpiCard} label="Pacientes" value=${this.state.dashboardSummary?.patients?.total??patients.length} hint="expedientes no archivados" icon="patients" tone="blue"/>
       </div>
       <div className="dashboard-grid">
-        <${Card} className="span-7" title="Agenda de hoy" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button></div>`}>
+        <${Card} className="span-7" title="Agenda de hoy" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button key="print-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button key="save-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="secretary-agenda-list">${todayAppointments.length ? todayAppointments.map(appointment => {
             const patient = patients.find(item => item.id === appointment.patientId);
             return html`<button key=${appointment.id} className="secretary-agenda-row" onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}</time><${Avatar} patient=${patient}/><div><b>${patient?.name || appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : 'warning'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`;
@@ -2429,6 +2445,15 @@ class App extends React.Component {
     </div>`;
   }
 
+  renderPatientManagement(patient) {
+    if (!this.can('patientsEdit') && !patient.archived) return null;
+    return html`<section className=${`patient-management-panel ${patient.archived ? 'is-archived' : ''}`} aria-label="Gestión del paciente">
+      <span className="patient-management-icon"><${Icon} name=${patient.archived ? 'archive' : 'shield'} size=${20}/></span>
+      <div className="patient-management-copy"><span className="eyebrow">Gestión del paciente</span><h2>${patient.archived ? 'Paciente fuera de la lista activa' : 'Retirar paciente de la lista activa'}</h2><p>${patient.archived ? 'El expediente clínico se conserva para consulta y auditoría.' : 'La eliminación requiere un motivo y dos confirmaciones. Se cancelarán las citas futuras; el expediente y el historial se conservarán.'}</p>${patient.archived && patient.archiveReason ? html`<small>Motivo registrado: ${patient.archiveReason}</small>` : null}</div>
+      ${!patient.archived && this.can('patientsEdit') ? html`<${Button} tone="secondary" className="patient-management-delete" icon="trash" onClick=${() => this.openClinicalArchive(patient, 'patient', patient.id, patientDisplayName(patient), 'patients')}>Eliminar paciente</${Button}>` : null}
+    </section>`;
+  }
+
   renderAdministrativePatient(patient) {
     const appointments = this.state.data.appointments
       .filter(item => item.patientId === patient.id)
@@ -2442,8 +2467,9 @@ class App extends React.Component {
         <button className="back-button" aria-label="Volver a pacientes" onClick=${() => this.setView('patients')}><${Icon} name="chevronLeft"/></button>
         <div className="patient-photo-control" data-tour="patient-photo"><${Avatar} patient=${patient} size="xl"/>${this.can('patientsEdit') ? html`<label className="photo-fab" title="Cambiar fotografía"><${Icon} name="camera" size=${16}/><input type="file" accept="image/png,image/jpeg,image/webp" onChange=${event => this.handlePatientPhotoUpload(patient.id, event)}/></label>` : null}</div>
         <div className="patient-hero-main" data-tour="patient-badges"><span className="eyebrow">Ficha administrativa</span><h1>${patientDisplayName(patient)}</h1><p>${ageLabel(patient.age)} · ${patient.phone || 'Sin teléfono'} · ${patient.email || 'Sin correo'}</p><div className="hero-badges"><${Badge} tone=${insurance.hasInsurance ? 'blue' : 'neutral'}>${insurance.hasInsurance ? 'Con seguro médico' : 'Paciente particular'}</${Badge}><${Badge} tone=${upcoming.length ? 'success' : 'warning'}>${upcoming.length ? 'Cita programada' : 'Sin próxima cita'}</${Badge}>${this.can('consultationFeeView')?html`<${Badge} tone="purple">Consulta ${formatConsultationFee(patientConsultationFee(patient).cents)}</${Badge}>`:null}</div></div>
-        <div className="patient-hero-actions" data-tour="patient-next-visit">${this.can('patientsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Editar datos</${Button}>` : null}${this.can('appointmentsManage') ? html`<${Button} tone="secondary" icon="calendar" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('patient_own',patient.id)}>Calendario del paciente</${Button}>${this.canAnyCalendar('Create')?html`<${Button} icon="calendar" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}>Agendar</${Button}>`:null}` : null}</div>
+        <div className="patient-hero-actions" data-tour="patient-next-visit">${this.can('patientsEdit') ? html`<${Button} tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Editar datos</${Button}>` : null}${this.can('appointmentsManage') ? html`<${Button} key="patient-calendar" tone="secondary" icon="calendar" disabled=${this.state.integrationBusy} onClick=${()=>this.copyScopedCalendar('patient_own',patient.id)}>Calendario del paciente</${Button}>${this.canAnyCalendar('Create')?html`<${Button} key="patient-schedule" icon="calendar" onClick=${() => this.openNewAppointment(patient.nextVisit ? new Date(patient.nextVisit) : new Date(), patient.id)}>Agendar</${Button}>`:null}` : null}</div>
       </div>
+      ${this.renderPatientManagement(patient)}
       <div className="simple-help administrative-help"><${Icon} name="shield" size=${18}/><p><b>Información protegida.</b> El resto del expediente clínico permanece protegido. Solo se muestran los datos y las recetas autorizados para este usuario.</p></div>
       <div className="dashboard-grid">
         <${Card} className="span-5" title="Datos de contacto" action=${this.can('patientsEdit') ? html`<button className="text-button" onClick=${() => this.openEditPatient(patient)}>Editar</button>` : null}>
@@ -2533,6 +2559,7 @@ class App extends React.Component {
         ${this.can('documentsManage') ? html`<${Button} tone="secondary" icon="folder" onClick=${() => this.openDocumentUpload(patient)}>Subir archivo</${Button}>` : null}
         ${this.can('patientsEdit') ? html`<${Button} tour="action-patient-data" tone="secondary" icon="edit" onClick=${() => this.openEditPatient(patient)}>Datos y seguro</${Button}>` : null}
       </div>
+      ${this.renderPatientManagement(patient)}
 
       <div className="patient-tabs" data-tour="patient-tabs" role="tablist">${tabs.map(([key, label]) => html`<button key=${key} role="tab" data-tour=${`patient-tab-${key}`} className=${this.state.patientTab === key ? 'active' : ''} onClick=${() => this.selectPatientTab(patient,key)}>${label}${key === 'safety' && patientAlerts.length ? html`<b>${patientAlerts.length}</b>` : null}</button>`)}</div>
 
@@ -3342,11 +3369,22 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   }
 
   renderClinicalArchiveModal() {
-    const { resource, draft } = this.state.modal;
+    const { resource, draft, stage } = this.state.modal;
     const signedConsultation = resource === 'consultation';
-    const patientArchive = resource === 'patient';
-    const titles = { adverseEvent: 'Eliminar efecto', lab: 'Eliminar resultado', vital: 'Eliminar control físico', assessment: 'Eliminar medición', document: 'Eliminar documento', consultation: 'Retirar consulta', patient: 'Archivar paciente' };
-    return html`<${Modal} title=${titles[resource]||'Retirar registro'} subtitle=${draft.label} onClose=${this.closeModal} size="md"><form className="clinical-form" onSubmit=${this.saveClinicalArchive}>${this.renderModalError()}<div className="form-warning"><${Icon} name="alert" size=${18}/><span>${patientArchive?'El paciente dejará de aparecer entre los expedientes activos y sus citas futuras se cancelarán.':signedConsultation?'Si la nota está firmada, su contenido original permanecerá intacto y aparecerá como anulada en el historial.':'El registro desaparecerá de la vista activa, pero se conservará con autor, fecha y motivo.'}</span></div><${FormField} label="Motivo" required=${true}><textarea autoFocus rows="4" minLength="3" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} placeholder="Ej. registro duplicado o información agregada por error" required></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${patientArchive?'Archivar paciente':'Eliminar y conservar historial'}/></form></${Modal}>`;
+    if (resource === 'patient') {
+      if (stage === 'confirm') return html`<${Modal} title="¿Seguro que desea eliminar a este paciente?" subtitle=${draft.label} onClose=${this.closeModal} size="md">
+        <form className="clinical-form patient-archive-confirm" onSubmit=${this.saveClinicalArchive}>
+          ${this.renderModalError()}
+          <div className="patient-archive-review"><span className="patient-archive-review-icon"><${Icon} name="alert" size=${22}/></span><div><b>Revise antes de confirmar</b><p><strong>Paciente:</strong> ${draft.label}</p><p><strong>Motivo:</strong> ${draft.reason}</p></div></div>
+          <p className="patient-archive-consequences">Al confirmar, el paciente desaparecerá de la lista activa y se cancelarán sus citas futuras. Su expediente, las citas pasadas y este motivo permanecerán en el historial auditable.</p>
+          <label className="patient-archive-check"><input type="checkbox" checked=${Boolean(draft.confirmed)} onChange=${event=>this.updateDraft('confirmed',event.target.checked)}/><span>He comprobado que es el paciente correcto y entiendo las consecuencias.</span></label>
+          <div className="form-actions patient-archive-actions"><div><${Button} tone="secondary" disabled=${this.state.formSaving} onClick=${()=>this.setState(previous=>({modal:{...previous.modal,stage:'reason',draft:{...previous.modal.draft,confirmed:false}},modalError:''}))}>Volver al motivo</${Button}></div><div><${Button} tone="secondary" disabled=${this.state.formSaving} onClick=${this.closeModal}>Cancelar</${Button}><${Button} tone="danger" icon="trash" type="submit" disabled=${this.state.formSaving||!draft.confirmed}>${this.state.formSaving?'Eliminando…':'Sí, eliminar paciente'}</${Button}></div></div>
+        </form>
+      </${Modal}>`;
+      return html`<${Modal} title="Eliminar paciente" subtitle=${draft.label} onClose=${this.closeModal} size="md"><form className="clinical-form" onSubmit=${this.saveClinicalArchive}>${this.renderModalError()}<div className="form-warning"><${Icon} name="alert" size=${18}/><span>Primero indique el motivo. Después verá una segunda confirmación con el nombre del paciente. No se destruirá el expediente clínico.</span></div><${FormField} label="Motivo de eliminación" hint="Explique por qué se retira de la lista activa (10 a 500 caracteres)." required=${true}><textarea autoFocus rows="4" minLength="10" maxLength="500" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} placeholder="Ej. expediente duplicado o paciente registrado por error" required></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Revisar eliminación"/></form></${Modal}>`;
+    }
+    const titles = { adverseEvent: 'Eliminar efecto', lab: 'Eliminar resultado', vital: 'Eliminar control físico', assessment: 'Eliminar medición', document: 'Eliminar documento', consultation: 'Retirar consulta' };
+    return html`<${Modal} title=${titles[resource]||'Retirar registro'} subtitle=${draft.label} onClose=${this.closeModal} size="md"><form className="clinical-form" onSubmit=${this.saveClinicalArchive}>${this.renderModalError()}<div className="form-warning"><${Icon} name="alert" size=${18}/><span>${signedConsultation?'Si la nota está firmada, su contenido original permanecerá intacto y aparecerá como anulada en el historial.':'El registro desaparecerá de la vista activa, pero se conservará con autor, fecha y motivo.'}</span></div><${FormField} label="Motivo" required=${true}><textarea autoFocus rows="4" minLength="3" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} placeholder="Ej. registro duplicado o información agregada por error" required></textarea></${FormField}><${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel="Eliminar y conservar historial"/></form></${Modal}>`;
   }
 
   renderGuidedTour() {
