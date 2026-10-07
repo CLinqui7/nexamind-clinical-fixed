@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {jsPDF} from 'jspdf';
-import {agendaPdfFileName,agendaTimeLabel,buildDailyAgendaPdfDocument} from '../../src/daily-agenda-pdf.js';
+import {agendaPdfFileName,agendaTimeLabel,buildDailyAgendaPdfDocument,buildDailyAgendaPrintHtml} from '../../src/daily-agenda-pdf.js';
 
 test('the daily agenda PDF keeps chronological appointments and paginates long notes',()=>{
  const agenda={date:'2026-10-06',timezone:'America/El_Salvador',items:Array.from({length:24},(_,index)=>({
@@ -20,4 +20,19 @@ test('the daily agenda PDF keeps chronological appointments and paginates long n
  const bytes=Buffer.from(doc.output('arraybuffer'));
  assert.equal(bytes.subarray(0,4).toString(),'%PDF');
  if(process.env.LINKARE_AGENDA_PDF_SAMPLE)fs.writeFileSync(process.env.LINKARE_AGENDA_PDF_SAMPLE,bytes);
+});
+
+test('the daily agenda print view is A4, chronological and escapes clinical text',()=>{
+ const html=buildDailyAgendaPrintHtml({name:'Consulta <privada>'},{date:'2026-10-06',timezone:'America/El_Salvador',items:[
+  {appointmentId:'later',patientName:'Paciente <img src=x>',start:'2026-10-06T15:00:00Z',end:'2026-10-06T15:45:00Z',medications:[{name:'Medicina <script>',dose:'5 mg'}],agendaNote:'Control <pendiente>'},
+  {appointmentId:'earlier',patientName:'Paciente temprano',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:45:00Z',medications:[],agendaNote:''},
+ ]});
+ assert.match(html,/@page\{size:A4/);
+ assert.match(html,/onclick="window\.print\(\)"/);
+ assert.ok(html.indexOf('Paciente temprano')<html.indexOf('Paciente &lt;img src=x&gt;'));
+ assert.match(html,/Consulta &lt;privada&gt;/);
+ assert.match(html,/Medicina &lt;script&gt;/);
+ assert.match(html,/Control &lt;pendiente&gt;/);
+ assert.ok(!html.includes('<img src=x>'));
+ assert.ok(!html.includes('Medicina <script>'));
 });

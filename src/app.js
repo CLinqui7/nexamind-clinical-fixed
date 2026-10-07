@@ -97,7 +97,7 @@ import {
   voidPrescription,
 } from './practice.js';
 import { downloadPrescriptionPdf } from './prescription-pdf.js';
-import { agendaTimeLabel, downloadDailyAgendaPdf } from './daily-agenda-pdf.js';
+import { agendaTimeLabel, buildDailyAgendaPrintHtml, downloadDailyAgendaPdf } from './daily-agenda-pdf.js';
 import {
   createWompiPaymentLink,
   fetchWompiAppInfo,
@@ -388,7 +388,7 @@ class App extends React.Component {
       activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,prescriptionPdfBusyId:null,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
-      agendaSheet:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},agendaSheetLoading:false,agendaSheetError:'',agendaNoteDrafts:{},agendaNoteBusyId:null,agendaPdfBusy:false,
+      agendaSheet:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},agendaSheetLoading:false,agendaSheetError:'',agendaNoteDrafts:{},agendaNoteBusyId:null,agendaPdfBusy:false,agendaPrintBusy:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
       legacyHistoryByPatient:{},
@@ -416,7 +416,7 @@ class App extends React.Component {
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},projection:remote.projection,
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
@@ -551,6 +551,7 @@ class App extends React.Component {
 
   downloadAgendaSheet = async (date=this.state.agendaSheet.date) => {
     if(!this.can('agendaSheetView')||!this.canDoctorCalendar('View'))return this.permissionDenied();
+    if(this.state.agendaPrintBusy||this.state.agendaPdfBusy)return;
     if(date===this.state.agendaSheet.date&&(this.state.agendaSheet.items||[]).some(item=>(this.state.agendaNoteDrafts[item.appointmentId]??'')!==(item.agendaNote||'')))return this.notify('Guarde las notas de agenda antes de descargar el PDF.','danger');
     const epoch=this.authEpoch;this.setState({agendaPdfBusy:true,agendaSheetError:''});
     try{
@@ -559,6 +560,35 @@ class App extends React.Component {
       await downloadDailyAgendaPdf(this.state.data.organization,agenda);
       if(epoch===this.authEpoch)this.setState({agendaSheet:agenda,agendaPdfBusy:false,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))},()=>this.notify('Agenda descargada en PDF.'));
     }catch(error){if(epoch===this.authEpoch)this.setState({agendaPdfBusy:false,agendaSheetError:`No se pudo descargar el PDF. ${readableError(error)}`});}
+  };
+
+  printAgendaSheet = async (date=this.state.agendaSheet.date) => {
+    if(!this.can('agendaSheetView')||!this.canDoctorCalendar('View'))return this.permissionDenied();
+    if(this.state.agendaPrintBusy||this.state.agendaPdfBusy)return;
+    const sameDate=date===this.state.agendaSheet.date;
+    if(sameDate&&(this.state.agendaSheet.items||[]).some(item=>(this.state.agendaNoteDrafts[item.appointmentId]??'')!==(item.agendaNote||'')))return this.notify('Guarde las notas de agenda antes de imprimir.','danger');
+    // Open in the click gesture so popup blockers do not discard the print view
+    // while the authorized server query is running.
+    const printWindow=window.open('','_blank','width=920,height=980');
+    if(!printWindow)return this.notify('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes.','danger');
+    printWindow.opener=null;
+    printWindow.document.open();
+    printWindow.document.write('<!doctype html><html lang="es"><meta charset="utf-8"><title>Preparando agenda</title><body style="font:16px Arial;padding:24px">Preparando la agenda para imprimir…</body></html>');
+    printWindow.document.close();
+    const epoch=this.authEpoch;
+    this.setState({agendaPrintBusy:true,agendaSheetError:''});
+    try{
+      const agenda=await loadPrintableAgenda(this.state.remoteOrganizationId,date);
+      if(epoch!==this.authEpoch||printWindow.closed){if(!printWindow.closed)printWindow.close();return;}
+      printWindow.document.open();
+      printWindow.document.write(buildDailyAgendaPrintHtml(this.state.data.organization,agenda));
+      printWindow.document.close();
+      printWindow.focus();
+      if(sameDate)this.setState({agendaSheet:agenda,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))});
+    }catch(error){
+      if(!printWindow.closed)printWindow.close();
+      if(epoch===this.authEpoch){const message=`No se pudo imprimir la agenda. ${readableError(error)}`;this.setState({agendaSheetError:message});this.notify(message,'danger');}
+    }finally{if(epoch===this.authEpoch)this.setState({agendaPrintBusy:false});}
   };
 
   sendDailyAgenda = async () => {
@@ -2267,7 +2297,7 @@ class App extends React.Component {
         <${KpiCard} label="Pacientes" value=${this.state.dashboardSummary?.patients?.total??patients.length} hint="expedientes no archivados" icon="patients" tone="blue"/>
       </div>
       <div className="dashboard-grid">
-        <${Card} className="span-7" title="Agenda de hoy" action=${html`<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button>`}>
+        <${Card} className="span-7" title="Agenda de hoy" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="secretary-agenda-list">${todayAppointments.length ? todayAppointments.map(appointment => {
             const patient = patients.find(item => item.id === appointment.patientId);
             return html`<button key=${appointment.id} className="secretary-agenda-row" onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}</time><${Avatar} patient=${patient}/><div><b>${patient?.name || appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : 'warning'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`;
@@ -2289,7 +2319,7 @@ class App extends React.Component {
       return html`<div className="view-enter"><${PageHeader} eyebrow="Vista principal" title=${`${greeting()}, ${this.state.data.organization?.clinician||'Doctor'}`} subtitle="Los totales se calculan en el servidor; esta pantalla no infiere métricas clínicas desde una página parcial." actions=${html`<div className="tour-actions-group"><${Button} tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}><${Button} icon="plus" onClick=${()=>this.openNewAppointment()}>Nueva cita</${Button}></div>`}/>
         <div className="kpi-grid"><${KpiCard} label="Pacientes" value=${summary.patients.total} hint="expedientes no archivados" icon="patients" tone="purple"/><${KpiCard} label="Actividad reciente" value=${summary.patients.recent} hint=${`seis meses calendario · desde ${summary.cutoffDate?formatDate(summary.cutoffDate):'—'}`} icon="trend" tone="teal"/><${KpiCard} label="Sin actividad válida" value=${summary.patients.withoutActivity} hint="sin fechas inventadas" icon="alert" tone="coral"/><${KpiCard} label="Citas esta semana" value=${summary.appointments.week} hint=${`${summary.appointments.today} programadas hoy`} icon="calendar" tone="blue"/></div>
         <div className="dashboard-grid"><${Card} className="span-7" title="Pacientes con actividad reciente" subtitle="Máximo 20, ordenados por la última actividad válida."><div className="priority-list">${recent.slice(0,6).map(patient=>html`<button key=${patient.id} className="priority-row" onClick=${()=>this.openPatient(patient.id)}><${Avatar} patient=${patient}/><div className="priority-main"><b>${patient.name}</b><small>${patient.phone||patient.email||'Sin contacto'}</small></div><div><span>Última actividad</span><b>${patient.lastActivityOn?formatDate(patient.lastActivityOn):'No registrada'}</b><small>${patient.lastActivityPrecision==='date'?'Precisión: fecha':'Precisión: fecha y hora'}</small></div><${Icon} name="chevronRight" size=${17}/></button>`)}</div><${Button} tone="secondary" onClick=${()=>this.setView('patients')}>Abrir directorio</${Button}></${Card}>
-        <${Card} className="span-5" title="Agenda de hoy"><div className="today-list">${agenda.length?agenda.slice(0,8).map(item=>html`<div key=${item.appointmentId} className="today-item"><time>${formatTime(item.start)}</time><div><b>${item.patientName}</b><small>${item.type||'Cita'}</small></div></div>`):html`<${EmptyState} icon="calendar" title="Sin citas hoy" text="No hay eventos programados."/>`}</div><${Button} tone="secondary" onClick=${()=>this.setView('agenda')}>Abrir agenda</${Button}></${Card}></div>
+        <${Card} className="span-5" title="Agenda de hoy" action=${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<div className="agenda-quick-actions"><button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button></div>`:null}><div className="today-list">${agenda.length?agenda.slice(0,8).map(item=>html`<div key=${item.appointmentId} className="today-item"><time>${formatTime(item.start)}</time><div><b>${item.patientName}</b><small>${item.type||'Cita'}</small></div></div>`):html`<${EmptyState} icon="calendar" title="Sin citas hoy" text="No hay eventos programados."/>`}</div><${Button} tone="secondary" onClick=${()=>this.setView('agenda')}>Abrir agenda</${Button}></${Card}></div>
       </div>`;
     }
     const patients = this.state.data.patients.filter(item => !item.archived);
@@ -2339,7 +2369,7 @@ class App extends React.Component {
           <${LineChart} series=${[{ label: 'Síntomas relativos', points: symptomPoints }]}/>
           <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Muestra cambios registrados durante el tratamiento. No demuestra que un medicamento sea la causa del cambio.</div>
         </${Card}>
-        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div>${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button className="text-button" disabled=${this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}${this.state.reminderProviders.whatsapp?html`<button className="text-button" disabled=${this.state.integrationBusy} onClick=${this.sendDailyAgenda}>Enviar por WhatsApp</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
+        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}${this.state.reminderProviders.whatsapp?html`<button className="text-button" disabled=${this.state.integrationBusy} onClick=${this.sendDailyAgenda}>Enviar por WhatsApp</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="date-hero"><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'long' }).format(new Date())}</span><strong>${new Date().getDate()}</strong><small>${new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' }).format(new Date())}</small></div>
           <div className="today-list">
             ${this.state.dailyAgendaLoading?html`<p>Cargando agenda segura…</p>`:(this.state.dailyAgenda?.items||[]).length ? this.state.dailyAgenda.items.map(item => {
@@ -2706,7 +2736,7 @@ class App extends React.Component {
       />
       ${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`
         <section className="agenda-sheet" aria-label="Agenda del día para imprimir">
-          <div className="agenda-sheet-heading"><div><span className="eyebrow">Calendario Doctor</span><h2>Agenda del día</h2><p>Ordenada por hora, con tratamientos activos y una nota propia de cada cita.</p></div><div className="agenda-sheet-controls"><label>Fecha de la agenda<input type="date" value=${this.state.agendaSheet.date} onChange=${event=>this.changeAgendaSheetDate(event.target.value)}/></label><${Button} tone="secondary" onClick=${()=>this.changeAgendaSheetDate(toDateInput(new Date()))}>Hoy</${Button}><${Button} tone="secondary" disabled=${this.state.agendaSheetLoading} onClick=${()=>this.refreshAgendaSheet()}>Actualizar</${Button}><${Button} icon="download" disabled=${this.state.agendaPdfBusy||this.state.agendaSheetLoading} onClick=${()=>this.downloadAgendaSheet()}>${this.state.agendaPdfBusy?'Generando…':'Guardar PDF'}</${Button}></div></div>
+          <div className="agenda-sheet-heading"><div><span className="eyebrow">Calendario Doctor</span><h2>Agenda del día</h2><p>Ordenada por hora, con tratamientos activos y una nota propia de cada cita.</p></div><div className="agenda-sheet-controls"><label>Fecha de la agenda<input type="date" value=${this.state.agendaSheet.date} onChange=${event=>this.changeAgendaSheetDate(event.target.value)}/></label><${Button} tone="secondary" onClick=${()=>this.changeAgendaSheetDate(toDateInput(new Date()))}>Hoy</${Button}><${Button} tone="secondary" disabled=${this.state.agendaSheetLoading} onClick=${()=>this.refreshAgendaSheet()}>Actualizar</${Button}><${Button} tone="secondary" icon="print" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy||this.state.agendaSheetLoading} onClick=${()=>this.printAgendaSheet()}>${this.state.agendaPrintBusy?'Preparando…':'Imprimir'}</${Button}><${Button} icon="download" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy||this.state.agendaSheetLoading} onClick=${()=>this.downloadAgendaSheet()}>${this.state.agendaPdfBusy?'Generando…':'Guardar PDF'}</${Button}></div></div>
           ${this.state.agendaSheetError?html`<p className="sync-banner warning" role="alert">${this.state.agendaSheetError}</p>`:null}
           ${this.state.agendaSheetLoading?html`<p>Cargando las citas de esta fecha…</p>`:(this.state.agendaSheet.items||[]).length?html`<div className="agenda-sheet-list">${this.state.agendaSheet.items.map(item=>{const note=this.state.agendaNoteDrafts[item.appointmentId]??item.agendaNote??'';const dirty=note!==(item.agendaNote||'');return html`<article key=${item.appointmentId} className="agenda-sheet-item"><div className="agenda-sheet-time"><b>${agendaTimeLabel(item.start,this.state.agendaSheet.timezone)}</b><small>hasta ${agendaTimeLabel(item.end,this.state.agendaSheet.timezone)}</small></div><div className="agenda-sheet-person"><h3>${patientDisplayName({name:item.patientName||'Expediente sin nombre'})}</h3><span>${(item.medications||[]).length?`${item.medications.length} medicamento${item.medications.length===1?'':'s'} activo${item.medications.length===1?'':'s'}`:'Sin tratamiento activo registrado'}</span><ul>${(item.medications||[]).map((med,index)=>html`<li key=${`${med.name}-${index}`}>${[med.name,med.dose,med.frequency,med.route].filter(Boolean).join(' · ')}</li>`)}</ul></div><div className="agenda-sheet-note"><label for=${`agenda-note-${item.appointmentId}`}>Nota de agenda para imprimir</label><textarea id=${`agenda-note-${item.appointmentId}`} rows="3" maxLength="2000" value=${note} readOnly=${!this.can('agendaSheetEdit')||!this.canDoctorCalendar('Edit')} onChange=${event=>this.setState(previous=>({agendaNoteDrafts:{...previous.agendaNoteDrafts,[item.appointmentId]:event.target.value}}))} placeholder="Indicaciones para preparar esta cita"></textarea>${this.can('agendaSheetEdit')&&this.canDoctorCalendar('Edit')?html`<${Button} tone="secondary" disabled=${!dirty||Boolean(this.state.agendaNoteBusyId)} onClick=${()=>this.saveAgendaSheetNote(item)}>${this.state.agendaNoteBusyId===item.appointmentId?'Guardando…':'Guardar nota'}</${Button}>`:null}</div></article>`;})}</div>`:html`<p className="agenda-sheet-empty">No hay citas de pacientes en el calendario Doctor para esta fecha.</p>`}
         </section>
@@ -3432,7 +3462,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {
