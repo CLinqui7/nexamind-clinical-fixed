@@ -69,6 +69,8 @@ export const PERMISSION_CATALOG = [
   { key: 'consultationFeeView', group: 'Pacientes', label: 'Ver tarifa de consulta', description: 'Consultar el monto habitual acordado para el paciente.' },
   { key: 'consultationFeeEdit', group: 'Pacientes', label: 'Editar tarifa de consulta', description: 'Registrar o actualizar el monto habitual de la consulta.' },
   { key: 'appointmentsManage', group: 'Agenda', label: 'Gestionar agenda completa', description: 'Permiso histórico para personal clínico; Secretaría se configura por calendario.' },
+  { key: 'agendaSheetView', group: 'Agenda', label: 'Ver e imprimir hoja del día', description: 'Consultar las citas del Doctor y sus tratamientos activos para preparar la hoja impresa.' },
+  { key: 'agendaSheetEdit', group: 'Agenda', label: 'Editar notas de la hoja del día', description: 'Añadir notas de agenda por cita; requiere permiso para editar el calendario Doctor.' },
   { key: 'remindersManage', group: 'Agenda', label: 'Gestionar recordatorios', description: 'Abrir WhatsApp y marcar recordatorios enviados.' },
   { key: 'clinicalView', group: 'Información clínica', label: 'Ver información clínica', description: 'Consultar diagnósticos, escalas, tratamiento y controles.' },
   { key: 'clinicalEdit', group: 'Información clínica', label: 'Registrar evolución y controles', description: 'Agregar escalas, signos vitales, laboratorios y efectos observados.' },

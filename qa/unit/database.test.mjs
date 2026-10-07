@@ -18,6 +18,7 @@ before(async()=>{
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated,anon;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
  for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql','supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261007052123_printable_daily_agenda.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -192,6 +193,29 @@ test('DB: patient archival is audited, cancels future appointments and respects 
  assert.equal(pastAppointment.status,'confirmed');
  const actions=(await db.query("select action from public.linkare_audit_v3 where organization_id=$1 and record_id in('archive-target','archive-appointment') order by id",[org])).rows.map(row=>row.action);
  assert.ok(actions.includes('patient.archived'));assert.ok(actions.includes('appointment.cancelled.patient_archived'));
+});
+test('DB: printable Doctor agenda is chronological, complete, scoped and separately permissioned',async()=>{
+ await actor('owner');
+ await save([{kind:'patient_admin',id:'sheet-patient',expectedRevision:0,payload:{name:'Paciente Agenda QA'}},{kind:'patient_clinical',id:'sheet-patient',expectedRevision:0,payload:{diagnosis:'PRIVATE_DIAGNOSIS_DO_NOT_PRINT',medications:[{id:'med-a',name:'Sertralina',dose:'50 mg',frequency:'cada mañana',route:'oral',status:'active'},{id:'med-b',name:'Clonazepam',dose:'1/2 tableta',frequency:'cada noche',status:'active'},{id:'med-c',name:'Suspendido',dose:'5 mg',status:'suspended'}]}},{kind:'appointment',id:'sheet-late',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Tarde',start:'2026-10-06T16:00:00Z',end:'2026-10-06T16:45:00Z',status:'confirmed'}},{kind:'appointment',id:'sheet-early',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Temprano',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:30:00Z',status:'pending'}},{kind:'appointment',id:'sheet-wife',expectedRevision:0,payload:{calendarId:calendarIds.wife,eventType:'appointment',patientId:'sheet-patient',title:'Privado',start:'2026-10-06T15:00:00Z',end:'2026-10-06T15:30:00Z',status:'confirmed'}},{kind:'appointment_clinical',id:'sheet-early',expectedRevision:0,payload:{notes:'PRIVATE_PREPARATION_DO_NOT_PRINT'}}]);
+ await permissions('secretary',{patientsView:true,agendaSheetView:true,agendaSheetEdit:false,calendarDoctorView:true});
+ let sheet=(await db.query('select public.linkare_printable_agenda_v1($1,$2::date) data',[org,'2026-10-06'])).rows[0].data;
+ assert.deepEqual(sheet.items.map(item=>item.appointmentId),['sheet-early','sheet-late']);
+ assert.deepEqual(sheet.items[0].medications.map(item=>item.name),['Clonazepam','Sertralina']);
+ assert.equal(sheet.items[0].medications[0].dose,'1/2 tableta');
+ assert.doesNotMatch(JSON.stringify(sheet),/PRIVATE_DIAGNOSIS_DO_NOT_PRINT|PRIVATE_PREPARATION_DO_NOT_PRINT|Suspendido|sheet-wife/);
+ await denied(()=>db.query('select public.linkare_save_agenda_note_v1($1,$2,$3,$4)',[org,'sheet-early','Preparar expediente',0]));
+ await permissions('secretary',{patientsView:true,agendaSheetView:true,agendaSheetEdit:true,calendarDoctorView:true,calendarDoctorEdit:true});
+ const saved=(await db.query('select public.linkare_save_agenda_note_v1($1,$2,$3,$4) data',[org,'sheet-early','Preparar expediente',0])).rows[0].data;
+ assert.equal(saved.note,'Preparar expediente');
+ assert.equal(saved.revision,1);
+ sheet=(await db.query('select public.linkare_printable_agenda_v1($1,$2::date) data',[org,'2026-10-06'])).rows[0].data;
+ assert.equal(sheet.items[0].agendaNote,'Preparar expediente');assert.equal(sheet.items[0].noteRevision,saved.revision);
+ await assert.rejects(()=>db.query('select public.linkare_save_agenda_note_v1($1,$2,$3,$4)',[org,'sheet-early','Cambio obsoleto',0]),error=>error.code==='40001');
+ assert.equal((await db.query('select public.linkare_printable_agenda_v1($1,$2::date) data',[org,'2026-10-07'])).rows[0].data.items.length,0);
+ await permissions('secretary',{patientsView:true,agendaSheetView:true,agendaSheetEdit:true,calendarWifeView:true});
+ await denied(()=>db.query('select public.linkare_printable_agenda_v1($1,$2::date)',[org,'2026-10-06']));
+ await denied(()=>db.query('select * from linkare_private.appointment_agenda_note_v1'));
+ await actor('other');await denied(()=>db.query('select public.linkare_printable_agenda_v1($1,$2::date)',[org,'2026-10-06']));
 });
 test('DB: Cancel without Edit cannot smuggle appointment changes and cancellation metadata is server-owned',async()=>{
  await actor('owner');await save([{kind:'appointment',id:'cancel-guard',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Original title',start:'2026-12-12T12:00:00Z',end:'2026-12-12T12:30:00Z',status:'confirmed'}}]);

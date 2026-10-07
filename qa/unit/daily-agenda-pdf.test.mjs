@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {jsPDF} from 'jspdf';
+import {agendaPdfFileName,agendaTimeLabel,buildDailyAgendaPdfDocument} from '../../src/daily-agenda-pdf.js';
+
+test('the daily agenda PDF keeps chronological appointments and paginates long notes',()=>{
+ const agenda={date:'2026-10-06',timezone:'America/El_Salvador',items:Array.from({length:24},(_,index)=>({
+  appointmentId:`qa-${index}`,patientName:`Paciente sintético ${index+1}`,
+  start:new Date(Date.UTC(2026,9,6,13+Math.floor(index/2),(index%2)*30)).toISOString(),
+  end:new Date(Date.UTC(2026,9,6,13+Math.floor(index/2),(index%2)*30+30)).toISOString(),
+  medications:[{name:'Sertralina',dose:'50 mg',frequency:'cada mañana',route:'oral'},{name:'Clonazepam',dose:'1/2 tableta',frequency:'cada noche'}],
+  agendaNote:index===0?'Revisar evolución; '.repeat(80):'Traer resultados de laboratorio.'
+ }))};
+ agenda.items.reverse();
+ const doc=buildDailyAgendaPdfDocument(jsPDF,{name:'Consultorio QA'},agenda);
+ assert.ok(doc.getNumberOfPages()>1);
+ assert.equal(agendaPdfFileName(agenda.date),'Agenda_del_dia_2026-10-06.pdf');
+ assert.match(agendaTimeLabel('2026-10-06T14:00:00Z',agenda.timezone),/8:00/);
+ const bytes=Buffer.from(doc.output('arraybuffer'));
+ assert.equal(bytes.subarray(0,4).toString(),'%PDF');
+ if(process.env.LINKARE_AGENDA_PDF_SAMPLE)fs.writeFileSync(process.env.LINKARE_AGENDA_PDF_SAMPLE,bytes);
+});

@@ -105,6 +105,12 @@ export function captureReportedMedication(organizationId,patientId,draft){
 export function loadDailyAgenda(organizationId,date){
   return rpc('linkare_daily_agenda_v1',{org:organizationId,agenda_date:date});
 }
+export function loadPrintableAgenda(organizationId,date){
+  return rpc('linkare_printable_agenda_v1',{org:organizationId,agenda_date:date});
+}
+export function saveAgendaNote(organizationId,appointmentId,note,expectedRevision){
+  return rpc('linkare_save_agenda_note_v1',{org:organizationId,p_appointment_id:appointmentId,p_note:note,p_expected_revision:expectedRevision});
+}
 export function loadPatientDirectory(organizationId,{scope='recent',query='',cursor=null,asOf=null,limit=20,signal}={}){
   return rpc('linkare_patient_directory_v1',{org:organizationId,p_scope:scope,p_query:query||null,p_cursor:cursor,p_as_of:asOf,p_limit:Math.min(20,limit)},{signal});
 }

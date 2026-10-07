@@ -97,6 +97,7 @@ import {
   voidPrescription,
 } from './practice.js';
 import { downloadPrescriptionPdf } from './prescription-pdf.js';
+import { agendaTimeLabel, downloadDailyAgendaPdf } from './daily-agenda-pdf.js';
 import {
   createWompiPaymentLink,
   fetchWompiAppInfo,
@@ -114,6 +115,8 @@ import {
   archivePatient,
   captureReportedMedication,
   loadDailyAgenda,
+  loadPrintableAgenda,
+  saveAgendaNote,
   loadPatientDirectory,
   loadPatientDetail,
   loadAgendaRange,
@@ -370,7 +373,7 @@ class AppErrorBoundary extends React.Component {
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
+    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.agendaSheetRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
     const data=createEmptyData();
     this.state={
       data,authenticatedUserId:null,authView:'login',
@@ -385,6 +388,7 @@ class App extends React.Component {
       activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,prescriptionPdfBusyId:null,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
+      agendaSheet:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},agendaSheetLoading:false,agendaSheetError:'',agendaNoteDrafts:{},agendaNoteBusyId:null,agendaPdfBusy:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
       legacyHistoryByPatient:{},
@@ -515,11 +519,46 @@ class App extends React.Component {
     catch(_){if(epoch===this.authEpoch)this.setState({dailyAgendaLoading:false});}
   };
 
-  printDailyAgenda = () => {
-    const agenda=this.state.dailyAgenda||{items:[]};const popup=window.open('','_blank','width=900,height=980');
-    if(!popup)return this.notify('El navegador bloqueó la ventana de impresión.','danger');popup.opener=null;
-    const rows=(agenda.items||[]).map(item=>`<tr><td>${formatTime(item.start)}</td><td>${String(item.patientName||'').replace(/[<>&]/g,'')}</td><td>${item.currentMedication?`${String(item.currentMedication.name||'').replace(/[<>&]/g,'')} ${String(item.currentMedication.dose||'').replace(/[<>&]/g,'')}`:'Sin tratamiento activo'}</td><td>${String(item.relevantNote||'Sin cambio reciente').replace(/[<>&]/g,'')}</td></tr>`).join('');
-    popup.document.write(`<!doctype html><html lang="es"><meta charset="utf-8"><title>Agenda del día</title><style>body{font:14px Arial;color:#17324d;padding:30px}h1{color:#05316e}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #ccd8e3;text-align:left}th{background:#05316e;color:#fff}</style><h1>Agenda del día</h1><p>${formatLongDate(agenda.date)}</p><table><thead><tr><th>Hora</th><th>Paciente</th><th>Medicamento actual</th><th>Último cambio relevante</th></tr></thead><tbody>${rows}</tbody></table><script>print()</script></html>`);popup.document.close();
+  refreshAgendaSheet = async (date=this.state.agendaSheet.date) => {
+    if(!this.state.remoteOrganizationId||!this.can('agendaSheetView')||!this.canDoctorCalendar('View'))return;
+    const epoch=this.authEpoch;const request=++this.agendaSheetRequest;
+    this.setState({agendaSheetLoading:true,agendaSheetError:''});
+    try{
+      const agenda=await loadPrintableAgenda(this.state.remoteOrganizationId,date);
+      if(epoch!==this.authEpoch||request!==this.agendaSheetRequest)return;
+      this.setState({agendaSheet:agenda,agendaSheetLoading:false,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))});
+    }catch(error){if(epoch===this.authEpoch&&request===this.agendaSheetRequest)this.setState({agendaSheetLoading:false,agendaSheetError:readableError(error)});}
+  };
+
+  changeAgendaSheetDate = date => {
+    const dirty=(this.state.agendaSheet.items||[]).some(item=>(this.state.agendaNoteDrafts[item.appointmentId]??'')!==(item.agendaNote||''));
+    if(dirty&&!window.confirm('Hay notas de agenda sin guardar. ¿Cambiar de fecha y descartarlas?'))return;
+    this.setState(previous=>({agendaSheet:{...previous.agendaSheet,date}}),()=>this.refreshAgendaSheet(date));
+  };
+
+  saveAgendaSheetNote = async item => {
+    if(!this.can('agendaSheetEdit')||!this.canDoctorCalendar('Edit'))return this.permissionDenied();
+    const note=(this.state.agendaNoteDrafts[item.appointmentId]??'').trim();
+    if(note.length>2000)return this.notify('La nota de agenda admite hasta 2000 caracteres.','danger');
+    const epoch=this.authEpoch;this.setState({agendaNoteBusyId:item.appointmentId,agendaSheetError:''});
+    try{
+      const saved=await saveAgendaNote(this.state.remoteOrganizationId,item.appointmentId,note,item.noteRevision||0);
+      if(epoch!==this.authEpoch)return;
+      this.setState(previous=>({agendaNoteBusyId:null,agendaSheet:{...previous.agendaSheet,items:previous.agendaSheet.items.map(row=>row.appointmentId===item.appointmentId?{...row,agendaNote:saved.note,noteRevision:saved.revision}:row)},agendaNoteDrafts:{...previous.agendaNoteDrafts,[item.appointmentId]:saved.note}}));
+      this.notify('Nota de agenda guardada.');
+    }catch(error){if(epoch===this.authEpoch)this.setState({agendaNoteBusyId:null,agendaSheetError:`No se guardó la nota. ${readableError(error)}`});}
+  };
+
+  downloadAgendaSheet = async (date=this.state.agendaSheet.date) => {
+    if(!this.can('agendaSheetView')||!this.canDoctorCalendar('View'))return this.permissionDenied();
+    if(date===this.state.agendaSheet.date&&(this.state.agendaSheet.items||[]).some(item=>(this.state.agendaNoteDrafts[item.appointmentId]??'')!==(item.agendaNote||'')))return this.notify('Guarde las notas de agenda antes de descargar el PDF.','danger');
+    const epoch=this.authEpoch;this.setState({agendaPdfBusy:true,agendaSheetError:''});
+    try{
+      const agenda=await loadPrintableAgenda(this.state.remoteOrganizationId,date);
+      if(epoch!==this.authEpoch)return;
+      await downloadDailyAgendaPdf(this.state.data.organization,agenda);
+      if(epoch===this.authEpoch)this.setState({agendaSheet:agenda,agendaPdfBusy:false,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))},()=>this.notify('Agenda descargada en PDF.'));
+    }catch(error){if(epoch===this.authEpoch)this.setState({agendaPdfBusy:false,agendaSheetError:`No se pudo descargar el PDF. ${readableError(error)}`});}
   };
 
   sendDailyAgenda = async () => {
@@ -935,7 +974,7 @@ class App extends React.Component {
     if(required[view]&&!this.can(required[view]))return this.permissionDenied();
     this.setState({view,mobileNav:false,appointmentDetails:null},()=>{
       if(view==='patients'&&!this.state.patientDirectory.items.length)this.refreshPatientDirectory();
-      if(view==='agenda')this.refreshAgendaRange();
+      if(view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
     });
     if(view==='payments')this.loadSubscriptionInvoices();
     if(view==='settings')this.refreshTeam();
@@ -988,6 +1027,11 @@ class App extends React.Component {
       if(patient?.dataQuality==='historical'&&!this.can('clinicalView'))this.loadPatientLegacyHistory(patientId);
     }catch(error){if(epoch===this.authEpoch){this.setState({patientLoading:false,view:'patients',selectedPatientId:null});this.notify(readableError(error),'danger');}}
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+  };
+
+  canDoctorCalendar = (action='View') => {
+    const doctor=this.state.data.calendars?.find(calendar=>calendar.code==='doctor'&&calendar.isActive!==false);
+    return Boolean(doctor&&this.canCalendar(doctor.id,action));
   };
 
   selectPatientTab = (patient,key) => {
@@ -1782,7 +1826,7 @@ class App extends React.Component {
       if(epoch!==this.authEpoch||!this.mounted)return;
       this.persistedData=patch.data;
       this.directoryCache?.clear();
-      this.setState({...patch,formSaving:false,remoteSaveStatus:'saved'},()=>{this.notify(message);this.refreshDashboardSummary?.();if(this.state.view==='patients')this.refreshPatientDirectory?.({force:true});if(this.state.view==='agenda')this.refreshAgendaRange?.();});
+      this.setState({...patch,formSaving:false,remoteSaveStatus:'saved'},()=>{this.notify(message);this.refreshDashboardSummary?.();if(this.state.view==='patients')this.refreshPatientDirectory?.({force:true});if(this.state.view==='agenda'){this.refreshAgendaRange?.();this.refreshAgendaSheet?.();}});
       return true;
     } catch(error) {
       if(epoch!==this.authEpoch||!this.mounted)return;
@@ -1914,7 +1958,7 @@ class App extends React.Component {
       mergePersistenceBaseline({appointments:[savedAppointment]},revisions,permissions);
       this.persistedData=nextData;this.directoryCache?.clear();
       this.setState({data:nextData,modal:null,modalError:'',appointmentDetails:savedAppointment,formSaving:false,remoteSaveStatus:'saved'},()=>{
-        this.notify('Evento creado correctamente.');this.refreshDashboardSummary();this.refreshAgendaRange();
+        this.notify('Evento creado correctamente.');this.refreshDashboardSummary();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
       });
     } catch (error) {
       const detail=readableError(error);
@@ -2295,7 +2339,7 @@ class App extends React.Component {
           <${LineChart} series=${[{ label: 'Síntomas relativos', points: symptomPoints }]}/>
           <div className="clinical-footnote"><${Icon} name="shield" size=${17}/> Muestra cambios registrados durante el tratamiento. No demuestra que un medicamento sea la causa del cambio.</div>
         </${Card}>
-        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div><button className="text-button" onClick=${this.printDailyAgenda}>Imprimir</button>${this.state.reminderProviders.whatsapp?html`<button className="text-button" disabled=${this.state.integrationBusy} onClick=${this.sendDailyAgenda}>Enviar por WhatsApp</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
+        <${Card} tour="dashboard-agenda" className="span-4 agenda-preview" title="Agenda del día" action=${html`<div>${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button className="text-button" disabled=${this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}${this.state.reminderProviders.whatsapp?html`<button className="text-button" disabled=${this.state.integrationBusy} onClick=${this.sendDailyAgenda}>Enviar por WhatsApp</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir agenda <${Icon} name="chevronRight" size=${16}/></button></div>`}>
           <div className="date-hero"><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'long' }).format(new Date())}</span><strong>${new Date().getDate()}</strong><small>${new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' }).format(new Date())}</small></div>
           <div className="today-list">
             ${this.state.dailyAgendaLoading?html`<p>Cargando agenda segura…</p>`:(this.state.dailyAgenda?.items||[]).length ? this.state.dailyAgenda.items.map(item => {
@@ -2660,6 +2704,13 @@ class App extends React.Component {
         subtitle="Combine Doctor, Esposa y General sin recargar la página."
         actions=${html`<div className="tour-actions-group">${this.can('exportsManage') ? html`<${Button} tone="secondary" icon="download" onClick=${() => downloadAllICS(filteredAppointments.filter(item => item.status !== 'cancelled'))}>Exportar vista</${Button}>` : null}${this.canAnyCalendar('Create')?html`<${Button} tour="agenda-new-event" icon="plus" onClick=${() => this.openNewAppointment(cursor)}>Nuevo evento</${Button}>`:null}</div>`}
       />
+      ${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`
+        <section className="agenda-sheet" aria-label="Agenda del día para imprimir">
+          <div className="agenda-sheet-heading"><div><span className="eyebrow">Calendario Doctor</span><h2>Agenda del día</h2><p>Ordenada por hora, con tratamientos activos y una nota propia de cada cita.</p></div><div className="agenda-sheet-controls"><label>Fecha de la agenda<input type="date" value=${this.state.agendaSheet.date} onChange=${event=>this.changeAgendaSheetDate(event.target.value)}/></label><${Button} tone="secondary" onClick=${()=>this.changeAgendaSheetDate(toDateInput(new Date()))}>Hoy</${Button}><${Button} tone="secondary" disabled=${this.state.agendaSheetLoading} onClick=${()=>this.refreshAgendaSheet()}>Actualizar</${Button}><${Button} icon="download" disabled=${this.state.agendaPdfBusy||this.state.agendaSheetLoading} onClick=${()=>this.downloadAgendaSheet()}>${this.state.agendaPdfBusy?'Generando…':'Guardar PDF'}</${Button}></div></div>
+          ${this.state.agendaSheetError?html`<p className="sync-banner warning" role="alert">${this.state.agendaSheetError}</p>`:null}
+          ${this.state.agendaSheetLoading?html`<p>Cargando las citas de esta fecha…</p>`:(this.state.agendaSheet.items||[]).length?html`<div className="agenda-sheet-list">${this.state.agendaSheet.items.map(item=>{const note=this.state.agendaNoteDrafts[item.appointmentId]??item.agendaNote??'';const dirty=note!==(item.agendaNote||'');return html`<article key=${item.appointmentId} className="agenda-sheet-item"><div className="agenda-sheet-time"><b>${agendaTimeLabel(item.start,this.state.agendaSheet.timezone)}</b><small>hasta ${agendaTimeLabel(item.end,this.state.agendaSheet.timezone)}</small></div><div className="agenda-sheet-person"><h3>${patientDisplayName({name:item.patientName||'Expediente sin nombre'})}</h3><span>${(item.medications||[]).length?`${item.medications.length} medicamento${item.medications.length===1?'':'s'} activo${item.medications.length===1?'':'s'}`:'Sin tratamiento activo registrado'}</span><ul>${(item.medications||[]).map((med,index)=>html`<li key=${`${med.name}-${index}`}>${[med.name,med.dose,med.frequency,med.route].filter(Boolean).join(' · ')}</li>`)}</ul></div><div className="agenda-sheet-note"><label for=${`agenda-note-${item.appointmentId}`}>Nota de agenda para imprimir</label><textarea id=${`agenda-note-${item.appointmentId}`} rows="3" maxLength="2000" value=${note} readOnly=${!this.can('agendaSheetEdit')||!this.canDoctorCalendar('Edit')} onChange=${event=>this.setState(previous=>({agendaNoteDrafts:{...previous.agendaNoteDrafts,[item.appointmentId]:event.target.value}}))} placeholder="Indicaciones para preparar esta cita"></textarea>${this.can('agendaSheetEdit')&&this.canDoctorCalendar('Edit')?html`<${Button} tone="secondary" disabled=${!dirty||Boolean(this.state.agendaNoteBusyId)} onClick=${()=>this.saveAgendaSheetNote(item)}>${this.state.agendaNoteBusyId===item.appointmentId?'Guardando…':'Guardar nota'}</${Button}>`:null}</div></article>`;})}</div>`:html`<p className="agenda-sheet-empty">No hay citas de pacientes en el calendario Doctor para esta fecha.</p>`}
+        </section>
+      `:null}
       <section className="calendar-filter-panel" data-tour="calendar-filters" aria-label="Calendarios visibles"><div className="calendar-filter-heading"><span className="calendar-filter-heading-icon"><${Icon} name="calendar" size=${20}/></span><div><b>Calendarios visibles</b><small>${selected.size} de ${calendars.length} seleccionados</small></div></div><div className="calendar-filter-options">${calendars.map(calendar=>{const active=selected.has(calendar.id);const icon=calendar.code==='wife'?'heart':calendar.code==='general'?'users':'activity';return html`<label key=${calendar.id} className=${`calendar-filter calendar-${calendar.code} ${active?'active':''}`}><input type="checkbox" checked=${active} aria-label=${`Mostrar calendario ${calendar.name}`} onChange=${event=>this.setState(prev=>({selectedCalendarIds:event.target.checked?[...new Set([...(prev.selectedCalendarIds||[]),calendar.id])]:(prev.selectedCalendarIds||[]).filter(id=>id!==calendar.id)}))}/><span className="calendar-filter-icon" aria-hidden="true"><${Icon} name=${icon} size=${18}/></span><span className="calendar-filter-copy"><b>${calendar.name}</b><small>${active?'Visible':'Oculto'}</small></span><span className="calendar-filter-check" aria-hidden="true"><${Icon} name="check" size=${15}/></span></label>`;})}</div><div className="calendar-filter-actions"><button type="button" className="text-button" onClick=${()=>this.setState({selectedCalendarIds:calendars.map(calendar=>calendar.id)})}>Mostrar todos</button><button type="button" className="text-button" onClick=${()=>this.setState({selectedCalendarIds:[]})}>Ocultar todos</button></div></section>
       <div className="patients-toolbar"><div className="segmented" aria-label="Filtrar citas">${[['all','Todas'],['pending','Pendientes'],['confirmed','Confirmadas'],['review','Por revisar'],['cancelled','Canceladas']].map(([key,label])=>html`<button key=${key} className=${appointmentFilter===key?'active':''} onClick=${()=>this.setState({appointmentFilter:key})}>${label}</button>`)}</div></div>
       <div className="calendar-layout">
