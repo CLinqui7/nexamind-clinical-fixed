@@ -3442,3 +3442,134 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 @media (prefers-reduced-motion:reduce) { .training-popover { animation:none !important; } .training-popover-progress span { transition:none !important; } }
 .reduced-motion-mode .training-popover { animation:none !important; }
 .reduced-motion-mode .training-popover-progress span { transition:none !important; }
+
+/* Responsive workspace: usable navigation and calendar inside Safari's dynamic viewport. */
+.nav-links { display:flex; align-items:center; gap:4px; }
+.mobile-nav-heading, .mobile-nav-tools, .mobile-event-count, .week-mobile { display:none; }
+.agenda-view .weekday-row div { color:#61778c; font-size:11px; }
+.agenda-view .day-number { width:34px; height:34px; font-size:13px; font-weight:700; }
+.agenda-view .calendar-event { flex-direction:column; gap:2px; padding:6px; font-size:10px; line-height:1.25; }
+.agenda-view .calendar-event span { font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agenda-view .calendar-toolbar .segmented button { min-height:38px; font-size:11px; }
+.agenda-view .calendar-tip { font-size:11px; }
+.agenda-view .week-mobile-day { border:1px solid #dbe7f0; border-radius:15px; background:#fff; overflow:hidden; }
+.agenda-view .week-mobile-day.today { border-color:#82aacd; background:#f8fbff; }
+.agenda-view .week-mobile-day.selected { border-color:#3478b8; box-shadow:0 0 0 2px rgba(52,120,184,.12); }
+.agenda-view .week-mobile-day-heading { width:100%; display:grid; grid-template-columns:43px minmax(0,1fr) 18px; align-items:center; gap:12px; padding:10px; border:0; background:transparent; text-align:left; }
+.agenda-view .week-mobile-date { display:grid; justify-items:center; padding:5px 0; border-radius:10px; background:#eaf2f9; color:#05316e; }
+.agenda-view .week-mobile-date b { font-size:17px; line-height:1; }
+.agenda-view .week-mobile-date small { font-size:9px; text-transform:uppercase; }
+.agenda-view .week-mobile-day-heading > span:nth-child(2) { display:grid; gap:2px; }
+.agenda-view .week-mobile-day-heading strong { font-size:13px; text-transform:capitalize; }
+.agenda-view .week-mobile-day-heading small { color:#61778c; font-size:11px; }
+.agenda-view .week-mobile-event { width:calc(100% - 20px); display:grid; grid-template-columns:58px minmax(0,1fr); gap:9px; margin:0 10px 9px; padding:9px; border:0; border-left:3px solid #3478b8; border-radius:8px; background:#f2f7fb; text-align:left; }
+.agenda-view .week-mobile-event.calendar-wife { border-left-color:#b8547a; background:#fff4f8; }
+.agenda-view .week-mobile-event.calendar-general { border-left-color:#705bb1; background:#f6f3ff; }
+.agenda-view .week-mobile-event time { color:#174f85; font-size:11px; font-weight:800; }
+.agenda-view .week-mobile-event span { display:grid; gap:3px; min-width:0; }
+.agenda-view .week-mobile-event b { font-size:12px; overflow-wrap:anywhere; }
+.agenda-view .week-mobile-event small { color:#61778c; font-size:10px; }
+
+@media (min-width:701px) and (max-width:1100px) {
+  .agenda-view .calendar-day { min-height:89px; padding:6px; }
+  .agenda-view .calendar-main { padding:18px; }
+}
+
+@media (min-width:701px) and (max-width:900px) {
+  .agenda-view .week-calendar { display:none; }
+  .agenda-view .week-mobile { display:grid; gap:9px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width:880px) {
+  .app-shell, .app-frame { min-height:100vh; min-height:100dvh; }
+  .main-content { min-height:0; padding-bottom:max(34px,env(safe-area-inset-bottom)); }
+  .topbar { padding-top:max(13px,env(safe-area-inset-top)); }
+  .topbar .nav-pill.nav-open {
+    display:block !important; position:absolute; top:calc(100% + 8px); left:auto; right:14px;
+    width:min(470px,calc(100vw - 28px)); max-height:calc(100dvh - 88px - env(safe-area-inset-bottom));
+    overflow-y:auto; overscroll-behavior:contain; padding:16px; border:1px solid #cbdbe8;
+    border-radius:22px; background:#fff; box-shadow:0 24px 60px rgba(5,49,110,.24);
+  }
+  .mobile-nav-heading { display:grid; gap:3px; padding:2px 4px 12px; color:#123354; }
+  .mobile-nav-heading span { font-size:16px; font-weight:800; }
+  .mobile-nav-heading small { color:#61778c; font-size:12px; }
+  .topbar .nav-links { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .topbar .nav-links button, .topbar .mobile-nav-tools button {
+    min-height:54px; width:100%; justify-content:flex-start; gap:10px; padding:12px;
+    border:1px solid #e0e9f0; border-radius:14px; background:#f5f9fc;
+    color:#153855; font-size:13px; font-weight:750; text-align:left; white-space:normal;
+  }
+  .topbar .nav-links button span, .topbar .mobile-nav-tools button span { display:inline !important; }
+  .topbar .nav-links button.active { border-color:#174f85; background:#05316e; color:#fff; }
+  .mobile-nav-tools { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid #dce7ef; }
+  .topbar .mobile-nav-tools .mobile-nav-signout { grid-column:1/-1; background:#fff5f5; border-color:#f0d8dc; color:#9a3347; }
+  .topbar .top-actions > .mobile-account { display:grid; }
+  .mobile-account { overflow:hidden; padding:0; }
+  .mobile-account .avatar { width:100%; height:100%; }
+  .modal-backdrop { padding-top:max(14px,env(safe-area-inset-top)); padding-bottom:max(14px,env(safe-area-inset-bottom)); }
+  .modal { max-height:calc(100dvh - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .modal-body { max-height:calc(100dvh - 145px - env(safe-area-inset-bottom)); }
+  .toast { bottom:calc(16px + env(safe-area-inset-bottom)); left:16px; right:16px; }
+  .consultation-prompt { bottom:calc(16px + env(safe-area-inset-bottom)); }
+  .training-popover, .training-active .modal { max-height:calc(100dvh - 28px - env(safe-area-inset-bottom)); }
+}
+
+@media (max-width:700px) {
+  .topbar .nav-pill.nav-open { left:12px; right:12px; width:auto; }
+  .agenda-view { display:flex; flex-direction:column; }
+  .agenda-view > .page-header { order:0; }
+  .agenda-view > .calendar-filter-panel { order:1; }
+  .agenda-view > .patients-toolbar { order:2; }
+  .agenda-view > .calendar-layout { order:3; }
+  .agenda-view > .agenda-sheet { order:4; margin-top:16px; }
+  .agenda-view > .reminder-workspace { order:5; }
+  .agenda-view .calendar-filter-panel { gap:11px; border-radius:18px; }
+  .agenda-view .calendar-filter-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+  .agenda-view .calendar-filter { grid-template-columns:minmax(0,1fr) 18px; gap:3px; min-height:50px; padding:7px; border-radius:12px; }
+  .agenda-view .calendar-filter.active { padding:6px; }
+  .agenda-view .calendar-filter-icon, .agenda-view .calendar-filter-copy small { display:none; }
+  .agenda-view .calendar-filter-copy b { font-size:11px; overflow:hidden; text-overflow:ellipsis; }
+  .agenda-view .calendar-filter-check { width:18px; height:18px; border-radius:6px; }
+  .agenda-view .calendar-filter-check svg { width:13px; }
+  .agenda-view .calendar-filter-actions { justify-content:space-between; }
+  .agenda-view .patients-toolbar .segmented { max-width:100%; overflow-x:auto; }
+  .agenda-view .calendar-main { padding:14px; border-radius:20px; }
+  .agenda-view .calendar-toolbar { gap:12px; }
+  .agenda-view .calendar-nav { display:grid; grid-template-columns:40px 42px 40px minmax(0,1fr); width:100%; gap:4px; }
+  .agenda-view .calendar-nav .icon-button, .agenda-view .calendar-nav .today-button { width:40px; height:40px; }
+  .agenda-view .calendar-nav h2 { min-width:0; margin:0 0 0 4px; font-size:14px; line-height:1.2; overflow-wrap:anywhere; }
+  .agenda-view .calendar-toolbar > .segmented { width:100%; display:flex; }
+  .agenda-view .calendar-toolbar > .segmented button { flex:1; min-height:42px; }
+  .agenda-view .month-calendar { overflow:visible; }
+  .agenda-view .month-grid { min-width:0; border-radius:12px; }
+  .agenda-view .weekday-row div { padding:8px 1px; font-size:9px; }
+  .agenda-view .calendar-day { min-width:0; min-height:59px; padding:3px 1px; display:flex; flex-direction:column; align-items:center; }
+  .agenda-view .day-number { display:grid; place-items:center; width:34px; height:34px; font-size:13px; font-weight:700; border-radius:11px; }
+  .agenda-view .calendar-day.outside .day-number { opacity:.45; }
+  .agenda-view .calendar-day.today .day-number { background:#05316e; color:#fff; }
+  .agenda-view .calendar-day .day-events { display:none; }
+  .agenda-view .mobile-event-count { display:grid; place-items:center; min-width:19px; height:17px; padding:0 4px; margin-top:1px; border-radius:7px; background:#e4eff9; color:#174f85; font-size:10px; font-weight:800; }
+  .agenda-view .calendar-tip { margin-top:12px; font-size:11px; }
+  .agenda-view .week-calendar { display:none; }
+  .agenda-view .week-mobile { display:grid; gap:9px; }
+  .agenda-view .day-view { min-height:0; }
+  .agenda-view .day-view-header { display:grid; grid-template-columns:1fr auto; gap:10px; }
+  .agenda-view .day-view-header > div { grid-column:1/-1; }
+  .agenda-view .day-view-header p { margin:0; font-size:12px; }
+  .agenda-view .day-view-header .button { min-height:38px; }
+  .agenda-view .day-schedule { display:grid; gap:9px; padding-top:12px; }
+  .agenda-view .day-schedule > button { grid-template-columns:60px minmax(0,1fr); gap:7px 11px; padding:12px; border:1px solid #dbe7f0; border-radius:13px; background:#fff; }
+  .agenda-view .day-schedule time { grid-column:1; text-align:left; color:#05316e; font-size:12px; }
+  .agenda-view .day-schedule .schedule-line, .agenda-view .day-schedule .avatar, .agenda-view .day-schedule .general-event-symbol { display:none; }
+  .agenda-view .day-schedule > button > div { grid-column:2; grid-row:1 / span 2; min-width:0; }
+  .agenda-view .day-schedule h3 { font-size:13px; overflow-wrap:anywhere; }
+  .agenda-view .day-schedule p { font-size:11px; }
+  .agenda-view .day-schedule div > small { font-size:10px; }
+  .agenda-view .day-schedule .badge { grid-column:1/-1; justify-self:start; }
+}
+
+@media (max-width:360px) {
+  .agenda-view .calendar-filter-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .agenda-view .calendar-nav { grid-template-columns:38px 40px 38px minmax(0,1fr); }
+  .agenda-view .day-number { width:31px; }
+}

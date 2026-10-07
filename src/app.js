@@ -2258,16 +2258,22 @@ class App extends React.Component {
     const canConfigure = this.can('settingsManage') || this.can('usersManage');
     return html`<header className="topbar">
       <${Logo} organization=${this.state.data.organization}/>
-      <nav data-tour="main-navigation" className=${`nav-pill ${this.state.mobileNav ? 'nav-open' : ''}`} aria-label="Navegación principal">
-        ${nav.map(([key, icon, label]) => html`<button key=${key} data-tour=${`nav-${key}`} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}
+      <nav id="main-navigation" data-tour="main-navigation" className=${`nav-pill ${this.state.mobileNav ? 'nav-open' : ''}`} aria-label="Navegación principal">
+        <div className="mobile-nav-heading"><span>Menú principal</span><small>${user?.name || 'Mi consultorio'}</small></div>
+        <div className="nav-links">${nav.map(([key, icon, label]) => html`<button key=${key} data-tour=${`nav-${key}`} className=${active === key ? 'active' : ''} onClick=${() => this.setView(key)}><${Icon} name=${icon} size=${17}/><span>${label}</span>${key === 'alerts' && openAlerts ? html`<b>${openAlerts}</b>` : null}</button>`)}</div>
+        <div className="mobile-nav-tools">
+          ${canConfigure ? html`<button data-tour="mobile-settings-button" onClick=${() => this.setView('settings')}><${Icon} name="settings" size=${18}/><span>Configuración</span></button>` : null}
+          <button onClick=${() => {this.setState({mobileNav:false});this.openAccount();}}><${Icon} name="lock" size=${18}/><span>Mi cuenta</span></button>
+          <button className="mobile-nav-signout" onClick=${this.logoutUser}><${Icon} name="logout" size=${18}/><span>Cerrar sesión</span></button>
+        </div>
       </nav>
       <div className="top-actions">
         <button className="help-button" data-tour="help-button" aria-label="Ayuda" onClick=${this.openHelp}><${Icon} name="help" size=${17}/><span>Ayuda</span></button>
         ${this.can('alertsView') ? html`<button className="icon-button notification-button" aria-label="Ver alertas" onClick=${() => this.setView('alerts')}><${Icon} name="alert"/>${openAlerts ? html`<i></i>` : null}</button>` : null}
         ${canConfigure ? html`<button className="icon-button" data-tour="settings-button" aria-label="Configuración" onClick=${() => this.setView('settings')}><${Icon} name="settings"/></button>` : null}
         <button className="profile-chip profile-chip-button" onClick=${this.openAccount} title="Cuenta y cierre de sesión"><${UserAvatar} user=${user} organization=${this.state.data.organization} size="sm"/><div><b>${user?.name || 'Usuario'}</b><small>${user?.title || (user?.role === 'secretary' ? 'Secretaría' : 'Psiquiatría')}</small></div><${Icon} name="arrowDown" size=${14}/></button>
-        <button className="mobile-account icon-button" aria-label="Cuenta y cierre de sesión" onClick=${this.openAccount}><${Icon} name="lock"/></button>
-        <button className="mobile-menu icon-button" aria-label="Abrir menú" onClick=${() => this.setState({ mobileNav: !this.state.mobileNav })}><${Icon} name="menu"/></button>
+        <button className="mobile-account icon-button" aria-label="Mi cuenta" onClick=${this.openAccount}><${UserAvatar} user=${user} organization=${this.state.data.organization} size="sm"/></button>
+        <button className="mobile-menu icon-button" aria-label=${this.state.mobileNav?'Cerrar menú':'Abrir menú'} aria-expanded=${this.state.mobileNav} aria-controls="main-navigation" onClick=${() => this.setState({ mobileNav: !this.state.mobileNav })}><${Icon} name=${this.state.mobileNav?'close':'menu'}/></button>
       </div>
     </header>`;
   }
@@ -2716,7 +2722,7 @@ class App extends React.Component {
     const reminderSent = reminderQueue.filter(item => item.status === 'sent').length;
     const move = direction => {
       const next = new Date(cursor);
-      if (view === 'month') next.setMonth(next.getMonth() + direction);
+      if (view === 'month') { next.setDate(1); next.setMonth(next.getMonth() + direction); }
       else if (view === 'week') next.setDate(next.getDate() + direction * 7);
       else next.setDate(next.getDate() + direction);
       this.setState({ calendarDate: next });
@@ -2724,10 +2730,10 @@ class App extends React.Component {
     const heading = view === 'month'
       ? new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' }).format(cursor)
       : view === 'week'
-        ? `Semana del ${formatDate(startOfWeek(cursor), { year: false })}`
+        ? `Semana del ${new Intl.DateTimeFormat('es-SV',{day:'numeric',month:'long'}).format(startOfWeek(cursor))}`
         : formatLongDate(cursor);
 
-    return html`<div className="view-enter">
+    return html`<div className="view-enter agenda-view">
       <${PageHeader}
         eyebrow="Agenda y recordatorios"
         title="Calendarios"
@@ -2752,7 +2758,7 @@ class App extends React.Component {
           ${view === 'month' ? this.renderMonthCalendar(cursor, filteredAppointments) : view === 'week' ? this.renderWeekCalendar(cursor, filteredAppointments) : this.renderDayCalendar(cursor, filteredAppointments)}
           ${this.state.agendaRange.error?html`<div className="sync-banner warning" role="alert">${this.state.agendaRange.error}</div>`:null}
           ${this.state.agendaRange.hasMore?html`<${Button} tone="secondary" disabled=${this.state.agendaRange.loading} onClick=${this.loadMoreAgenda}>${this.state.agendaRange.loading?'Cargando…':'Cargar más eventos del periodo'}</${Button}>`:null}
-          <div className="calendar-tip"><${Icon} name="help" size=${16}/><span>Seleccione un día para crear una cita. Abra una cita para editarla, cambiar su estado o preparar el recordatorio.</span></div>
+          <div className="calendar-tip"><${Icon} name="help" size=${16}/><span>Seleccione un día para ver sus citas y agregar otra. Abra una cita para editarla, cambiar su estado o preparar el recordatorio.</span></div>
         </${Card}>
         <${Card} className="upcoming-card" title="Próximas citas" action=${html`<${Badge} tone="blue">${upcoming.length}</${Badge}>`}>
           <div className="upcoming-list">${upcoming.length ? upcoming.map(appointment => {
@@ -2798,19 +2804,19 @@ class App extends React.Component {
       const events = appointments.filter(item => isSameDay(item.start, day) && item.status !== 'cancelled').sort((left, right) => new Date(left.start) - new Date(right.start));
       const outside = day.getMonth() !== cursor.getMonth();
       const today = isSameDay(day, new Date());
-      return html`<div key=${day.toISOString()} className=${`calendar-day ${outside ? 'outside' : ''} ${today ? 'today' : ''}`}><button className="day-number" aria-label=${`Crear evento el ${formatDate(day)}`} onClick=${() => this.openNewAppointment(day)}>${day.getDate()}</button><div className="day-events">${events.slice(0, 3).map(appointment => html`<button key=${appointment.id} className=${`calendar-event event-status-${appointment.status} calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} onClick=${() => this.setState({ appointmentDetails: appointment })}><span>${formatTime(appointment.start)} · ${this.calendarLabel(appointment)}</span><b>${appointment.title.split(' ')[0]}</b></button>`)}${events.length > 3 ? html`<small>+${events.length - 3} más</small>` : null}</div></div>`;
+      return html`<div key=${day.toISOString()} className=${`calendar-day ${outside ? 'outside' : ''} ${today ? 'today' : ''}`}><button className="day-number" aria-label=${`${formatDate(day)}: ${events.length} cita${events.length===1?'':'s'}. Abrir día o crear evento`} onClick=${() => window.matchMedia('(max-width: 700px)').matches?this.setState({calendarDate:day,calendarView:'day'}):this.openNewAppointment(day)}>${day.getDate()}</button>${events.length?html`<span className="mobile-event-count" aria-hidden="true">${events.length}</span>`:null}<div className="day-events">${events.slice(0, 3).map(appointment => html`<button key=${appointment.id} className=${`calendar-event event-status-${appointment.status} calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} onClick=${() => this.setState({ appointmentDetails: appointment })}><span>${formatTime(appointment.start)} · ${this.calendarLabel(appointment)}</span><b>${appointment.title.split(' ')[0]}</b></button>`)}${events.length > 3 ? html`<small>+${events.length - 3} más</small>` : null}</div></div>`;
     })}</div></div>`;
   }
 
   renderWeekCalendar(cursor, appointments) {
     const start = startOfWeek(cursor);
     const days = Array.from({ length: 7 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date; });
-    return html`<div className="week-calendar"><div className="week-head"><div></div>${days.map(day => html`<button key=${day.toISOString()} className=${isSameDay(day, new Date()) ? 'today' : ''} onClick=${() => this.setState({ calendarDate: day, calendarView: 'day' })}><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'short' }).format(day)}</span><b>${day.getDate()}</b></button>`)}</div><div className="week-body"><div className="time-axis">${Array.from({ length: 10 }, (_, index) => html`<span key=${index}>${8 + index}:00</span>`)}</div>${days.map(day => html`<div key=${day.toISOString()} className="week-column" onDoubleClick=${() => this.openNewAppointment(day)}>${Array.from({ length: 10 }, (_, index) => html`<i key=${index}></i>`)}${appointments.filter(item => isSameDay(item.start, day) && item.status !== 'cancelled').map(appointment => {
+    return html`<div className="week-responsive"><div className="week-calendar"><div className="week-head"><div></div>${days.map(day => html`<button key=${day.toISOString()} className=${isSameDay(day, new Date()) ? 'today' : ''} onClick=${() => this.setState({ calendarDate: day, calendarView: 'day' })}><span>${new Intl.DateTimeFormat('es-SV', { weekday: 'short' }).format(day)}</span><b>${day.getDate()}</b></button>`)}</div><div className="week-body"><div className="time-axis">${Array.from({ length: 10 }, (_, index) => html`<span key=${index}>${8 + index}:00</span>`)}</div>${days.map(day => html`<div key=${day.toISOString()} className="week-column" onDoubleClick=${() => this.openNewAppointment(day)}>${Array.from({ length: 10 }, (_, index) => html`<i key=${index}></i>`)}${appointments.filter(item => isSameDay(item.start, day) && item.status !== 'cancelled').map(appointment => {
       const date = new Date(appointment.start);
       const top = Math.max(0, (date.getHours() - 8) * 70 + date.getMinutes() / 60 * 70);
       const height = Math.max(44, (new Date(appointment.end) - date) / 60000 / 60 * 70);
       return html`<button key=${appointment.id} className=${`week-event calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} style=${{ top: `${top}px`, height: `${height}px` }} onClick=${() => this.setState({ appointmentDetails: appointment })}><b>${formatTime(appointment.start)}</b><span>${appointment.title}</span><small>${this.calendarLabel(appointment)} · ${appointment.type}</small></button>`;
-    })}</div>`)}</div></div>`;
+    })}</div>`)}</div></div><div className="week-mobile">${days.map(day=>{const events=appointments.filter(item=>isSameDay(item.start,day)&&item.status!=='cancelled').sort((a,b)=>new Date(a.start)-new Date(b.start));return html`<section key=${day.toISOString()} className=${`week-mobile-day ${isSameDay(day,new Date())?'today':''} ${isSameDay(day,cursor)?'selected':''}`}><button className="week-mobile-day-heading" onClick=${()=>this.setState({calendarDate:day,calendarView:'day'})}><span className="week-mobile-date"><b>${day.getDate()}</b><small>${new Intl.DateTimeFormat('es-SV',{month:'short'}).format(day)}</small></span><span><strong>${new Intl.DateTimeFormat('es-SV',{weekday:'long'}).format(day)}</strong><small>${events.length?`${events.length} cita${events.length===1?'':'s'}`:'Sin citas'}</small></span><${Icon} name="chevronRight" size=${17}/></button>${events.map(appointment=>html`<button key=${appointment.id} className=${`week-mobile-event calendar-${this.calendarForAppointment(appointment)?.code||'unknown'}`} onClick=${()=>this.setState({appointmentDetails:appointment})}><time>${formatTime(appointment.start)}</time><span><b>${appointment.title}</b><small>${this.calendarLabel(appointment)} · ${appointment.type}</small></span></button>`)}</section>`;})}</div></div>`;
   }
 
   renderDayCalendar(cursor, appointments) {
