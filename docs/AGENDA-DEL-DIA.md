@@ -9,3 +9,12 @@ La nota de agenda es distinta de la nota privada de preparación clínica y del 
 La migración `20261007052123_printable_daily_agenda.sql` debe aplicarse al proyecto `fvucylgrqgxjqabacnlt` antes de publicar el frontend; GitHub y Vercel no aplican SQL. No requiere migrar citas ni pacientes. La hoja se genera en el navegador con jsPDF, sin subir el PDF a Storage ni enviarlo a terceros.
 
 Verificación: `npm run check` cubre permisos, separación entre consultorios, orden, medicamentos, revisión de notas y paginación del PDF. `node qa/browser/server.mjs` junto a `node qa/browser/daily-agenda.mjs` comprueba selección de fecha, guardado persistente y descarga con PostgreSQL aislado y datos sintéticos. No se deben insertar pacientes de prueba en producción.
+
+## Despliegue verificado (2026-10-07 UTC)
+
+- Código funcional: commit `8e34bb2fb298db8a8e98c60e7c0f26aa0d732474` en `codex/patient-directory-performance`.
+- Base de datos `fvucylgrqgxjqabacnlt`: se aplicó **solo** `20261007052123_printable_daily_agenda.sql`; `supabase migration list --linked` confirmó la misma versión local y remota.
+- Función `linkare-team`: se publicó la versión 18, activa, para que Equipo reconozca los nuevos permisos. No se desplegaron otras funciones.
+- Vercel: deployment `dpl_2sQPqBqzsNLEQo9yLto1cmEuFCZn`, estado `READY`, alias productivo `https://nexamind-clinical.vercel.app`. El HTML y su JS principal respondieron HTTP 200 a la comprobación protegida.
+- `npm run check`: 150 pruebas aprobadas y build completado. Prueba de navegador aislada: médico y Secretaría pudieron ver medicamentos, guardar la nota y descargar el PDF; la nota persistió tras recargar. PDF sintético de cinco páginas A4 renderizado e inspeccionado.
+- No se hizo una prueba autenticada con datos clínicos reales en producción ni se crearon pacientes o citas de prueba. El acceso productivo del usuario debe verificarse desde su propia sesión.
