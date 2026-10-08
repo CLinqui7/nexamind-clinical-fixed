@@ -8,6 +8,11 @@ export class StateWriter {
     for(const [key,record] of projectRecords(data,clinical))this.baseline.set(key,record);
     for(const rev of revisions||[])this.revisions.set(recordKey(rev.kind,rev.id),rev.revision);
   }
+  mergeRecord(record,revision){
+    const key=recordKey(record.kind,record.id);
+    this.baseline.set(key,record);
+    this.revisions.set(key,revision);
+  }
   save(data){this.latest=projectRecords(data,this.clinical);if(this.running)return this.running;
     const epoch=this.epoch;
     this.running=(async()=>{

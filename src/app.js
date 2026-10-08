@@ -124,8 +124,9 @@ import {
   loadProfileAssets,
   loadLegacyPatientHistory,
   createProductionAppointment,
+  setProductionAppointmentStatus,
   saveProductionState,
-  setPersistenceBaseline, mergePersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
+  setPersistenceBaseline, mergePersistenceBaseline, mergeAppointmentPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
 } from './services/appState.js';
 import {directoryPatient,mergePatients,directoryRange,PatientPageCache,PAGE_LIMIT} from './domain/patient-directory.js';
@@ -384,7 +385,7 @@ class App extends React.Component {
       remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',saveError:'',
       wompiBusy:false,wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},billingError:'',billingLoading:false,
       teamInvites:[],teamBusy:false,view:'dashboard',selectedPatientId:null,patientTab:'overview',patientFilter:'all',search:'',mobileNav:false,
-      modal:null,modalError:'',appointmentDetails:null,appointmentPrompt:null,promptDismissedFor:null,
+      modal:null,modalError:'',appointmentDetails:null,appointmentStatusBusyId:null,appointmentPrompt:null,promptDismissedFor:null,
       activeEncounter:null,encounterAutosaveStatus:'saved',documentBusy:false,prescriptionPdfBusyId:null,
       reminderProviders:{email:false,sms:false,whatsapp:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},integrationBusy:false,
       dailyAgenda:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},dailyAgendaLoading:false,
@@ -2131,14 +2132,39 @@ class App extends React.Component {
     }
   };
 
-  updateAppointmentStatus = (appointmentId, status) => {
-    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
-    if (!appointment||!this.canCalendar(appointment.calendarId,status==='cancelled'?'Cancel':'Edit')) return this.permissionDenied();
-    const next = changeAppointmentStatus(this.state.data, appointmentId, status);
-    this.persistDataUpdate({
-      data: next,
-      appointmentDetails: this.state.appointmentDetails?.id === appointmentId ? { ...this.state.appointmentDetails, status } : this.state.appointmentDetails,
-    }, `Cita marcada como ${statusLabel(status).toLowerCase()}.`);
+  updateAppointmentStatus = async (appointmentId, status) => {
+    if(this.state.appointmentStatusBusyId||this.state.formSaving)return;
+    const appointment=this.state.appointmentDetails?.id===appointmentId
+      ? this.state.appointmentDetails
+      : this.state.data.appointments.find(item=>item.id===appointmentId);
+    if(!appointment)return this.notify('No se encontró la cita. Actualice la agenda y vuelva a intentarlo.','danger');
+    if(!this.canCalendar(appointment.calendarId,status==='cancelled'?'Cancel':'Edit'))return this.permissionDenied();
+    if(appointment.status===status)return;
+    if(this.state.tourSandbox){
+      const data=changeAppointmentStatus(this.state.data,appointmentId,status);
+      this.setState({data,appointmentDetails:{...appointment,status}},()=>this.notify('Práctica: cambio visible solo aquí; no se guardó en el servidor.'));
+      return;
+    }
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    const needsFlush=['dirty','saving','error','offline'].includes(this.state.remoteSaveStatus);
+    this.setState({appointmentStatusBusyId:appointmentId,remoteSaveStatus:'saving',saveError:''});
+    try{
+      if(needsFlush)await this.flushChanges();
+      const saved=await setProductionAppointmentStatus(org,appointmentId,status);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      mergeAppointmentPersistenceBaseline(org,saved);
+      this.setState(previous=>({
+        data:{...previous.data,appointments:previous.data.appointments.map(item=>item.id===appointmentId?{...item,...saved}:item)},
+        appointmentDetails:previous.appointmentDetails?.id===appointmentId?{...previous.appointmentDetails,...saved}:previous.appointmentDetails,
+        remoteSaveStatus:'saved',
+      }),()=>{
+        this.notify(`Cita marcada como ${statusLabel(status).toLowerCase()}.`);
+        this.refreshDashboardSummary();
+        if(this.state.view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
+      });
+    }catch(error){
+      if(epoch===this.authEpoch)this.setState({remoteSaveStatus:'error',saveError:readableError(error)},()=>this.notify(`No se cambió el estado: ${readableError(error)}`,'danger'));
+    }finally{if(epoch===this.authEpoch)this.setState({appointmentStatusBusyId:null});}
   };
 
   saveMedicationArchive = async event => {
@@ -3518,7 +3544,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
-      formSaving:false,modal:null,appointmentDetails:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
+      formSaving:false,modal:null,appointmentDetails:null,appointmentStatusBusyId:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
       teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 

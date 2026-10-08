@@ -19,6 +19,7 @@ before(async()=>{
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
  for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql','supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261007052123_printable_daily_agenda.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008174640_appointment_status_for_visible_calendars.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -397,4 +398,29 @@ test('DB: consultation fee is projected, permission-scoped and cannot be changed
  await save([{kind:'patient_admin',id:'fee-patient',expectedRevision:revision,payload:{name:'Paciente Tarifa QA',phone:'71111111',consultationFeeCents:9000}}]);
  detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
  assert.equal(detail.patient.consultationFeeCents,9000);
+});
+
+test('DB: changing only appointment status works for owner and authorized Secretary without rewriting the appointment',async()=>{
+ await actor('owner');
+ await save([{kind:'appointment',id:'status-only-qa',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Cita sintética',start:'2026-12-08T16:00:00Z',end:'2026-12-08T16:45:00Z',status:'pending'}}]);
+ const change=async(status,targetOrg=org)=>(await db.query('select public.linkare_set_appointment_status_v1($1,$2,$3) data',[targetOrg,'status-only-qa',status])).rows[0].data;
+ const confirmed=await change('confirmed');
+ assert.equal(confirmed.status,'confirmed');assert.equal(confirmed.title,'Cita sintética');assert.equal(confirmed.__revision,2);
+ assert.equal(confirmed.confirmedBy,ids.owner);
+ assert.equal((await change('confirmed')).__revision,2,'repeating the same status is idempotent');
+
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorEdit:true,calendarDoctorCancel:true});
+ const completed=await change('completed');assert.equal(completed.status,'completed');assert.equal(completed.__revision,3);
+ const cancelled=await change('cancelled');assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.cancelledBy,ids.secretary);
+ const row=(await db.query("select payload,revision from public.linkare_records where organization_id=$1 and kind='appointment' and id='status-only-qa'",[org])).rows[0];
+ assert.equal(row.payload.title,'Cita sintética');assert.equal(row.payload.patientId,'patient');assert.equal(row.revision,4);
+ await actor('owner');
+ const audit=(await db.query("select action,actor_id from public.linkare_audit_v3 where organization_id=$1 and record_id='status-only-qa' and action='appointment.status_changed' order by id",[org])).rows;
+ assert.equal(audit.length,3);assert.equal(audit.at(-1).actor_id,ids.secretary);
+
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true});
+ await denied(()=>change('pending'));
+ await actor('other');await denied(()=>change('pending'));
+ await actor('owner');
+ await assert.rejects(()=>change('arbitrary'),error=>error.code==='22023');
 });
