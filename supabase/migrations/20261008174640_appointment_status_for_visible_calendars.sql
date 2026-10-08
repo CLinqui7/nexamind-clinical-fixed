@@ -66,3 +66,5 @@ $$;
 
 revoke all on function public.linkare_set_appointment_status_v1(uuid, text, text) from public, anon;
 grant execute on function public.linkare_set_appointment_status_v1(uuid, text, text) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
