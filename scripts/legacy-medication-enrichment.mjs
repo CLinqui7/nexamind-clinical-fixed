@@ -29,6 +29,8 @@ if(mode==='apply'){
  if(restored.status!=='BACKUP_RESTORE_VERIFIED'||restored.projectRef!=='fvucylgrqgxjqabacnlt'||restored.target?.ownerRole!=='owner'||
   !restored.target?.ownerPatientsView||!restored.target?.ownerClinicalView||!Number.isFinite(verifiedAt)||!Number.isFinite(backupAt)||
   Date.now()-verifiedAt>24*3600e3||Date.now()-backupAt>24*3600e3||verifiedAt<backupAt)throw Error('CURRENT_BACKUP_RESTORE_GATE_FAILED');
+ if(restored.enrichment?.status!=='ISOLATED_ENRICHMENT_VERIFIED'||restored.enrichment.candidateMentions!==items.length||
+  restored.enrichment.manifestSha!==summary.manifestSha||restored.enrichment.modernClinicalRowsUnchanged!==true)throw Error('ISOLATED_ENRICHMENT_GATE_FAILED');
 }
 
 // Connect using temporary PG* environment variables supplied by the operator;
