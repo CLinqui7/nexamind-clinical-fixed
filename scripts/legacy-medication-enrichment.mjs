@@ -55,6 +55,26 @@ try{
  }
  report.verified=await call('select public.linkare_legacy_medication_verify_v1($1,$2,$3) result',[org,batch,backupSha]);
  if(report.verified?.ok!==true)throw Error('ENRICHMENT_RECONCILIATION_FAILED');
+ if(mode==='verify'&&items.length){
+  const members=(await client.query("select user_id,role from public.organization_members where organization_id=$1 and active and role in('owner','secretary')",[org])).rows;
+  const owner=members.find(member=>member.role==='owner'),secretaries=members.filter(member=>member.role==='secretary');
+  if(!owner||!secretaries.length)throw Error('PERMISSION_ACTORS_NOT_FOUND');
+  const samplePatient=items[0].patientId;
+  const readAs=async userId=>{
+   await client.query('begin');
+   try{
+    await client.query('set local role authenticated');
+    await client.query("select set_config('request.jwt.claim.sub',$1,true)",[userId]);
+    const response=await client.query("select jsonb_array_length(public.linkare_legacy_medication_page_v1($1,$2,null,20)->'items') visible",[org,samplePatient]);
+    return {allowed:true,visible:Number(response.rows[0].visible)};
+   }catch(error){if(error.code==='42501')return {allowed:false,visible:0};throw error;}
+   finally{await client.query('rollback');}
+  };
+  const ownerResult=await readAs(owner.user_id),secretaryResults=[];
+  for(const secretary of secretaries)secretaryResults.push(await readAs(secretary.user_id));
+  report.permissionChecks={ownerCanRead:ownerResult.allowed&&ownerResult.visible>0,secretariesDenied:secretaryResults.filter(result=>!result.allowed).length,secretariesChecked:secretaryResults.length};
+  if(!report.permissionChecks.ownerCanRead||report.permissionChecks.secretariesDenied!==report.permissionChecks.secretariesChecked)throw Error('PRODUCTION_PERMISSION_CHECK_FAILED');
+ }
  report.completedAt=new Date().toISOString();writeReport();
  console.log(`HISTORICAL_MEDICATION_${mode.toUpperCase()}_OK actual=${report.verified.actual} report=${output}`);
 }catch(error){
