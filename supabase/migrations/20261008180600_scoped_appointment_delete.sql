@@ -1,3 +1,5 @@
+begin;
+
 -- Calendar pages are partial. Delete one known appointment by revision instead
 -- of diffing the browser's current (possibly different) month. Preserve the
 -- original payload in a tombstone for audit and controlled recovery.
@@ -74,3 +76,5 @@ revoke all on function public.linkare_delete_appointment_v1(uuid, text, bigint) 
 grant execute on function public.linkare_delete_appointment_v1(uuid, text, bigint) to authenticated, service_role;
 
 notify pgrst, 'reload schema';
+
+commit;
