@@ -12,12 +12,31 @@ try{
  await page.getByRole('button',{name:'Agregar medicamento',exact:true}).click();const medicationDialog=page.getByRole('dialog',{name:'Agregar medicamento'});await medicationDialog.getByRole('textbox',{name:/^Medicamento/}).fill('Synthetic QA medication');await medicationDialog.getByRole('textbox',{name:/^Dosis/}).fill('1-0-1');await medicationDialog.getByRole('button',{name:'Agregar medicamento',exact:true}).click();await page.getByText('Medicamento agregado al tratamiento.',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Nueva receta',exact:true}).click();await page.getByLabel('Medicamento del tratamiento activo').selectOption({index:1});await page.getByLabel('Cómo tomarlo').fill('Original synthetic text');await page.getByRole('button',{name:'Guardar y abrir receta',exact:true}).click();await page.getByText('Receta guardada y abierta para impresión.',{exact:true}).waitFor();
  const original=(await state()).payload.patients.find(p=>p.name===name).prescriptions[0];
- // Correct immediately, without reload: server metadata must not cause identity conflicts.
- await page.getByRole('button',{name:'Editar receta',exact:true}).click();await page.getByLabel('Cómo tomarlo').fill('Owner correction');await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();checks.push('owner can correct immediately after creation without duplicate');await logout();
+ // A medication recorded after this prescription must become an option when editing it.
+ await page.getByRole('button',{name:'Agregar medicamento',exact:true}).click();
+ const laterMedicationDialog=page.getByRole('dialog',{name:'Agregar medicamento'});
+ await laterMedicationDialog.getByRole('textbox',{name:/^Medicamento/}).fill('Synthetic QA medication later');
+ await laterMedicationDialog.getByRole('textbox',{name:/^Dosis/}).fill('2');
+ await laterMedicationDialog.getByRole('button',{name:'Agregar medicamento',exact:true}).click();
+ await page.getByText('Medicamento agregado al tratamiento.',{exact:true}).waitFor();
+ await page.getByRole('tab',{name:'Recetas',exact:true}).click();
+ await page.getByRole('button',{name:'Editar receta',exact:true}).click();
+ const selector=page.getByLabel('Medicamento del tratamiento activo');
+ const laterMedicationId=await selector.locator('option',{hasText:'Synthetic QA medication later'}).getAttribute('value');
+ assert.ok(laterMedicationId,'a later active medication must be selectable in an existing prescription');
+ await selector.selectOption(laterMedicationId);
+ await page.getByLabel('Cómo tomarlo').first().fill('Owner correction');
+ await page.getByLabel('Cómo tomarlo').last().fill('New synthetic indication');
+ await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();
+ await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();
+ const updated=(await state()).payload.patients.find(p=>p.name===name).prescriptions;
+ assert.equal(updated.length,1);assert.equal(updated[0].id,original.id);assert.equal(updated[0].number,original.number);
+ assert.equal(updated[0].items.length,2);assert.equal(updated[0].items[1].sourceMedicationId,laterMedicationId);
+ checks.push('later medication can be added to saved prescription without changing its identity');await logout();
  for(const [role,text] of [['secretary','Secretary correction'],['doctor','Doctor correction']]){
   await login(role);await patient();if(role==='doctor')await page.getByRole('tab',{name:'Recetas',exact:true}).click();
   if(role==='secretary'){const p=(await state()).payload.patients.find(p=>p.name===name);assert.equal(p.diagnosis,undefined);assert.equal(p.medications,undefined);assert.equal(await page.getByRole('button',{name:'Nueva receta',exact:true}).count(),0);}
-  await page.getByRole('button',{name:'Editar receta',exact:true}).click();await page.getByLabel('Cómo tomarlo').fill(text);await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();await page.reload();await patient();
+  await page.getByRole('button',{name:'Editar receta',exact:true}).click();if(role==='secretary')assert.equal(await page.getByLabel('Medicamento del tratamiento activo').count(),0);await page.getByLabel('Cómo tomarlo').first().fill(text);await page.getByRole('button',{name:'Guardar corrección y abrir receta',exact:true}).click();await page.getByText('Corrección de receta guardada.',{exact:true}).waitFor();await page.reload();await patient();
   const recipes=(await state()).payload.patients.find(p=>p.name===name).prescriptions;assert.equal(recipes.length,1);assert.equal(recipes[0].id,original.id);assert.equal(recipes[0].number,original.number);assert.equal(recipes[0].items[0].directions,text);checks.push(role+' correction persists after reload and preserves identity');await logout();
  }
  await login('secretary');await patient();await page.getByRole('button',{name:'Anular receta',exact:true}).click();await page.getByLabel('Motivo de anulación').fill('Error sintético de dosis');await page.getByRole('button',{name:'Anular y conservar receta',exact:true}).click();await page.getByText('Receta anulada y conservada en el historial.',{exact:true}).waitFor();await page.reload();await patient();await page.getByText('Receta anulada',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Editar receta',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Anular receta',exact:true}).count(),0);const archived=(await state()).payload.patients.find(p=>p.name===name).prescriptions[0];assert.ok(archived.voidedAt);assert.equal(archived.voidedBy,'10000000-0000-4000-8000-000000000005');assert.equal(archived.status,'voided');assert.equal(archived.voidReason,'Error sintético de dosis');assert.equal(archived.history.length,4);checks.push('secretary void keeps the prescription visible and immutable after reload');await logout();

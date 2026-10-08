@@ -469,10 +469,17 @@ class App extends React.Component {
 
   applyDirectoryPage = (result,{scope,query,cursor,pageIndex}) => {
     const summaries=(result.items||[]).map(directoryPatient);const cursors=(this.state.patientDirectory.cursorStack||[null]).slice(0,pageIndex+1);cursors[pageIndex]=cursor||null;
-    this.setState(previous=>({
-      data:{...previous.data,patients:mergePatients(previous.data.patients.filter(patient=>!patient.__summaryOnly&&patient.id===previous.selectedPatientId),summaries)},
-      patientDirectory:{...result,scope,query,items:summaries,cursorStack:cursors,pageIndex,nextCursor:result.nextCursor||null,loading:false,error:''},
-    }),()=>{if(!this.state.profileAssetsLoaded)this.refreshProfileAssets();});
+    this.setState(previous=>{
+      const appointmentPatientId=previous.modal?.type==='appointment'?previous.modal.draft.patientId:null;
+      const pinnedIds=new Set([previous.selectedPatientId,appointmentPatientId].filter(Boolean));
+      const pinned=previous.data.patients.filter(patient=>pinnedIds.has(patient.id));
+      const selectedLookup=previous.patientLookup.items.find(patient=>patient.id===appointmentPatientId);
+      if(selectedLookup&&!pinned.some(patient=>patient.id===selectedLookup.id))pinned.push(selectedLookup);
+      return {
+        data:{...previous.data,patients:mergePatients(summaries,pinned)},
+        patientDirectory:{...result,scope,query,items:summaries,cursorStack:cursors,pageIndex,nextCursor:result.nextCursor||null,loading:false,error:''},
+      };
+    },()=>{if(!this.state.profileAssetsLoaded)this.refreshProfileAssets();});
   };
 
   selectDirectoryScope = scope => {clearTimeout(this.patientSearchTimer);this.refreshPatientDirectory({scope,query:this.state.patientDirectory.query,cursor:null,pageIndex:0,force:true});};
@@ -1972,7 +1979,11 @@ class App extends React.Component {
       if(!previous&&!this.canCalendar(draft.calendarId,'Create'))return this.permissionDenied();
       if(previous&&(!this.canCalendar(previous.calendarId,'Edit')||(previous.calendarId!==draft.calendarId&&!this.canCalendar(draft.calendarId,'Create'))))return this.permissionDenied();
       if(previous&&draft.status==='cancelled'&&previous.status!=='cancelled'&&!this.canCalendar(previous.calendarId,'Cancel'))return this.permissionDenied();
-      const result = saveAppointment(this.state.data, draft);
+      const selectedLookup=this.state.patientLookup.items.find(item=>item.id===draft.patientId);
+      const saveData=selectedLookup&&!this.state.data.patients.some(item=>item.id===draft.patientId)
+        ? {...this.state.data,patients:mergePatients(this.state.data.patients,[selectedLookup])}
+        : this.state.data;
+      const result = saveAppointment(saveData, draft);
       if(this.state.tourSandbox)this.tourDemoAppointmentId=result.appointment.id;
       if(previous||this.state.tourSandbox){
         await this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
@@ -1984,7 +1995,9 @@ class App extends React.Component {
       const revisions=await createProductionAppointment(organizationId,result.appointment,{includeClinical:this.can('clinicalEdit')&&this.can('appointmentsManage')});
       if(epoch!==this.authEpoch||!this.mounted)return;
       const savedAppointment={...result.appointment,__revision:revisions.find(item=>item.kind==='appointment'&&item.id===result.appointment.id)?.revision||1};
-      const nextData={...result.data,patients:this.state.data.patients,appointments:result.data.appointments.map(item=>item.id===savedAppointment.id?savedAppointment:item)};
+      const savedPatient=this.state.data.patients.find(item=>item.id===draft.patientId)
+        || result.data.patients.find(item=>item.id===draft.patientId);
+      const nextData={...result.data,patients:savedPatient?mergePatients(this.state.data.patients,[savedPatient]):this.state.data.patients,appointments:result.data.appointments.map(item=>item.id===savedAppointment.id?savedAppointment:item)};
       const permissions=Object.fromEntries(PERMISSION_KEYS.map(key=>[key,this.can(key)]));
       mergePersistenceBaseline({appointments:[savedAppointment]},revisions,permissions);
       this.persistedData=nextData;this.directoryCache?.clear();
@@ -3144,7 +3157,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
             <div><b>${this.state.data.organization.name}</b><small>${this.state.data.organization.clinician}</small></div>
           </div>
         </div>
-        ${!draft.id ? html`
+        ${(!draft.id || this.can('prescriptionsCreate')) ? html`
           <${FormField} label="Medicamento del tratamiento activo" required=${items.length === 0}>
             <select value="" onChange=${event => { this.addCurrentMedicationToPrescription(event.target.value); event.target.value = ''; }}>
               <option value="">${availableMedications.length ? 'Seleccione un medicamento…' : 'No hay más medicamentos activos disponibles'}</option>
@@ -3152,7 +3165,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
             </select>
           </${FormField}>
         ` : null}
-        ${!draft.id && !activeMedications.length ? html`
+        ${(!draft.id || this.can('prescriptionsCreate')) && !activeMedications.length ? html`
           <div className="form-information"><${Icon} name="medication" size=${19}/><div><b>No hay tratamiento activo</b><p>Registre primero el medicamento en Tratamiento. La receta no crea ni activa medicamentos.</p></div></div>
         ` : null}
         <div className="form-grid" data-tour="prescription-form-header">
@@ -3315,7 +3328,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
                     `) : null}
                     ${!this.state.patientLookup.loading && !patients.length ? html`<span>No se encontraron pacientes. Escriba otro nombre o dato.</span>` : null}
                   </div>
-                ` : html`<div className="patient-combobox-selected"><${Icon} name="check" size=${15}/><span><b>${selectedPatient?patientDisplayName(selectedPatient):this.state.patientLookup.query}</b><small>${this.can('consultationFeeView')?`Tarifa habitual: ${formatConsultationFee(patientConsultationFee(selectedPatient).cents)}`:'Paciente seleccionado'}</small></span></div>`}
+                ` : html`<div className="patient-combobox-selected"><${Icon} name="check" size=${15}/><span><b>${selectedPatient?patientDisplayName(selectedPatient):this.state.patientLookup.query}</b><small>${selectedPatient&&this.can('consultationFeeView')?`Tarifa habitual: ${formatConsultationFee(patientConsultationFee(selectedPatient).cents)}`:selectedPatient?'Paciente seleccionado':'Vuelva a seleccionar al paciente'}</small></span></div>`}
               </div>
               <small>La búsqueda muestra hasta 20 resultados.</small>
             </${FormField}>
