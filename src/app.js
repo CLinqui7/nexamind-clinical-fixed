@@ -125,6 +125,8 @@ import {
   loadLegacyPatientHistory,
   createProductionAppointment,
   setProductionAppointmentStatus,
+  deleteProductionAppointment,
+  forgetAppointmentPersistenceBaseline,
   saveProductionState,
   setPersistenceBaseline, mergePersistenceBaseline, mergeAppointmentPersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
@@ -2219,11 +2221,42 @@ class App extends React.Component {
     this.persistDataUpdate({data:next,appointmentDetails:this.state.appointmentDetails?.id===appointmentId?{...this.state.appointmentDetails,adminReviewStatus}:this.state.appointmentDetails},adminReviewStatus==='reviewed'?'Cita marcada como revisada.':'Cita marcada por revisar.');
   };
 
-  deleteAppointment = appointmentId => {
-    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
-    if (!appointment||!this.canCalendar(appointment.calendarId,'Delete')) return this.permissionDenied();
-    if (!window.confirm('¿Eliminar este evento? Esta acción no modifica el expediente clínico.')) return;
-    this.persistDataUpdate({ data: removeAppointment(this.state.data, appointmentId), appointmentDetails: null }, 'Evento eliminado.');
+  deleteAppointment = async appointmentId => {
+    if(this.state.formSaving||this.state.appointmentStatusBusyId)return;
+    const appointment=this.state.appointmentDetails?.id===appointmentId
+      ? this.state.appointmentDetails
+      : this.state.data.appointments.find(item=>item.id===appointmentId);
+    if(!appointment)return this.notify('No se encontró el evento. Actualice la agenda y vuelva a intentarlo.','danger');
+    if(!this.canCalendar(appointment.calendarId,'Delete'))return this.permissionDenied();
+    const revision=Number(appointment.__revision);
+    if(!this.state.tourSandbox&&(!Number.isInteger(revision)||revision<1))return this.notify('Falta la revisión del evento. Actualice la agenda antes de eliminarlo.','danger');
+    if(!window.confirm('¿Eliminar este evento? Se retirará de la agenda, pero se conservará un registro recuperable y no se modificará el expediente clínico.'))return;
+    if(this.state.tourSandbox){
+      this.setState({data:removeAppointment(this.state.data,appointmentId),appointmentDetails:null},()=>this.notify('Práctica: evento retirado solo aquí; no se guardó en el servidor.'));
+      return;
+    }
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    const needsFlush=['dirty','saving','error','offline'].includes(this.state.remoteSaveStatus);
+    this.setState({formSaving:true,remoteSaveStatus:'saving',saveError:''});
+    try{
+      if(needsFlush)await this.flushChanges();
+      await deleteProductionAppointment(org,appointmentId,revision);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      forgetAppointmentPersistenceBaseline(org,appointmentId);
+      this.directoryCache.clear();
+      this.setState(previous=>({
+        data:removeAppointment(previous.data,appointmentId),
+        appointmentDetails:previous.appointmentDetails?.id===appointmentId?null:previous.appointmentDetails,
+        remoteSaveStatus:'saved',
+      }),()=>{
+        this.persistedData=this.state.data;
+        this.notify('Evento eliminado de la agenda y conservado para recuperación.');
+        this.refreshDashboardSummary();this.refreshDailyAgenda();
+        if(this.state.view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
+      });
+    }catch(error){
+      if(epoch===this.authEpoch)this.setState({remoteSaveStatus:'error',saveError:readableError(error)},()=>this.notify(`No se eliminó el evento: ${readableError(error)}`,'danger'));
+    }finally{if(epoch===this.authEpoch)this.setState({formSaving:false});}
   };
 
   acknowledgeAlert = alertId => {

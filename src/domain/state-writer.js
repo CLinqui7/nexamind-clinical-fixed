@@ -13,6 +13,11 @@ export class StateWriter {
     this.baseline.set(key,record);
     this.revisions.set(key,revision);
   }
+  forgetRecord(kind,id){
+    const key=recordKey(kind,id);
+    this.baseline.delete(key);
+    this.revisions.delete(key);
+  }
   save(data){this.latest=projectRecords(data,this.clinical);if(this.running)return this.running;
     const epoch=this.epoch;
     this.running=(async()=>{
