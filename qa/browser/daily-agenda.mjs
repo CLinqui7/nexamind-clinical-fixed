@@ -6,7 +6,7 @@ const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,heig
 page.setDefaultTimeout(15000);
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try{
- await page.goto('http://127.0.0.1:4173');
+ await page.goto(process.env.LINKARE_QA_URL||'http://127.0.0.1:4173');
  await page.locator('input[type=email]').fill('owner@example.invalid');
  await page.locator('input[type=password]').fill('qa-password-123');
  await page.getByRole('button',{name:'Ingresar a Linkare',exact:true}).click();
@@ -20,6 +20,7 @@ try{
   await rpc('linkare_save_changes_v3',{org,changes:[
    {kind:'patient_admin',id:'agenda-browser-qa',expectedRevision:0,payload:{name:'Paciente sintético Agenda'}},
   {kind:'patient_clinical',id:'agenda-browser-qa',expectedRevision:0,payload:{medications:[{id:'agenda-med-1',name:'Sertralina',dose:'50 mg',frequency:'cada mañana',status:'active'},{id:'agenda-med-2',name:'Clonazepam',dose:'1/2 tableta',frequency:'cada noche',status:'active'}]}},
+   {kind:'appointment',id:'agenda-prior-qa',expectedRevision:0,payload:{calendarId:doctor.id,eventType:'appointment',patientId:'agenda-browser-qa',title:'Cita anterior',start:'2026-09-24T14:00:00Z',end:'2026-09-24T14:45:00Z',status:'confirmed'}},
    {kind:'appointment',id:'agenda-appointment-qa',expectedRevision:0,payload:{calendarId:doctor.id,eventType:'appointment',patientId:'agenda-browser-qa',title:'Paciente sintético Agenda',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:45:00Z',status:'confirmed'}}
   ]});
  });
@@ -46,6 +47,7 @@ try{
  const printView=await printPromise;
  await printView.getByRole('heading',{name:'Agenda del día'}).waitFor();
  assert.match(await printView.locator('main').innerText(),/Paciente sintético Agenda/);
+ assert.match(await printView.locator('main').innerText(),/Última cita anterior: 24\/09\/2026/);
  assert.match(await printView.locator('main').innerText(),/Sertralina · 50 mg · cada mañana/);
  assert.match(await printView.locator('main').innerText(),/Preparar resultados sintéticos/);
  if(process.env.LINKARE_AGENDA_PRINT_SCREENSHOT)await printView.screenshot({path:process.env.LINKARE_AGENDA_PRINT_SCREENSHOT,fullPage:true});
@@ -85,6 +87,7 @@ try{
  const secretaryPrintView=await secretaryPrint;
  await secretaryPrintView.getByRole('heading',{name:'Agenda del día'}).waitFor();
  assert.match(await secretaryPrintView.locator('main').innerText(),/Sertralina · 50 mg · cada mañana/);
+ assert.match(await secretaryPrintView.locator('main').innerText(),/Última cita anterior: 24\/09\/2026/);
  await secretaryPrintView.close();
  await page.setViewportSize({width:390,height:844});
  await page.locator('.agenda-sheet').getByRole('button',{name:'Imprimir',exact:true}).waitFor();

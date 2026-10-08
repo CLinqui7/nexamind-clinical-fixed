@@ -83,6 +83,14 @@ const sendChanges=changes=>{
 const writer=new StateWriter(sendChanges);
 export function setPersistenceBaseline(organizationId,data,revisions,clinical){activeOrganization=organizationId;writer.seed(data,revisions,clinical,{allowDeletes:false});}
 export function mergePersistenceBaseline(data,revisions,clinical){writer.merge(data,revisions,clinical);}
+export function mergeAppointmentPersistenceBaseline(organizationId,appointment){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  if(!appointment?.id || !Number.isInteger(Number(appointment.__revision)))throw new Error('Falta la revisión de la cita guardada.');
+  writer.mergeRecord({kind:'appointment',id:appointment.id,payload:pick(appointment,APPOINTMENT_KEYS)},Number(appointment.__revision));
+  if(Number.isInteger(Number(appointment.__notesRevision))&&Number(appointment.__notesRevision)>0){
+    writer.mergeRecord({kind:'appointment_clinical',id:appointment.id,payload:{notes:appointment.notes||''}},Number(appointment.__notesRevision));
+  }
+}
 export function resetPersistence(){activeOrganization=null;writer.reset();}
 export function saveProductionState(organizationId,payload){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
@@ -98,6 +106,35 @@ export function createProductionAppointment(organizationId,appointment,{includeC
   const changes=[{kind:'appointment',id:appointment.id,expectedRevision:0,deleted:false,payload:pick(appointment,APPOINTMENT_KEYS)}];
   if(includeClinical && String(appointment.notes||'').trim())changes.push({kind:'appointment_clinical',id:appointment.id,expectedRevision:0,deleted:false,payload:{notes:String(appointment.notes).trim()}});
   return serializeClinicalWrite(organizationId,()=>rpc('linkare_save_changes_v3',{org:organizationId,changes}));
+}
+export function setProductionAppointmentStatus(organizationId,appointmentId,status){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  return serializeClinicalWrite(organizationId,()=>rpc('linkare_set_appointment_status_v1',{org:organizationId,p_appointment_id:appointmentId,p_status:status}));
+}
+export async function patchProductionAppointment(organizationId,appointmentId,expectedRevision,base,changes){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error('Falta la revisión de la cita. Actualice la agenda.');
+  const result=await serializeClinicalWrite(organizationId,()=>rpc('linkare_patch_appointment_v1',{
+    org:organizationId,p_appointment_id:appointmentId,p_expected_revision:expectedRevision,p_base:base,p_changes:changes,
+  }));
+  if(result?.conflict&&result.code==='FIELD_CONFLICT'&&Array.isArray(result.fields)&&result.current)return result;
+  if(result?.saved!==true||result.appointment?.id!==appointmentId)throw new Error('No se confirmó la actualización de la cita.');
+  return result;
+}
+export async function deleteProductionAppointment(organizationId,appointmentId,expectedRevision){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  if(!Number.isInteger(expectedRevision) || expectedRevision<1)throw new Error('Falta la revisión de la cita. Actualice la agenda.');
+  const result=await serializeClinicalWrite(organizationId,()=>rpc('linkare_delete_appointment_v1',{
+    org:organizationId,p_appointment_id:appointmentId,p_expected_revision:expectedRevision,
+  }));
+  if(result?.conflict){const error=new Error('REVISION_CONFLICT');error.code='REVISION_CONFLICT';throw error;}
+  if(result?.deleted!==true || result.id!==appointmentId)throw new Error('No se confirmó la eliminación del evento.');
+  return result;
+}
+export function forgetAppointmentPersistenceBaseline(organizationId,appointmentId){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  writer.forgetRecord('appointment',appointmentId);
+  writer.forgetRecord('appointment_clinical',appointmentId);
 }
 export function captureReportedMedication(organizationId,patientId,draft){
   return rpc('linkare_capture_medication_v1',{org:organizationId,patient_id:patientId,input:draft});

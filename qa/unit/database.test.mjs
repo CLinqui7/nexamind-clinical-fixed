@@ -21,6 +21,10 @@ before(async()=>{
  for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql','supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261007052123_printable_daily_agenda.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008170915_historical_medication_mentions.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008174640_appointment_status_for_visible_calendars.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008180600_scoped_appointment_delete.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008185940_agenda_previous_visit_date.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -198,10 +202,11 @@ test('DB: patient archival is audited, cancels future appointments and respects 
 });
 test('DB: printable Doctor agenda is chronological, complete, scoped and separately permissioned',async()=>{
  await actor('owner');
- await save([{kind:'patient_admin',id:'sheet-patient',expectedRevision:0,payload:{name:'Paciente Agenda QA'}},{kind:'patient_clinical',id:'sheet-patient',expectedRevision:0,payload:{diagnosis:'PRIVATE_DIAGNOSIS_DO_NOT_PRINT',medications:[{id:'med-a',name:'Sertralina',dose:'50 mg',frequency:'cada mañana',route:'oral',status:'active'},{id:'med-b',name:'Clonazepam',dose:'1/2 tableta',frequency:'cada noche',status:'active'},{id:'med-c',name:'Suspendido',dose:'5 mg',status:'suspended'}]}},{kind:'appointment',id:'sheet-late',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Tarde',start:'2026-10-06T16:00:00Z',end:'2026-10-06T16:45:00Z',status:'confirmed'}},{kind:'appointment',id:'sheet-early',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Temprano',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:30:00Z',status:'pending'}},{kind:'appointment',id:'sheet-wife',expectedRevision:0,payload:{calendarId:calendarIds.wife,eventType:'appointment',patientId:'sheet-patient',title:'Privado',start:'2026-10-06T15:00:00Z',end:'2026-10-06T15:30:00Z',status:'confirmed'}},{kind:'appointment_clinical',id:'sheet-early',expectedRevision:0,payload:{notes:'PRIVATE_PREPARATION_DO_NOT_PRINT'}}]);
+ await save([{kind:'patient_admin',id:'sheet-patient',expectedRevision:0,payload:{name:'Paciente Agenda QA'}},{kind:'patient_clinical',id:'sheet-patient',expectedRevision:0,payload:{diagnosis:'PRIVATE_DIAGNOSIS_DO_NOT_PRINT',medications:[{id:'med-a',name:'Sertralina',dose:'50 mg',frequency:'cada mañana',route:'oral',status:'active'},{id:'med-b',name:'Clonazepam',dose:'1/2 tableta',frequency:'cada noche',status:'active'},{id:'med-c',name:'Suspendido',dose:'5 mg',status:'suspended'}]}},{kind:'appointment',id:'sheet-prior',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Anterior',start:'2026-09-24T14:00:00Z',end:'2026-09-24T14:45:00Z',status:'confirmed'}},{kind:'appointment',id:'sheet-cancelled',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Cancelada',start:'2026-10-01T14:00:00Z',end:'2026-10-01T14:45:00Z',status:'cancelled'}},{kind:'appointment',id:'sheet-late',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Tarde',start:'2026-10-06T16:00:00Z',end:'2026-10-06T16:45:00Z',status:'confirmed'}},{kind:'appointment',id:'sheet-early',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'sheet-patient',title:'Temprano',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:30:00Z',status:'pending'}},{kind:'appointment',id:'sheet-wife',expectedRevision:0,payload:{calendarId:calendarIds.wife,eventType:'appointment',patientId:'sheet-patient',title:'Privado',start:'2026-10-06T15:00:00Z',end:'2026-10-06T15:30:00Z',status:'confirmed'}},{kind:'appointment_clinical',id:'sheet-early',expectedRevision:0,payload:{notes:'PRIVATE_PREPARATION_DO_NOT_PRINT'}}]);
  await permissions('secretary',{patientsView:true,agendaSheetView:true,agendaSheetEdit:false,calendarDoctorView:true});
  let sheet=(await db.query('select public.linkare_printable_agenda_v1($1,$2::date) data',[org,'2026-10-06'])).rows[0].data;
  assert.deepEqual(sheet.items.map(item=>item.appointmentId),['sheet-early','sheet-late']);
+ assert.deepEqual(sheet.items.map(item=>item.lastAppointmentOn),['2026-09-24','2026-09-24']);
  assert.deepEqual(sheet.items[0].medications.map(item=>item.name),['Clonazepam','Sertralina']);
  assert.equal(sheet.items[0].medications[0].dose,'1/2 tableta');
  assert.doesNotMatch(JSON.stringify(sheet),/PRIVATE_DIAGNOSIS_DO_NOT_PRINT|PRIVATE_PREPARATION_DO_NOT_PRINT|Suspendido|sheet-wife/);
@@ -308,6 +313,8 @@ test('DB: patient detail and range agenda keep tenant and clinical permissions s
  await save([{kind:'appointment',id:'directory-agenda',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'directory-00',title:'Directory appointment',start:'2026-10-10T14:00:00Z',end:'2026-10-10T14:30:00Z',status:'confirmed'}},{kind:'appointment_clinical',id:'directory-agenda',expectedRevision:0,payload:{notes:'PRIVATE_APPOINTMENT_DIRECTORY'}}]);
  let agenda=(await db.query("select public.linkare_agenda_range_v1($1,'2026-10-10T00:00:00Z','2026-10-11T00:00:00Z',array[$2]::uuid[],null,20) data",[org,calendarIds.doctor])).rows[0].data;
  assert.equal(agenda.items.length,1);assert.equal(agenda.items[0].patientSummary.name,'Álvarez Ñuñez QA');assert.equal(agenda.items[0].notes,'PRIVATE_APPOINTMENT_DIRECTORY');
+ const printable=(await db.query("select public.linkare_printable_agenda_v1($1,'2026-10-10') data",[org])).rows[0].data;
+ assert.equal(printable.items[0].lastAppointmentOn,'2026-09-01'); // Signed consultation fallback, with no previous appointment.
  await permissions('secretary',{patientsView:true,calendarDoctorView:true});
  const secretaryDetail=(await db.query("select public.linkare_patient_detail_v1($1,'directory-00') data",[org])).rows[0].data;
  assert.equal(secretaryDetail.patient.diagnosis,undefined);assert.equal(secretaryDetail.revisions.length,1);
@@ -421,4 +428,107 @@ test('DB: consultation fee is projected, permission-scoped and cannot be changed
  await save([{kind:'patient_admin',id:'fee-patient',expectedRevision:revision,payload:{name:'Paciente Tarifa QA',phone:'71111111',consultationFeeCents:9000}}]);
  detail=(await db.query("select public.linkare_patient_detail_v1($1,'fee-patient') data",[org])).rows[0].data;
  assert.equal(detail.patient.consultationFeeCents,9000);
+});
+
+test('DB: changing only appointment status works for owner and authorized Secretary without rewriting the appointment',async()=>{
+ await actor('owner');
+ await save([{kind:'appointment',id:'status-only-qa',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Cita sintética',start:'2026-12-08T16:00:00Z',end:'2026-12-08T16:45:00Z',status:'pending'}}]);
+ const change=async(status,targetOrg=org)=>(await db.query('select public.linkare_set_appointment_status_v1($1,$2,$3) data',[targetOrg,'status-only-qa',status])).rows[0].data;
+ const confirmed=await change('confirmed');
+ assert.equal(confirmed.status,'confirmed');assert.equal(confirmed.title,'Cita sintética');assert.equal(confirmed.__revision,2);
+ assert.equal(confirmed.confirmedBy,ids.owner);
+ assert.equal((await change('confirmed')).__revision,2,'repeating the same status is idempotent');
+
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorEdit:true,calendarDoctorCancel:true});
+ const completed=await change('completed');assert.equal(completed.status,'completed');assert.equal(completed.__revision,3);
+ const cancelled=await change('cancelled');assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.cancelledBy,ids.secretary);
+ const row=(await db.query("select payload,revision from public.linkare_records where organization_id=$1 and kind='appointment' and id='status-only-qa'",[org])).rows[0];
+ assert.equal(row.payload.title,'Cita sintética');assert.equal(row.payload.patientId,'patient');assert.equal(row.revision,4);
+ await actor('owner');
+ const audit=(await db.query("select action,actor_id from public.linkare_audit_v3 where organization_id=$1 and record_id='status-only-qa' and action='appointment.status_changed' order by id",[org])).rows;
+ assert.equal(audit.length,3);assert.equal(audit.at(-1).actor_id,ids.secretary);
+
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true});
+ await denied(()=>change('pending'));
+ await actor('other');await denied(()=>change('pending'));
+ await actor('owner');
+ await assert.rejects(()=>change('arbitrary'),error=>error.code==='22023');
+});
+
+test('DB: scoped appointment deletion is recoverable, revision-safe and permission-scoped',async()=>{
+ await actor('owner');
+ assert.equal((await db.query("select has_function_privilege('anon','public.linkare_delete_appointment_v1(uuid,text,bigint)','EXECUTE') allowed")).rows[0].allowed,false);
+ const id='delete-appointment-qa';
+ const patientId='directory-no-activity';
+ const payload={id,calendarId:calendarIds.doctor,eventType:'appointment',patientId,title:'Recoverable QA event',start:'2099-02-10T14:00:00Z',end:'2099-02-10T14:45:00Z',status:'pending'};
+ await save([{kind:'appointment',id,expectedRevision:0,payload},{kind:'appointment_clinical',id,expectedRevision:0,payload:{notes:'Private QA note'}}]);
+ const remove=async(targetOrg=org,revision=1)=>(await db.query('select public.linkare_delete_appointment_v1($1,$2,$3) data',[targetOrg,id,revision])).rows[0].data;
+ const patientBefore=(await db.query("select revision from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,patientId])).rows[0].revision;
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorEdit:true,calendarDoctorDelete:false});
+ await denied(()=>remove());
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorDelete:true});
+ const conflict=await remove(org,99);assert.equal(conflict.code,'REVISION_CONFLICT');assert.equal(conflict.revision,1);
+ let row=(await db.query("select deleted,payload,revision from public.linkare_records where organization_id=$1 and kind='appointment' and id=$2",[org,id])).rows[0];
+ assert.equal(row.deleted,false);assert.equal(row.revision,1);
+ const result=await remove();assert.equal(result.deleted,true);assert.equal(result.revision,2);
+ row=(await db.query("select deleted,payload,revision,updated_by from public.linkare_records where organization_id=$1 and kind='appointment' and id=$2",[org,id])).rows[0];
+ assert.equal(row.deleted,true);assert.equal(row.payload.title,payload.title);assert.equal(row.payload.start,payload.start);assert.equal(row.payload.deletedBy,ids.secretary);assert.equal(row.updated_by,ids.secretary);
+ assert.equal((await remove()).revision,2,'retry does not write or audit again');
+ await db.exec('reset role');
+ assert.equal((await db.query("select count(*)::int n from public.linkare_audit_v3 where organization_id=$1 and record_id=$2 and action='appointment.deleted'",[org,id])).rows[0].n,1);
+ assert.equal((await db.query("select count(*)::int n from linkare_private.appointment_directory_v1 where organization_id=$1 and appointment_id=$2",[org,id])).rows[0].n,0);
+ assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='appointment_clinical' and id=$2 and not deleted",[org,id])).rows[0].n,1,'private history remains recoverable');
+ assert.equal((await db.query("select revision from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,patientId])).rows[0].revision,patientBefore);
+ await actor('other');await denied(()=>remove(org,1));
+ await actor('owner');await assert.rejects(()=>remove(otherOrg,1),error=>error.code==='P0002'||error.code==='42501');
+});
+
+test('DB: simultaneous appointment edits merge separate fields and require a choice for the same field',async()=>{
+ await actor('owner');
+ const id='concurrent-appointment-qa';
+ await save([{kind:'appointment',id,expectedRevision:0,payload:{id,calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Synthetic QA',start:'2099-03-10T14:00:00Z',end:'2099-03-10T14:45:00Z',type:'Seguimiento',modality:'Presencial',status:'pending',adminReviewStatus:'none',reminderLog:[{id:'existing'}]}}]);
+ const patch=async(base,changes,revision=1,targetOrg=org)=>(await db.query('select public.linkare_patch_appointment_v1($1,$2,$3,$4::jsonb,$5::jsonb) data',[targetOrg,id,revision,JSON.stringify(base),JSON.stringify(changes)])).rows[0].data;
+ const initial=(await load()).payload.appointments.find(item=>item.id===id);
+ assert.equal((await db.query("select has_function_privilege('anon','public.linkare_patch_appointment_v1(uuid,text,bigint,jsonb,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorEdit:true});
+ const first=await patch({type:'Seguimiento'},{type:'Prioritaria'});
+ assert.equal(first.appointment.type,'Prioritaria');assert.equal(first.appointment.__revision,2);
+ await actor('owner');
+ const merged=await patch({start:initial.start,end:initial.end},{start:'2099-03-10T15:00:00Z',end:'2099-03-10T15:45:00Z'});
+ assert.equal(merged.merged,true);assert.equal(merged.appointment.type,'Prioritaria');assert.equal(merged.appointment.start,'2099-03-10T15:00:00Z');
+ assert.deepEqual(merged.appointment.reminderLog,[{id:'existing'}]);
+ const status=await patch({status:'pending'},{status:'confirmed'},3);assert.equal(status.appointment.__revision,4);assert.equal(status.appointment.confirmedBy,ids.owner);
+ await actor('secretary');
+ const conflict=await patch({status:'pending'},{status:'completed'},3);
+ assert.equal(conflict.code,'FIELD_CONFLICT');assert.deepEqual(conflict.fields,['status']);assert.equal(conflict.current.status,'confirmed');
+ const resolved=await patch({status:'confirmed'},{status:'completed'},4);
+ assert.equal(resolved.appointment.status,'completed');assert.equal(resolved.appointment.type,'Prioritaria');
+ await denied(()=>patch({notes:''},{notes:'private'},5));
+ await actor('other');await denied(()=>patch({status:'completed'},{status:'pending'},5));
+ await actor('owner');
+ const note=await patch({notes:''},{notes:'Private note A'},5);assert.equal(note.appointment.notes,'Private note A');
+ const noteConflict=await patch({notes:''},{notes:'Private note B'},5);assert.equal(noteConflict.code,'FIELD_CONFLICT');assert.deepEqual(noteConflict.fields,['notes']);
+ assert.equal((await load()).payload.appointments.find(item=>item.id===id).notes,'Private note A');
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorCancel:true});
+ const cancelled=await patch({status:'completed'},{status:'cancelled'},5);
+ assert.equal(cancelled.appointment.status,'cancelled');assert.equal(cancelled.appointment.cancelledBy,ids.secretary);
+ await denied(()=>patch({type:'Prioritaria'},{type:'Seguimiento'},6));
+});
+
+test('DB: concurrent patient reassignment blocks stale notes or status from attaching to another patient',async()=>{
+ await actor('owner');
+ const id='identity-guard-appointment-qa';
+ await save([
+  {kind:'patient_admin',id:'identity-guard-patient-qa',expectedRevision:0,payload:{name:'Other synthetic patient'}},
+  {kind:'appointment',id,expectedRevision:0,payload:{id,calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Original synthetic patient',start:'2099-04-10T14:00:00Z',end:'2099-04-10T14:45:00Z',status:'pending'}},
+ ]);
+ const patch=async(base,changes,revision=1)=>(await db.query('select public.linkare_patch_appointment_v1($1,$2,$3,$4::jsonb,$5::jsonb) data',[org,id,revision,JSON.stringify(base),JSON.stringify(changes)])).rows[0].data;
+ const moved=await patch({patientId:'patient',title:'Original synthetic patient'},{patientId:'identity-guard-patient-qa',title:'Other synthetic patient'});
+ assert.equal(moved.saved,true);
+ const stale=await patch({patientId:'patient',status:'pending'},{status:'confirmed'});
+ assert.equal(stale.code,'FIELD_CONFLICT');assert.deepEqual(stale.fields,['patientId']);
+ const note=await patch({patientId:'patient',notes:''},{notes:'Do not misattribute'});
+ assert.equal(note.code,'FIELD_CONFLICT');assert.deepEqual(note.fields,['patientId']);
+ const row=(await load()).payload.appointments.find(item=>item.id===id);
+ assert.equal(row.patientId,'identity-guard-patient-qa');assert.equal(row.status,'pending');assert.equal(row.notes||'','');
 });

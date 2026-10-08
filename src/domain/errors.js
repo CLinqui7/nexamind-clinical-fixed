@@ -3,6 +3,8 @@ export function readableError(error) {
   const messages={
     SUBSCRIPTION_REQUIRED:'Seleccione o renueve un plan para guardar registros. Puede consultar la información existente.',
     REVISION_CONFLICT:'Otra persona modificó este registro. Sus cambios no se sobrescribieron. Copie sus anotaciones y recargue los datos antes de continuar.',
+    APPOINTMENT_NOT_FOUND:'El evento ya no está disponible. Actualice la agenda.',
+    INVALID_APPOINTMENT_DELETE:'Falta información del evento. Actualice la agenda antes de eliminarlo.',
     SIGNED_NOTE_IMMUTABLE:'La nota ya está firmada y no puede reemplazarse. Registre una nueva nota o adenda.',
     INVALID_SIGNER:'Solo el autor autenticado puede firmar esta nota.',
     ACCOUNT_DISABLED:'Su acceso fue desactivado por el responsable del consultorio.',
