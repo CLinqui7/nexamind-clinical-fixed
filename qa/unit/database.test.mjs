@@ -1,6 +1,7 @@
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import nodeCrypto from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {pgcrypto} from '@electric-sql/pglite/contrib/pgcrypto';
 const db=new PGlite({extensions:{pgcrypto}});
@@ -19,6 +20,7 @@ before(async()=>{
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
  for(const file of ['supabase/00_BASE.sql','supabase/migrations/202609080001_linkare_v3.sql','supabase/migrations/20260921163356_enable_free_access.sql','supabase/migrations/20260921170106_free_access_and_team_permissions.sql','supabase/migrations/20260921170933_secretary_prescription_corrections.sql','supabase/migrations/20260921182203_archive_prescriptions.sql','supabase/migrations/20260921201729_operational_clinical_lifecycles.sql','supabase/migrations/20260921210315_daily_agenda_and_automation.sql','supabase/migrations/20260921211201_document_templates.sql','supabase/migrations/20260921213000_scoped_calendars_and_family_reminders.sql','supabase/migrations/20260921214500_legacy_migration_staging.sql','supabase/migrations/20260921223000_archive_medications.sql','supabase/migrations/20260921230047_archive_patient_with_audit.sql','supabase/migrations/20260921232000_fix_medication_identity_and_archive.sql','supabase/migrations/20260921233500_hide_reviewed_medications_from_secretary.sql','supabase/migrations/20260921235000_canonicalize_medication_identity.sql','supabase/migrations/20260922043809_clinic_phone_numbers.sql','supabase/migrations/20261002174319_secretary_multi_calendar.sql','supabase/migrations/20261003010000_historical_migration_v2.sql','supabase/migrations/20261003061842_patient_directory_performance.sql','supabase/migrations/20261003074514_lazy_profile_assets.sql','supabase/migrations/20261003180559_deferred_directory_version_bump.sql','supabase/migrations/20261003183511_optimize_appointment_save.sql','supabase/migrations/20261003195000_controlled_revision_conflicts.sql','supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql','supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql'])await db.exec(fs.readFileSync(file,'utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261007052123_printable_daily_agenda.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008170915_historical_medication_mentions.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -233,6 +235,28 @@ test('DB: historical migration is resumable, permission-scoped, reconciled and r
  await actor('owner');let loaded=await load();const historical=loaded.payload.patients.find(item=>item.id===patient);assert.equal(historical.dataQuality,'historical');assert.equal(historical.sourceSummary.system,'FoxPro');let history=(await db.query('select public.linkare_legacy_patient_history_v1($1,$2,0,100) data',[org,patient])).rows[0].data;assert.equal(history.items.length,2);assert.equal(history.clinicalIncluded,true);assert.match(JSON.stringify(history),/SYNTHETIC_PRIVATE_HISTORY/);
  await permissions('secretary',{patientsView:true});history=(await db.query('select public.linkare_legacy_patient_history_v1($1,$2,0,100) data',[org,patient])).rows[0].data;assert.equal(history.items.length,1);assert.equal(history.items[0].scope,'administrative');assert.doesNotMatch(JSON.stringify(history),/SYNTHETIC_PRIVATE_HISTORY/);await assert.rejects(()=>db.query('select * from linkare_private.legacy_history_v1'),e=>e.code==='42501');
  await db.exec('reset role;set role service_role');const rolled=(await db.query('select public.linkare_legacy_rollback_v2($1,$2,$3) data',[org,batch,backup])).rows[0].data;assert.equal(rolled.ok,true);assert.equal(rolled.patientsRemoved,1);assert.equal(rolled.historyRemoved,2);assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,patient])).rows[0].n,0);
+});
+
+test('DB: historical medication mentions stay source-linked, idempotent and invisible to Secretary',async()=>{
+ const batch='61000000-0000-5000-8000-000000000010',patient='61000000-0000-5000-8000-000000000011',clinical='61000000-0000-5000-8000-000000000012',admin='61000000-0000-5000-8000-000000000013',mention='61000000-0000-5000-8000-000000000014';
+ const backup='d'.repeat(64),plan='e'.repeat(64),memo='SyntheticMed 20 mg\nTomar una tableta por la noche.',sourceTextSha=nodeCrypto.createHash('sha256').update(memo).digest('hex');
+ const records=[{organizationId:org,sourceTable:'t_clientes',sourceRow:1,sourceKeyHash:'5'.repeat(64),sourceFingerprint:'6'.repeat(64),disposition:'import_patient',destinationKind:'patient_admin',destinationId:patient,payload:{id:patient,name:'Synthetic historical patient',dataQuality:'historical',notificationPreferences:{enabled:false}},historyEntries:[]},{organizationId:org,sourceTable:'t_mov_diarios',sourceRow:1,sourceKeyHash:'7'.repeat(64),sourceFingerprint:'8'.repeat(64),disposition:'import_history',destinationKind:'legacy_history',destinationId:admin,historyEntries:[{id:admin,patientId:patient,scope:'administrative',occurredOn:'2020-01-15',title:'Historical movement',payload:{passedConsultation:true}},{id:clinical,patientId:patient,scope:'clinical',occurredOn:'2020-01-15',title:'Historical note',payload:{text:memo,treatmentStatus:'unknown'}}]}];
+ await db.exec('reset role;set role service_role');
+ await db.query('select public.linkare_legacy_start_v2($1,$2,$3,$4,$5,$6,$7::jsonb)',[org,batch,'qa-foxpro',backup,plan,'f'.repeat(40),JSON.stringify({sourceRows:2,backupSha:backup,planSha:plan})]);
+ await db.query('select public.linkare_legacy_apply_v2($1,$2,$3,$4::jsonb)',[org,batch,backup,JSON.stringify(records)]);
+ assert.equal((await db.query('select public.linkare_legacy_verify_v2($1,$2,$3) data',[org,batch,backup])).rows[0].data.ok,true);
+ await db.query('select public.linkare_legacy_medication_start_v1($1,$2,$3,$4,$5,$6)',[org,batch,backup,plan,'dose_heading_v1',1]);
+ const item={organizationId:org,batchId:batch,id:mention,patientId:patient,historyId:clinical,sourceTextSha,sourceLine:1,name:'SyntheticMed',strengthText:'20 mg',instructionText:'Tomar una tableta por la noche.',sourceExcerpt:'SyntheticMed 20 mg',extractionMethod:'dose_heading_v1'};
+ const apply=()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb) data',[org,batch,backup,JSON.stringify([item])]);
+ assert.equal((await apply()).rows[0].data.accepted,1);assert.equal((await apply()).rows[0].data.accepted,0);
+ await assert.rejects(()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb)',[org,batch,backup,JSON.stringify([{...item,sourceTextSha:'0'.repeat(64),id:'61000000-0000-5000-8000-000000000015'}])]),/HISTORY_SOURCE_MISMATCH/);
+ assert.equal((await db.query('select public.linkare_legacy_medication_verify_v1($1,$2,$3) data',[org,batch,backup])).rows[0].data.ok,true);
+ await actor('owner');const page=(await db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20) data',[org,patient])).rows[0].data;assert.equal(page.items.length,1);assert.equal(page.items[0].reviewStatus,'unreviewed');
+ const summary=(await db.query('select public.linkare_legacy_visit_summary_v1($1,$2) data',[org,patient])).rows[0].data;assert.equal(summary.markedConsultations,1);assert.equal(summary.lastMarkedConsultationOn,'2020-01-15');
+ assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0].n,0);
+ await permissions('secretary',{patientsView:true,clinicalView:true});await denied(()=>db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20)',[org,patient]));
+ assert.doesNotMatch(JSON.stringify((await db.query('select public.linkare_patient_detail_v1($1,$2) data',[org,patient])).rows[0].data),/SyntheticMed/);
+ await actor('other');await denied(()=>db.query('select public.linkare_legacy_visit_summary_v1($1,$2)',[org,patient]));
 });
 
 test('DB: v4 bootstrap is small and the directory returns distinct recent patients in pages of 20',async()=>{

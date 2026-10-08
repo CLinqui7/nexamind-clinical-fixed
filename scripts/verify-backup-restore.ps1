@@ -2,7 +2,11 @@ param(
   [Parameter(Mandatory = $true)][string]$EncryptedBackup,
   [Parameter(Mandatory = $true)][string]$Output,
   [Parameter(Mandatory = $true)][string]$Organization,
-  [Parameter(Mandatory = $true)][string]$Owner
+  [Parameter(Mandatory = $true)][string]$Owner,
+  [string]$EnrichmentSourceZip,
+  [string]$EnrichmentBatch,
+  [string]$EnrichmentBackupSha,
+  [string]$EnrichmentPlanSha
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,7 +22,11 @@ $plainPath = Join-Path $tempRoot ('linkare-restore-' + [guid]::NewGuid().ToStrin
 )
 try {
   [System.IO.File]::WriteAllBytes($plainPath, $plain)
-  node scripts/verify-backup-restore.mjs --backup $plainPath --output $Output --organization $Organization --owner $Owner
+  $verifyArgs = @('scripts/verify-backup-restore.mjs','--backup',$plainPath,'--output',$Output,'--organization',$Organization,'--owner',$Owner)
+  if ($EnrichmentSourceZip) {
+    $verifyArgs += @('--enrichment-source-zip',$EnrichmentSourceZip,'--enrichment-batch',$EnrichmentBatch,'--enrichment-backup-sha',$EnrichmentBackupSha,'--enrichment-plan-sha',$EnrichmentPlanSha)
+  }
+  node @verifyArgs
   if ($LASTEXITCODE -ne 0) { throw 'Backup restore verification failed.' }
 } finally {
   [Array]::Clear($plain, 0, $plain.Length)

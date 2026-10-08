@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import crypto from 'node:crypto';
+import {readZipEntries} from './lib/zip-reader.mjs';
+import {readFoxProArchive} from './lib/foxpro-reader.mjs';
+import {buildLegacyPlan} from './lib/legacy-plan.mjs';
+import {buildHistoricalMedicationPlan} from './lib/legacy-medication-plan.mjs';
 
 const args = process.argv.slice(2);
 const value = flag => {
@@ -12,6 +17,7 @@ const backupPath = path.resolve(value('--backup') || '');
 const output = path.resolve(value('--output') || 'backup-restore-verification.json');
 const organizationId = value('--organization');
 const ownerId = value('--owner');
+const enrichmentSourceZip=value('--enrichment-source-zip');
 if (!fs.existsSync(backupPath)) throw new Error('BACKUP_NOT_FOUND');
 
 const migrations = [
@@ -36,6 +42,12 @@ const migrations = [
   'supabase/migrations/20261003010000_historical_migration_v2.sql',
   'supabase/migrations/20261003061842_patient_directory_performance.sql',
   'supabase/migrations/20261003074514_lazy_profile_assets.sql',
+  'supabase/migrations/20261003180559_deferred_directory_version_bump.sql',
+  'supabase/migrations/20261003183511_optimize_appointment_save.sql',
+  'supabase/migrations/20261003195000_controlled_revision_conflicts.sql',
+  'supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql',
+  'supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql',
+  'supabase/migrations/20261007052123_printable_daily_agenda.sql',
 ];
 
 const quote = input => `"${String(input).replaceAll('"', '""')}"`;
@@ -196,6 +208,30 @@ try {
   )).rows[0].value;
   await db.exec('reset role');
 
+  let enrichment=null;
+  if(enrichmentSourceZip){
+    const sourceBatch=value('--enrichment-batch'),sourceSha=value('--enrichment-backup-sha'),sourcePlanSha=value('--enrichment-plan-sha');
+    if(!sourceBatch||!sourceSha||!sourcePlanSha)throw Error('ENRICHMENT_SOURCE_ARGS_REQUIRED');
+    const fileSha=crypto.createHash('sha256').update(fs.readFileSync(enrichmentSourceZip)).digest('hex');
+    if(fileSha!==sourceSha)throw Error('ENRICHMENT_BACKUP_SHA_MISMATCH');
+    const source=buildLegacyPlan({tables:readFoxProArchive(readZipEntries(enrichmentSourceZip)),organizationId,sourceSystem:'foxpro-linkare',backupSha:sourceSha});
+    if(source.publicReport.planSha!==sourcePlanSha)throw Error('ENRICHMENT_PLAN_SHA_MISMATCH');
+    const plan=buildHistoricalMedicationPlan(source.records,{organizationId,batchId:sourceBatch});
+    const before=(await db.query("select count(*)::integer n from public.linkare_records where organization_id=$1 and kind='patient_clinical'",[organizationId])).rows[0].n;
+    await db.exec(fs.readFileSync('supabase/migrations/20261008170915_historical_medication_mentions.sql','utf8'));
+    await db.exec('set role service_role');
+    await db.query('select public.linkare_legacy_medication_start_v1($1,$2,$3,$4,$5,$6)',[organizationId,sourceBatch,sourceSha,sourcePlanSha,plan.summary.extractorVersion,plan.items.length]);
+    for(let offset=0;offset<plan.items.length;offset+=100){
+      await db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb)',[organizationId,sourceBatch,sourceSha,JSON.stringify(plan.items.slice(offset,offset+100))]);
+      if(offset%10000===0)process.stderr.write(`ISOLATED_ENRICHMENT_PROGRESS ${Math.min(offset+100,plan.items.length)}/${plan.items.length}\n`);
+    }
+    const verified=(await db.query('select public.linkare_legacy_medication_verify_v1($1,$2,$3) result',[organizationId,sourceBatch,sourceSha])).rows[0].result;
+    const after=(await db.query("select count(*)::integer n from public.linkare_records where organization_id=$1 and kind='patient_clinical'",[organizationId])).rows[0].n;
+    await db.exec('reset role');
+    if(!verified.ok||before!==after)throw Error('ISOLATED_ENRICHMENT_VERIFY_FAILED');
+    enrichment={status:'ISOLATED_ENRICHMENT_VERIFIED',candidateMentions:plan.items.length,sourceMemos:plan.summary.sourceMemos,unstructuredMemos:plan.summary.unstructuredMemos,modernClinicalRowsUnchanged:before===after,manifestSha:plan.summary.manifestSha};
+  }
+
   const report = {
     status: countMismatches.length === 0 && orphanMembers === 0
       && access.patients_view && access.clinical_view ? 'BACKUP_RESTORE_VERIFIED' : 'BACKUP_RESTORE_FAILED',
@@ -206,6 +242,7 @@ try {
     restoredRows: Object.values(restoredCounts).reduce((sum, count) => sum + count, 0),
     countMismatches,
     orphanMembers,
+    enrichment,
     target: {
       patients: Number(referential.patients),
       appointments: Number(referential.appointments),

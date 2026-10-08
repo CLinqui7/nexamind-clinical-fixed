@@ -32,18 +32,22 @@ $env:NODE_PATH = Join-Path $clientDir 'node_modules'
 
 $plainPath = Join-Path $resolvedDestination 'production-logical-backup.json'
 $encryptedPath = Join-Path $resolvedDestination 'production-logical-backup.dpapi'
-node scripts/backup-production-database.cjs $plainPath
-if ($LASTEXITCODE -ne 0) { throw 'Logical backup failed.' }
+try {
+  node scripts/backup-production-database.cjs $plainPath
+  if ($LASTEXITCODE -ne 0) { throw 'Logical backup failed.' }
 
-[byte[]]$plain = [System.IO.File]::ReadAllBytes($plainPath)
-$encrypted = [System.Security.Cryptography.ProtectedData]::Protect(
-  $plain,
-  $null,
-  [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-)
-[System.IO.File]::WriteAllBytes($encryptedPath, $encrypted)
-[Array]::Clear($plain, 0, $plain.Length)
-Remove-Item -LiteralPath $plainPath
+  [byte[]]$plain = [System.IO.File]::ReadAllBytes($plainPath)
+  $encrypted = [System.Security.Cryptography.ProtectedData]::Protect(
+    $plain,
+    $null,
+    [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+  )
+  [System.IO.File]::WriteAllBytes($encryptedPath, $encrypted)
+} finally {
+  if ($plain) { [Array]::Clear($plain, 0, $plain.Length) }
+  if ($encrypted) { [Array]::Clear($encrypted, 0, $encrypted.Length) }
+  if (Test-Path -LiteralPath $plainPath) { Remove-Item -LiteralPath $plainPath -Force }
+}
 
 $resolvedClient = [System.IO.Path]::GetFullPath($clientDir)
 if (-not $resolvedClient.StartsWith($resolvedDestination, [System.StringComparison]::OrdinalIgnoreCase)) {

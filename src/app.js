@@ -123,6 +123,8 @@ import {
   loadDashboardSummary,
   loadProfileAssets,
   loadLegacyPatientHistory,
+  loadHistoricalMedicationMentions,
+  loadHistoricalVisitSummary,
   createProductionAppointment,
   saveProductionState,
   setPersistenceBaseline, mergePersistenceBaseline, resetPersistence, readableError, onAuthChange, checkProductionAccess,
@@ -391,7 +393,7 @@ class App extends React.Component {
       agendaSheet:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},agendaSheetLoading:false,agendaSheetError:'',agendaNoteDrafts:{},agendaNoteBusyId:null,agendaPdfBusy:false,agendaPrintBusy:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
-      legacyHistoryByPatient:{},
+      legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalVisitsByPatient:{},
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},
       dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},profileAssetsLoaded:false,profileAssetsLoading:false,
       tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
@@ -416,7 +418,7 @@ class App extends React.Component {
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalVisitsByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
@@ -1073,7 +1075,27 @@ class App extends React.Component {
 
   selectPatientTab = (patient,key) => {
     this.setState({patientTab:key});
-    if(key==='legacy')this.loadPatientLegacyHistory(patient.id);
+    if(key==='legacy'){this.loadPatientLegacyHistory(patient.id);this.loadHistoricalVisitSummary(patient.id);}
+    if(key==='medications'&&patient.dataQuality==='historical'&&this.can('clinicalView'))this.loadHistoricalMedications(patient.id);
+  };
+
+  loadHistoricalMedications = async (patientId,append=false) => {
+    const current=this.state.historicalMedicationsByPatient[patientId];
+    if(current?.loading||(!append&&current?.loaded))return;
+    const cursor=append?current?.nextCursor||null:null,epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    this.setState(previous=>({historicalMedicationsByPatient:{...previous.historicalMedicationsByPatient,[patientId]:{...(previous.historicalMedicationsByPatient[patientId]||{}),loading:true,error:''}}}));
+    try{
+      const result=await loadHistoricalMedicationMentions(org,patientId,cursor,20);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      this.setState(previous=>{const before=previous.historicalMedicationsByPatient[patientId]||{};return {historicalMedicationsByPatient:{...previous.historicalMedicationsByPatient,[patientId]:{...result,items:append?[...(before.items||[]),...(result.items||[])]:result.items||[],loading:false,loaded:true,error:''}}};});
+    }catch(error){if(epoch===this.authEpoch)this.setState(previous=>({historicalMedicationsByPatient:{...previous.historicalMedicationsByPatient,[patientId]:{...(previous.historicalMedicationsByPatient[patientId]||{}),loading:false,error:readableError(error)}}}));}
+  };
+
+  loadHistoricalVisitSummary = async patientId => {
+    if(this.state.historicalVisitsByPatient[patientId]?.loaded)return;
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    try{const result=await loadHistoricalVisitSummary(org,patientId);if(epoch===this.authEpoch&&org===this.state.remoteOrganizationId)this.setState(previous=>({historicalVisitsByPatient:{...previous.historicalVisitsByPatient,[patientId]:{...result,loaded:true}}}));}
+    catch(_){/* Verbatim history remains available if this summary fails. */}
   };
 
   loadPatientLegacyHistory = async (patientId,append=false) => {
@@ -2622,6 +2644,7 @@ class App extends React.Component {
             return html`<article key=${medication.id} className=${`medication-card ${status!=='active'?'medication-inactive':''}`}><div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">${medication.class||'Medicamento informado'}</span><h3>${medication.name}</h3><p>${medication.indication||medication.reportedNotes||'Pendiente de valoración médica'}</p></div></div><div>${medication.isPrimary?html`<${Badge} tone="purple">Principal</${Badge}>`:null}<${Badge} tone=${status==='active'?'success':status==='pending_review'?'warning':'neutral'} dot=${true}>${labels[status]||status}</${Badge}></div></div><div className="medication-main-dose"><span>Dosis actual</span><strong>${medication.dose}</strong><small>${medication.frequency} · vía ${medication.route}</small></div>${medication.reportedNotes?html`<div className="notes-box"><span>Nota informada</span><p>${medication.reportedNotes}</p></div>`:null}${medication.clinicalNotes?html`<div className="notes-box"><span>Nota clínica</span><p>${medication.clinicalNotes}</p></div>`:null}<div className="medication-info-grid"><div><span>Inicio</span><b>${formatDate(medication.startDate)}</b></div><div><span>Días registrados</span><b>${daysBetween(medication.startDate)}</b></div><div><span>Uso según necesidad</span><b>${medication.isPrn?'Sí':'No'}</b></div><div><span>Eventos</span><b>${medication.events?.length||medication.doseHistory?.length||0}</b></div></div><div className="dose-history-mini"><span>Historial de dosis</span><div>${[...(medication.doseHistory||[])].sort((left,right)=>new Date(left.date)-new Date(right.date)).map((item,index)=>html`<div key=${item.id||`${item.date||'sin-fecha'}-${item.dose||'sin-dosis'}-${index}`}><time>${formatDate(item.date)}</time><b>${item.dose}</b><small>${item.reason}</small></div>`)}</div></div>${this.can('medicationsManage')?html`<div className="medication-actions" data-tour="medication-status"><${Button} tone="secondary" icon="edit" onClick=${()=>this.openMedication(patient,medication)}>Editar medicamento</${Button}>${status==='pending_review'?html`<${Button} tone="soft" icon="check" onClick=${()=>this.approveMedication(patient,medication)}>Revisar y activar</${Button}>`:status==='active'?html`<${Button} key="change-dose" tone="secondary" icon="edit" onClick=${()=>this.openDose(patient,medication.id)}>Cambiar dosis</${Button}><${Button} key="suspend" tone="soft" onClick=${()=>this.changeMedicationStatus(patient,medication,'suspended')}>Suspender</${Button}><${Button} key="discontinue" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}><${Button} key="complete" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'completed')}>Completar</${Button}>`:status==='suspended'?html`<${Button} key="reactivate" tone="secondary" icon="refresh" onClick=${()=>this.changeMedicationStatus(patient,medication,'active')}>Reactivar</${Button}><${Button} key="discontinue" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}>`:null}<button type="button" className="text-danger-button" onClick=${()=>this.openMedicationArchive(patient,medication)}><${Icon} name="trash" size=${16}/> Eliminar</button></div>`:null}</article>`;
           })}</div>` : html`<${EmptyState} icon="medication" title="Sin medicamentos registrados" text="Agregue el primer medicamento para comenzar el historial de tratamiento." action=${this.can('medicationsManage')?html`<${Button} icon="plus" onClick=${()=>this.openMedication(patient)}>Agregar medicamento</${Button}>`:null}/>`}
         </${Card}>
+        ${patient.dataQuality==='historical'&&this.can('clinicalView')?this.renderHistoricalMedicationMentions(patient):null}
         ${archivedMedications.length?html`<${Card} className="span-12" title="Medicamentos eliminados" subtitle="Se conservan para mantener íntegro el historial clínico."><div className="admin-appointment-list">${archivedMedications.map(medication=>html`<div key=${medication.id}><div><b>${medication.name}</b><small>${medication.dose||'Dosis no registrada'} · eliminado ${formatDateTime(medication.archivedAt)}</small><small>Motivo: ${medication.archiveReason||'No registrado'}</small></div><${Badge} tone="neutral">Eliminado</${Badge}></div>`)}</div></${Card}>`:null}
         <${Card} className="span-7" title="Cambio de dosis del medicamento principal" subtitle="Cada cambio conserva la dosis anterior, la fecha y el motivo."><${LineChart} series=${doseSeries}/></${Card}>
         <${Card} className="span-5" title="Cómo leer esta sección"><div className="glossary compact"><div><b>Dosis actual</b><p>La cantidad que el paciente tiene indicada en este momento.</p></div><div><b>Historial de dosis</b><p>Permite ver cuándo se inició, aumentó, redujo, pausó o finalizó un tratamiento.</p></div><div><b>Medicamento principal</b><p>Es el tratamiento que el dashboard usa como referencia visual principal. Puede haber otros medicamentos activos.</p></div></div></${Card}>
@@ -2700,8 +2723,21 @@ class App extends React.Component {
     return html`<${Card} tour="timeline-section" className="timeline-full" title="Historial completo" subtitle="Una sola secuencia con medicamentos, mediciones, laboratorios, efectos y citas." action=${html`<div className="segmented small timeline-filter">${filters.map(([key, label]) => html`<button key=${key} className=${this.state.timelineFilter === key ? 'active' : ''} onClick=${() => this.setState({ timelineFilter: key })}>${label}</button>`)}</div>`}><div className="timeline-list large">${filtered.length ? filtered.map((item, index) => html`<div key=${`${item.date}_${index}`} className="timeline-row"><time>${formatDate(item.date)}<small>${formatTime(item.date)}</small></time><span className=${`timeline-icon timeline-${item.type}`}><${Icon} name=${item.type === 'medication' ? 'medication' : item.type === 'assessment' ? 'analytics' : item.type === 'lab' ? 'file' : item.type === 'appointment' ? 'calendar' : item.type === 'document' ? 'prescription' : item.type === 'vital' ? 'activity' : 'alert'} size=${18}/></span><div><b>${item.title}</b><p>${item.detail}</p></div></div>`) : html`<${EmptyState} icon="file" title="Sin eventos en este filtro" text="Seleccione “Todo” para ver el historial completo."/>`}</div></${Card}>`;
   }
 
+  renderHistoricalMedicationMentions(patient){
+    const state=this.state.historicalMedicationsByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false};
+    return html`<${Card} className="span-12" title="Menciones de medicamentos en FoxPro" subtitle="Extraídas de anotaciones históricas; requieren revisión médica. No son tratamiento activo, receta ni dosis actual.">
+      ${state.error?html`<div className="sync-banner danger" role="alert">No se pudo cargar esta sección. <button onClick=${()=>this.loadHistoricalMedications(patient.id)}>Reintentar</button></div>`:null}
+      ${state.loading&&!state.items?.length?html`<p>Cargando menciones históricas…</p>`:null}
+      ${state.loaded&&!state.items?.length?html`<p>No se detectaron menciones estructurables. Revise las anotaciones originales en “Sistema anterior”.</p>`:null}
+      ${(state.items||[]).length?html`<div className="admin-appointment-list">${state.items.map(mention=>html`<div key=${mention.id}><div><b>${mention.name} · ${mention.strengthText}</b><small>${mention.occurredOn?formatDate(mention.occurredOn):'Fecha no registrada'} · fuente histórica</small>${mention.instructionText?html`<small>Instrucción anotada: ${mention.instructionText}</small>`:null}<small>Texto de origen: ${mention.sourceExcerpt}</small></div><${Badge} tone="warning">Sin verificar</${Badge}></div>`)}</div>`:null}
+      ${state.hasMore?html`<${Button} tone="secondary" disabled=${state.loading} onClick=${()=>this.loadHistoricalMedications(patient.id,true)}>${state.loading?'Cargando…':'Ver más menciones'}</${Button}>`:null}
+      <p className="clinical-footnote">Puede haber menciones no reconocidas o instrucciones ambiguas. Consulte siempre el texto original antes de incorporar un medicamento al tratamiento vigente.</p>
+    </${Card}>`;
+  }
+
   renderLegacyHistory(patient,administrativeOnly=false){
     const state=this.state.legacyHistoryByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false,total:0};
+    const visits=this.state.historicalVisitsByPatient[patient.id];
     const profile=patient.historicalProfile||{};
     const profileRows=[['Fecha de registro',profile.registeredOn],['Última actualización de origen',profile.sourceUpdatedOn],['Estado civil',profile.civilStatus],['Profesión',profile.profession],['Dirección histórica',profile.address],['Teléfono de casa',profile.homePhone],['Teléfono de oficina',profile.officePhone],['Celular',profile.mobilePhone],['Referido por',profile.referredBy],['Próxima fecha anotada',profile.nextAppointmentDate],['Cita descrita en origen',profile.scheduledAppointmentText]].filter(([,value])=>value);
     const renderPayload=entry=>{
@@ -2721,6 +2757,7 @@ class App extends React.Component {
     };
     return html`<section className="legacy-history-section" aria-label="Sistema anterior">
       <div className="legacy-history-notice"><${Icon} name="shield" size=${21}/><div><span className="eyebrow">Sistema anterior</span><h3>Historia FoxPro preservada</h3><p>Se muestra como evidencia histórica de solo lectura. Las fechas faltantes, el riesgo, la estabilidad y el estado de tratamientos permanecen sin inferir.</p></div><${Badge} tone="neutral">${state.loaded?`${state.total||0} registro(s)`:'Carga bajo demanda'}</${Badge}></div>
+      ${visits?.loaded?html`<${Card} title="Actividad de consulta en FoxPro" subtitle="Conteos de marcas y registros del sistema anterior; no equivalen a un total clínico de visitas confirmado."><dl className="legacy-profile-grid"><div><dt>Movimientos marcados como consulta</dt><dd>${visits.markedConsultations}</dd></div><div><dt>Último movimiento marcado como consulta</dt><dd>${visits.lastMarkedConsultationOn?formatDate(visits.lastMarkedConsultationOn):'No consta'}</dd></div><div><dt>Registros estadísticos</dt><dd>${visits.statisticsRows}</dd></div><div><dt>Movimientos totales</dt><dd>${visits.movementRows}</dd></div></dl></${Card}>`:null}
       ${profileRows.length?html`<${Card} title="Ficha administrativa histórica" subtitle=${profile.nameMissing?'El nombre no constaba en el origen; la ficha está marcada como incompleta.':'Campos conservados del registro de pacientes.'}><dl className="legacy-profile-grid">${profileRows.map(([label,value])=>html`<div key=${label}><dt>${label}</dt><dd>${String(value)}</dd></div>`)}</dl></${Card}>`:null}
       ${state.error?html`<div className="sync-banner danger" role="alert"><span>${state.error}</span><button onClick=${()=>this.loadPatientLegacyHistory(patient.id)}>Reintentar</button></div>`:null}
       ${state.loading&&!state.items?.length?html`<${EmptyState} icon="file" title="Cargando historia anterior" text="Consultando únicamente los registros de este paciente."/>`:null}
