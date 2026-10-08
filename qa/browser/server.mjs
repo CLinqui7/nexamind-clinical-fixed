@@ -13,6 +13,7 @@ await db.exec(fs.readFileSync(root+'/supabase/migrations/20261007052123_printabl
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261008174640_appointment_status_for_visible_calendars.sql','utf8'));
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261008180600_scoped_appointment_delete.sql','utf8'));
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql','utf8'));
+await db.exec(fs.readFileSync(root+'/supabase/migrations/20261008185940_agenda_previous_visit_date.sql','utf8'));
 await db.exec(`insert into auth.users values('10000000-0000-4000-8000-000000000001','owner@example.invalid',now(),'{"clinic_name":"QA Isolated","full_name":"QA Owner"}'),('10000000-0000-4000-8000-000000000002','other@example.invalid',now(),'{"clinic_name":"QA Other","full_name":"QA Other"}');`);
 await db.exec(`select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',false);select public.linkare_bootstrap_v3(null);`);
 for(const [name,role,id] of [['doctor','psychiatrist',3],['nurse','clinical_assistant',4],['secretary','secretary',5]]){
