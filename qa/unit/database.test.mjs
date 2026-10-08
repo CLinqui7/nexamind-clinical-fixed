@@ -25,6 +25,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261008180600_scoped_appointment_delete.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008185940_agenda_previous_visit_date.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008191908_historical_medication_summary.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -244,22 +245,25 @@ test('DB: historical migration is resumable, permission-scoped, reconciled and r
 
 test('DB: historical medication mentions stay source-linked, idempotent and invisible to Secretary',async()=>{
  const batch='61000000-0000-5000-8000-000000000010',patient='61000000-0000-5000-8000-000000000011',clinical='61000000-0000-5000-8000-000000000012',admin='61000000-0000-5000-8000-000000000013',mention='61000000-0000-5000-8000-000000000014';
- const backup='d'.repeat(64),plan='e'.repeat(64),memo='SyntheticMed 20 mg\nTomar una tableta por la noche.',sourceTextSha=nodeCrypto.createHash('sha256').update(memo).digest('hex');
+ const backup='d'.repeat(64),plan='e'.repeat(64),memo='SyntheticMed 20 mg\nTomar una tableta por la noche.\nsyntheticmed 40 mg\nTomar dos tabletas por la noche.',sourceTextSha=nodeCrypto.createHash('sha256').update(memo).digest('hex');
  const records=[{organizationId:org,sourceTable:'t_clientes',sourceRow:1,sourceKeyHash:'5'.repeat(64),sourceFingerprint:'6'.repeat(64),disposition:'import_patient',destinationKind:'patient_admin',destinationId:patient,payload:{id:patient,name:'Synthetic historical patient',dataQuality:'historical',notificationPreferences:{enabled:false}},historyEntries:[]},{organizationId:org,sourceTable:'t_mov_diarios',sourceRow:1,sourceKeyHash:'7'.repeat(64),sourceFingerprint:'8'.repeat(64),disposition:'import_history',destinationKind:'legacy_history',destinationId:admin,historyEntries:[{id:admin,patientId:patient,scope:'administrative',occurredOn:'2020-01-15',title:'Historical movement',payload:{passedConsultation:true}},{id:clinical,patientId:patient,scope:'clinical',occurredOn:'2020-01-15',title:'Historical note',payload:{text:memo,treatmentStatus:'unknown'}}]}];
  await db.exec('reset role;set role service_role');
  await db.query('select public.linkare_legacy_start_v2($1,$2,$3,$4,$5,$6,$7::jsonb)',[org,batch,'qa-foxpro',backup,plan,'f'.repeat(40),JSON.stringify({sourceRows:2,backupSha:backup,planSha:plan})]);
  await db.query('select public.linkare_legacy_apply_v2($1,$2,$3,$4::jsonb)',[org,batch,backup,JSON.stringify(records)]);
  assert.equal((await db.query('select public.linkare_legacy_verify_v2($1,$2,$3) data',[org,batch,backup])).rows[0].data.ok,true);
- await db.query('select public.linkare_legacy_medication_start_v1($1,$2,$3,$4,$5,$6)',[org,batch,backup,plan,'dose_heading_v1',1]);
+ await db.query('select public.linkare_legacy_medication_start_v1($1,$2,$3,$4,$5,$6)',[org,batch,backup,plan,'dose_heading_v1',2]);
  const item={organizationId:org,batchId:batch,id:mention,patientId:patient,historyId:clinical,sourceTextSha,sourceLine:1,name:'SyntheticMed',strengthText:'20 mg',instructionText:'Tomar una tableta por la noche.',sourceExcerpt:'SyntheticMed 20 mg',extractionMethod:'dose_heading_v1'};
- const apply=()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb) data',[org,batch,backup,JSON.stringify([item])]);
- assert.equal((await apply()).rows[0].data.accepted,1);assert.equal((await apply()).rows[0].data.accepted,0);
+ const second={...item,id:'61000000-0000-5000-8000-000000000016',sourceLine:3,name:'syntheticmed',strengthText:'40 mg',instructionText:'Tomar dos tabletas por la noche.',sourceExcerpt:'syntheticmed 40 mg'};
+ const apply=()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb) data',[org,batch,backup,JSON.stringify([item,second])]);
+ assert.equal((await apply()).rows[0].data.accepted,2);assert.equal((await apply()).rows[0].data.accepted,0);
  await assert.rejects(()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb)',[org,batch,backup,JSON.stringify([{...item,sourceTextSha:'0'.repeat(64),id:'61000000-0000-5000-8000-000000000015'}])]),/HISTORY_SOURCE_MISMATCH/);
  assert.equal((await db.query('select public.linkare_legacy_medication_verify_v1($1,$2,$3) data',[org,batch,backup])).rows[0].data.ok,true);
- await actor('owner');const page=(await db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20) data',[org,patient])).rows[0].data;assert.equal(page.items.length,1);assert.equal(page.items[0].reviewStatus,'unreviewed');
+ await actor('owner');const page=(await db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20) data',[org,patient])).rows[0].data;assert.equal(page.items.length,2);assert.equal(page.items[0].reviewStatus,'unreviewed');
+ const grouped=(await db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20) data',[org,patient])).rows[0].data;
+ assert.equal(grouped.items.length,1);assert.equal(grouped.items[0].mentionCount,2);assert.equal(grouped.items[0].strengthText,'40 mg');assert.equal(grouped.items[0].lastSeenOn,'2020-01-15');assert.equal(grouped.items[0].reviewStatus,'historical_unverified');assert.equal(grouped.hasMore,false);
  const summary=(await db.query('select public.linkare_legacy_visit_summary_v1($1,$2) data',[org,patient])).rows[0].data;assert.equal(summary.markedConsultations,1);assert.equal(summary.lastMarkedConsultationOn,'2020-01-15');
  assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0].n,0);
- await permissions('secretary',{patientsView:true,clinicalView:true});await denied(()=>db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20)',[org,patient]));
+ await permissions('secretary',{patientsView:true,clinicalView:true});await denied(()=>db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20)',[org,patient]));await denied(()=>db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20)',[org,patient]));
  assert.doesNotMatch(JSON.stringify((await db.query('select public.linkare_patient_detail_v1($1,$2) data',[org,patient])).rows[0].data),/SyntheticMed/);
  await actor('other');await denied(()=>db.query('select public.linkare_legacy_visit_summary_v1($1,$2)',[org,patient]));
 });

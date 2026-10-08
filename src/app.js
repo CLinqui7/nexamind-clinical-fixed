@@ -124,6 +124,7 @@ import {
   loadProfileAssets,
   loadLegacyPatientHistory,
   loadHistoricalMedicationMentions,
+  loadHistoricalMedicationSummary,
   loadHistoricalVisitSummary,
   createProductionAppointment,
   patchProductionAppointment,
@@ -397,7 +398,7 @@ class App extends React.Component {
       agendaSheet:{date:toDateInput(new Date()),timezone:'America/El_Salvador',items:[]},agendaSheetLoading:false,agendaSheetError:'',agendaNoteDrafts:{},agendaNoteBusyId:null,agendaPdfBusy:false,agendaPrintBusy:false,
       calendarDate:new Date(),calendarView:'month',appointmentFilter:'all',chartMode:'scales',timelineFilter:'all',toast:null,toastTone:'success',
       selectedCalendarIds:[],
-      legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalVisitsByPatient:{},
+      legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},
       dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},profileAssetsLoaded:false,profileAssetsLoading:false,
       tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
@@ -422,7 +423,7 @@ class App extends React.Component {
     this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
-      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalVisitsByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
+      selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
@@ -1067,7 +1068,10 @@ class App extends React.Component {
       const patient=normalizeData({patients:[result.patient]}).patients[0];const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,this.can(k)]));
       mergePersistenceBaseline({patients:[patient]},result.revisions,permissions);
       this.setState(previous=>({data:{...previous.data,patients:mergePatients(previous.data.patients.filter(item=>item.id!==patientId&&!item.__summaryOnly),[patient])},patientLoading:false}));
-      if(patient?.dataQuality==='historical'&&!this.can('clinicalView'))this.loadPatientLegacyHistory(patientId);
+      if(patient?.dataQuality==='historical'){
+        this.loadHistoricalVisitSummary(patientId);
+        if(!this.can('clinicalView'))this.loadPatientLegacyHistory(patientId);
+      }
     }catch(error){if(epoch===this.authEpoch){this.setState({patientLoading:false,view:'patients',selectedPatientId:null});this.notify(readableError(error),'danger');}}
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
   };
@@ -1080,7 +1084,22 @@ class App extends React.Component {
   selectPatientTab = (patient,key) => {
     this.setState({patientTab:key});
     if(key==='legacy'){this.loadPatientLegacyHistory(patient.id);this.loadHistoricalVisitSummary(patient.id);}
-    if(key==='medications'&&patient.dataQuality==='historical'&&this.can('clinicalView'))this.loadHistoricalMedications(patient.id);
+    if(key==='medications'&&patient.dataQuality==='historical'&&this.can('clinicalView')){
+      this.loadHistoricalMedicationGroups(patient.id);
+      this.loadHistoricalMedications(patient.id);
+    }
+  };
+
+  loadHistoricalMedicationGroups = async (patientId,append=false) => {
+    const current=this.state.historicalMedicationGroupsByPatient[patientId];
+    if(current?.loading||(!append&&current?.loaded)||append&&!current?.hasMore)return;
+    const cursor=append?current?.nextCursor||null:null,epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    this.setState(previous=>({historicalMedicationGroupsByPatient:{...previous.historicalMedicationGroupsByPatient,[patientId]:{...(previous.historicalMedicationGroupsByPatient[patientId]||{}),loading:true,error:''}}}));
+    try{
+      const result=await loadHistoricalMedicationSummary(org,patientId,cursor,20);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      this.setState(previous=>{const before=previous.historicalMedicationGroupsByPatient[patientId]||{};return {historicalMedicationGroupsByPatient:{...previous.historicalMedicationGroupsByPatient,[patientId]:{...result,items:append?[...(before.items||[]),...(result.items||[])]:result.items||[],loading:false,loaded:true,error:''}}};});
+    }catch(error){if(epoch===this.authEpoch)this.setState(previous=>({historicalMedicationGroupsByPatient:{...previous.historicalMedicationGroupsByPatient,[patientId]:{...(previous.historicalMedicationGroupsByPatient[patientId]||{}),loading:false,error:readableError(error)}}}));}
   };
 
   loadHistoricalMedications = async (patientId,append=false) => {
@@ -2641,6 +2660,7 @@ class App extends React.Component {
     if (this.state.patientLoading) return html`<${EmptyState} icon="clock" title="Cargando expediente" text="Solicitando únicamente el paciente seleccionado…"/>`;
     if (!patient) return html`<${EmptyState} icon="patients" title="Expediente no disponible" text="Vuelva al directorio e intente abrirlo de nuevo." action=${html`<${Button} onClick=${()=>this.setView('patients')}>Volver a pacientes</${Button}>`}/>`;
     if (!this.can('clinicalView')) return this.renderAdministrativePatient(patient);
+    const historicalVisits=this.state.historicalVisitsByPatient[patient.id];
     const summary = getAssessmentSummary(patient);
     const priority = getPatientPriority(patient, alerts);
     const patientAlerts = alerts.filter(item => item.patientId === patient.id && item.status === 'open');
@@ -2687,7 +2707,7 @@ class App extends React.Component {
 
       ${patient.vitalStatus === 'deceased' ? html`<section className="postmortem-banner"><span><${Icon} name="shield" size=${24}/></span><div><span className="eyebrow">Expediente en modo post mortem</span><h3>Paciente registrado como fallecido</h3><p>No se enviarán recordatorios ni se permitirán nuevas consultas. La manera de muerte se muestra únicamente como dato documentado, sin inferencias automáticas.</p><small>${patient.deathRecord?.dateOfDeath ? `Fecha registrada: ${formatDate(patient.deathRecord.dateOfDeath)} · ` : ''}${patient.deathRecord?.manner || 'Pendiente de confirmación'}</small></div>${this.can('postmortemExport') ? html`<${Button} tone="secondary" icon="print" onClick=${() => this.printPostmortemReport(patient)}>Generar paquete médico-legal</${Button}>` : null}</section>` : null}
 
-      ${patient.dataQuality==='historical' ? html`<section className="legacy-history-notice legacy-history-shortcut" aria-label="Acceso a datos históricos"><${Icon} name="file" size=${22}/><div><span className="eyebrow">Expediente migrado desde FoxPro</span><h3>Los datos de contacto y tratamientos históricos están conservados</h3><p>Abra “Sistema anterior” para ver teléfonos, dirección, profesión, movimientos y anotaciones tal como constaban en la fuente. Los textos terapéuticos no se activan como medicamentos sin confirmación clínica.</p></div><${Button} tone="secondary" icon="chevronRight" onClick=${()=>this.selectPatientTab(patient,'legacy')}>Abrir datos e historia de FoxPro</${Button}></section>` : null}
+      ${patient.dataQuality==='historical' ? html`<section className="legacy-history-notice legacy-history-shortcut" aria-label="Acceso a datos históricos"><${Icon} name="file" size=${22}/><div><span className="eyebrow">Expediente migrado desde FoxPro</span><h3>Los datos de contacto y medicamentos históricos están conservados</h3><p>En “Medicamentos” verá los nombres, concentraciones e indicaciones extraídos de las anotaciones. “Sistema anterior” conserva teléfonos, dirección, profesión y textos de origen. Ninguna mención se activa como tratamiento sin confirmación clínica.</p>${historicalVisits?.loaded?html`<p>Consultas marcadas en el origen: ${historicalVisits.markedConsultations}. Último movimiento marcado como consulta: ${historicalVisits.lastMarkedConsultationOn?formatDate(historicalVisits.lastMarkedConsultationOn):'no consta'}. Estas marcas no certifican el total de visitas.</p>`:null}</div><${Button} tone="secondary" icon="chevronRight" onClick=${()=>this.selectPatientTab(patient,'legacy')}>Abrir datos e historia de FoxPro</${Button}></section>` : null}
 
       <div className="patient-action-bar" data-tour="patient-actions" aria-label="Acciones rápidas del paciente">
         <div><b>Acciones frecuentes</b><small>Registre lo ocurrido durante o después de la consulta.</small></div>
@@ -2749,6 +2769,7 @@ class App extends React.Component {
             return html`<article key=${medication.id} className=${`medication-card ${status!=='active'?'medication-inactive':''}`}><div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">${medication.class||'Medicamento informado'}</span><h3>${medication.name}</h3><p>${medication.indication||medication.reportedNotes||'Pendiente de valoración médica'}</p></div></div><div>${medication.isPrimary?html`<${Badge} tone="purple">Principal</${Badge}>`:null}<${Badge} tone=${status==='active'?'success':status==='pending_review'?'warning':'neutral'} dot=${true}>${labels[status]||status}</${Badge}></div></div><div className="medication-main-dose"><span>Dosis actual</span><strong>${medication.dose}</strong><small>${medication.frequency} · vía ${medication.route}</small></div>${medication.reportedNotes?html`<div className="notes-box"><span>Nota informada</span><p>${medication.reportedNotes}</p></div>`:null}${medication.clinicalNotes?html`<div className="notes-box"><span>Nota clínica</span><p>${medication.clinicalNotes}</p></div>`:null}<div className="medication-info-grid"><div><span>Inicio</span><b>${formatDate(medication.startDate)}</b></div><div><span>Días registrados</span><b>${daysBetween(medication.startDate)}</b></div><div><span>Uso según necesidad</span><b>${medication.isPrn?'Sí':'No'}</b></div><div><span>Eventos</span><b>${medication.events?.length||medication.doseHistory?.length||0}</b></div></div><div className="dose-history-mini"><span>Historial de dosis</span><div>${[...(medication.doseHistory||[])].sort((left,right)=>new Date(left.date)-new Date(right.date)).map((item,index)=>html`<div key=${item.id||`${item.date||'sin-fecha'}-${item.dose||'sin-dosis'}-${index}`}><time>${formatDate(item.date)}</time><b>${item.dose}</b><small>${item.reason}</small></div>`)}</div></div>${this.can('medicationsManage')?html`<div className="medication-actions" data-tour="medication-status"><${Button} tone="secondary" icon="edit" onClick=${()=>this.openMedication(patient,medication)}>Editar medicamento</${Button}>${status==='pending_review'?html`<${Button} tone="soft" icon="check" onClick=${()=>this.approveMedication(patient,medication)}>Revisar y activar</${Button}>`:status==='active'?html`<${Button} key="change-dose" tone="secondary" icon="edit" onClick=${()=>this.openDose(patient,medication.id)}>Cambiar dosis</${Button}><${Button} key="suspend" tone="soft" onClick=${()=>this.changeMedicationStatus(patient,medication,'suspended')}>Suspender</${Button}><${Button} key="discontinue" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}><${Button} key="complete" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'completed')}>Completar</${Button}>`:status==='suspended'?html`<${Button} key="reactivate" tone="secondary" icon="refresh" onClick=${()=>this.changeMedicationStatus(patient,medication,'active')}>Reactivar</${Button}><${Button} key="discontinue" tone="secondary" onClick=${()=>this.changeMedicationStatus(patient,medication,'discontinued')}>Descontinuar</${Button}>`:null}<button type="button" className="text-danger-button" onClick=${()=>this.openMedicationArchive(patient,medication)}><${Icon} name="trash" size=${16}/> Eliminar</button></div>`:null}</article>`;
           })}</div>` : html`<${EmptyState} icon="medication" title="Sin medicamentos registrados" text="Agregue el primer medicamento para comenzar el historial de tratamiento." action=${this.can('medicationsManage')?html`<${Button} icon="plus" onClick=${()=>this.openMedication(patient)}>Agregar medicamento</${Button}>`:null}/>`}
         </${Card}>
+        ${patient.dataQuality==='historical'&&this.can('clinicalView')?this.renderHistoricalMedicationGroups(patient):null}
         ${patient.dataQuality==='historical'&&this.can('clinicalView')?this.renderHistoricalMedicationMentions(patient):null}
         ${archivedMedications.length?html`<${Card} className="span-12" title="Medicamentos eliminados" subtitle="Se conservan para mantener íntegro el historial clínico."><div className="admin-appointment-list">${archivedMedications.map(medication=>html`<div key=${medication.id}><div><b>${medication.name}</b><small>${medication.dose||'Dosis no registrada'} · eliminado ${formatDateTime(medication.archivedAt)}</small><small>Motivo: ${medication.archiveReason||'No registrado'}</small></div><${Badge} tone="neutral">Eliminado</${Badge}></div>`)}</div></${Card}>`:null}
         <${Card} className="span-7" title="Cambio de dosis del medicamento principal" subtitle="Cada cambio conserva la dosis anterior, la fecha y el motivo."><${LineChart} series=${doseSeries}/></${Card}>
@@ -2826,6 +2847,18 @@ class App extends React.Component {
     const filtered = this.state.timelineFilter === 'all' ? allEvents : allEvents.filter(item => item.type === filterMap[this.state.timelineFilter]);
     const filters = [['all', 'Todo'], ['medications', 'Medicamentos'], ['prescriptions','Recetas'], ['assessments', 'Escalas'], ['effects', 'Efectos'], ['vitals', 'Controles'], ['labs', 'Laboratorios'], ['documents', 'Documentos'], ['consultations', 'Consultas'], ['appointments', 'Citas']];
     return html`<${Card} tour="timeline-section" className="timeline-full" title="Historial completo" subtitle="Una sola secuencia con medicamentos, mediciones, laboratorios, efectos y citas." action=${html`<div className="segmented small timeline-filter">${filters.map(([key, label]) => html`<button key=${key} className=${this.state.timelineFilter === key ? 'active' : ''} onClick=${() => this.setState({ timelineFilter: key })}>${label}</button>`)}</div>`}><div className="timeline-list large">${filtered.length ? filtered.map((item, index) => html`<div key=${`${item.date}_${index}`} className="timeline-row"><time>${formatDate(item.date)}<small>${formatTime(item.date)}</small></time><span className=${`timeline-icon timeline-${item.type}`}><${Icon} name=${item.type === 'medication' ? 'medication' : item.type === 'assessment' ? 'analytics' : item.type === 'lab' ? 'file' : item.type === 'appointment' ? 'calendar' : item.type === 'document' ? 'prescription' : item.type === 'vital' ? 'activity' : 'alert'} size=${18}/></span><div><b>${item.title}</b><p>${item.detail}</p></div></div>`) : html`<${EmptyState} icon="file" title="Sin eventos en este filtro" text="Seleccione “Todo” para ver el historial completo."/>`}</div></${Card}>`;
+  }
+
+  renderHistoricalMedicationGroups(patient){
+    const state=this.state.historicalMedicationGroupsByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false};
+    return html`<${Card} className="span-12" title="Medicamentos históricos importados" subtitle="Agrupados por nombre registrado en FoxPro. La concentración y la indicación corresponden a la última mención fechada disponible, no a una dosis o tratamiento vigente.">
+      ${state.error?html`<div className="sync-banner danger" role="alert">No se pudo cargar el resumen histórico. <button onClick=${()=>this.loadHistoricalMedicationGroups(patient.id)}>Reintentar</button></div>`:null}
+      ${state.loading&&!state.items?.length?html`<p>Cargando medicamentos históricos…</p>`:null}
+      ${state.loaded&&!state.items?.length?html`<p>Sin nombres de medicamentos identificables en las anotaciones. Revise el texto original en “Sistema anterior”.</p>`:null}
+      ${(state.items||[]).length?html`<div className="medication-list">${state.items.map(item=>html`<article key=${item.nameKey} className="medication-card medication-inactive"><div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">Sistema anterior · ${item.mentionCount} mención(es)</span><h3>${item.name}</h3><p>${item.strengthText||'Concentración no registrada'}</p></div></div><${Badge} tone="warning">Histórico sin verificar</${Badge}></div><div className="medication-info-grid"><div><span>Primera fecha conservada</span><b>${item.firstSeenOn?formatDate(item.firstSeenOn):'No consta'}</b></div><div><span>Última fecha conservada</span><b>${item.lastSeenOn?formatDate(item.lastSeenOn):'No consta'}</b></div></div>${item.instructionText?html`<div className="notes-box"><span>Indicación anotada en origen</span><p>${item.instructionText}</p></div>`:null}<div className="notes-box"><span>Texto de origen</span><p>${item.sourceExcerpt}</p></div></article>`)}</div>`:null}
+      ${state.hasMore?html`<${Button} tone="secondary" disabled=${state.loading} onClick=${()=>this.loadHistoricalMedicationGroups(patient.id,true)}>${state.loading?'Cargando…':'Ver más medicamentos históricos'}</${Button}>`:null}
+      <p className="clinical-footnote">La agrupación no identifica equivalencias entre marcas y genéricos, ni confirma uso actual. La historia completa permanece en las anotaciones originales.</p>
+    </${Card}>`;
   }
 
   renderHistoricalMedicationMentions(patient){
@@ -3670,7 +3703,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
     this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
       formSaving:false,modal:null,appointmentDetails:null,appointmentStatusBusyId:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
-      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
+      teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
 
   flushChanges = async () => {

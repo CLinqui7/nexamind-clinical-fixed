@@ -15,6 +15,8 @@ La importación original ya preservó 5,347 pacientes y 140,202 entradas de hist
 ## Seguridad y rendimiento
 
 - `legacy_medication_mentions_v1` vive en `linkare_private`; la lectura pasa por un RPC con `clinicalView`, paginado a 20. Secretaría no recibe el contenido.
+- `linkare_legacy_medication_summary_v1` agrupa por nombre exacto normalizado (minúsculas y espacios), únicamente dentro del paciente y consultorio autorizados. Devuelve 20 grupos por página con conteo, primeras/últimas fechas conservadas y última concentración e indicación anotadas. No mezcla automáticamente marcas con genéricos ni identifica uso actual. Cada grupo muestra un extracto; todas las menciones y el texto original siguen disponibles por separado.
+- La pestaña «Medicamentos» consulta el resumen y las menciones solo al abrir el expediente histórico; al cerrar sesión se eliminan ambas cachés de la memoria del cliente. El resumen de visitas aparece en la cabecera del expediente, siempre rotulado como marcas del origen y no como un total médico confirmado.
 - La identidad de cada mención deriva de lote, anotación y línea; la carga valida organización, lote completo, hash del memo y plan. Repetir lotes de aplicación no crea duplicados.
 - `legacy_visit_summary_v1` consulta únicamente la historia administrativa indexada por organización y paciente, no toda la clínica. El expediente solicita datos históricos bajo demanda.
 - La carga se fracciona y se pausa entre lotes para limitar CPU. No se reactiva la importación FoxPro original ni la escritura masiva de proyecciones del directorio.
@@ -29,3 +31,9 @@ La importación original ya preservó 5,347 pacientes y 140,202 entradas de hist
 6. Ejecutar `-Mode verify`, comprobar `actual=expected`, permisos médico/Secretaría y apertura de expedientes recientes y antiguos en producción.
 
 Los reportes de respaldo, restauración y carga se guardan fuera de Git. Nunca subir ZIP, memo, credenciales ni pacientes como fixtures.
+
+## Reanudación para visualización integrada, 8 de octubre de 2026
+
+La fuente y el lote original ya estaban cargados antes de esta continuación: 5,347 pacientes, 140,202 entradas de historia y 63,911 menciones estructuradas de medicamentos procedentes de 25,823 memorandos, repartidas entre 2,475 pacientes. Por ello **no se vuelve a ejecutar la importación** ni se escriben tratamientos o recetas modernos. La migración `20261008191908_historical_medication_summary.sql` añade solo una lectura privada y paginada; el frontend muestra los medicamentos históricos agrupados en la misma pestaña «Medicamentos», sin dejar de mostrar cada mención y el texto FoxPro original. Las fechas, visitas y contactos se presentan como datos de origen, sin inventar correos ni fechas actuales.
+
+Las pruebas de base verifican agrupación, idempotencia, permisos de propietario/Secretaría y ausencia de tratamiento activo; el navegador aislado comprueba que el expediente y la sección sobreviven una recarga. No usar pacientes productivos como fixtures ni convertir la concentración histórica en dosis actual.
