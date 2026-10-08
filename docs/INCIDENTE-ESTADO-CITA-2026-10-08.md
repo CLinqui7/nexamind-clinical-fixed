@@ -18,3 +18,7 @@ En el consultorio Fortín Magaña se verificó antes del cambio que la cuenta pr
 - Pruebas de base aislada: propietario y Secretaría autorizada pueden cambiar; Secretaría de solo lectura y otra organización no pueden. Se comprueban revisión, auditoría y preservación del resto de la cita.
 - Prueba Playwright con PostgreSQL aislado: abrir detalle, cambiar el mes para retirar la cita de la lista y confirmar; el cambio persiste.
 - Recuperación del backend, si fuera necesaria: revocar `EXECUTE` a `authenticated` y retirar la función nueva. El frontend anterior continúa usando `linkare_save_changes_v3`; ningún registro existente se reescribe por instalar la función.
+
+## Despliegue
+
+El primer despliegue de esta rama fue bloqueado por Vercel antes de compilar: el commit estaba atribuido a `20235929@esen.edu.sv`, correo sin acceso al equipo. La identidad de Git para los siguientes commits de esta rama se corrigió a `linquicarloss@gmail.com`. El orden de publicación es: commit y push a GitHub, despliegue de prueba con `--skip-domain`, verificación y, por último, promoción al dominio productivo.
