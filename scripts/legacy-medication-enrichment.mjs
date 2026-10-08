@@ -37,6 +37,7 @@ if(mode==='apply'){
 // no connection string, key or patient text is written to the report or Git.
 const client=new pg.Client({ssl:{rejectUnauthorized:false},connectionTimeoutMillis:10000,query_timeout:30000});
 await client.connect();
+await client.query('set role postgres');
 try{
  const call=async(sql,params)=>{
   const result=await client.query(sql,params);return result.rows[0]?.result;
