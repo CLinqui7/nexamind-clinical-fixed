@@ -43,7 +43,9 @@ try{
   assert.equal(await dialog.count(),1);
   await dialog.getByRole('button',{name:'Confirmado',exact:true}).click();
   await dialog.getByText('Confirmada',{exact:true}).first().waitFor();
-  assert.ok(calls.includes('linkare_set_appointment_status_v1'));
+  await dialog.getByRole('button',{name:'Por revisar',exact:true}).click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('.status-actions button')].some(button=>button.classList.contains('active')&&button.textContent?.trim()==='Por revisar'));
+  assert.ok(calls.includes('linkare_patch_appointment_v1'));
   assert.equal(errors.length,0,errors.join('\n'));
   const saved=await page.evaluate(async org=>{
     const response=await fetch('/__qa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:'10000000-0000-4000-8000-000000000001',name:'linkare_load_state_v3',args:{org}})});
@@ -51,6 +53,7 @@ try{
     return result.data.payload.appointments.find(item=>item.id==='status-appointment-browser-qa');
   },seeded);
   assert.equal(saved.status,'confirmed');
+  assert.equal(saved.adminReviewStatus,'pending');
   assert.equal(saved.title,'Paciente Estado QA');
-  console.log(JSON.stringify({passed:4,checks:['stale appointment detail remains open after month refresh','status uses one targeted RPC','confirmed state persists in isolated PostgreSQL','patient and appointment details are preserved'],scope:'Playwright + isolated PostgreSQL; synthetic data only'},null,2));
+  console.log(JSON.stringify({passed:5,checks:['stale appointment detail remains open after month refresh','status uses one targeted conflict-safe RPC','administrative review saves without the visible month','confirmed state persists in isolated PostgreSQL','patient and appointment details are preserved'],scope:'Playwright + isolated PostgreSQL; synthetic data only'},null,2));
 }finally{await browser.close();}

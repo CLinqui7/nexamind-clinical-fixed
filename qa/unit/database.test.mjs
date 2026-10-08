@@ -21,6 +21,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261007052123_printable_daily_agenda.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008174640_appointment_status_for_visible_calendars.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008180600_scoped_appointment_delete.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -452,4 +453,54 @@ test('DB: scoped appointment deletion is recoverable, revision-safe and permissi
  assert.equal((await db.query("select revision from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,patientId])).rows[0].revision,patientBefore);
  await actor('other');await denied(()=>remove(org,1));
  await actor('owner');await assert.rejects(()=>remove(otherOrg,1),error=>error.code==='P0002'||error.code==='42501');
+});
+
+test('DB: simultaneous appointment edits merge separate fields and require a choice for the same field',async()=>{
+ await actor('owner');
+ const id='concurrent-appointment-qa';
+ await save([{kind:'appointment',id,expectedRevision:0,payload:{id,calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Synthetic QA',start:'2099-03-10T14:00:00Z',end:'2099-03-10T14:45:00Z',type:'Seguimiento',modality:'Presencial',status:'pending',adminReviewStatus:'none',reminderLog:[{id:'existing'}]}}]);
+ const patch=async(base,changes,revision=1,targetOrg=org)=>(await db.query('select public.linkare_patch_appointment_v1($1,$2,$3,$4::jsonb,$5::jsonb) data',[targetOrg,id,revision,JSON.stringify(base),JSON.stringify(changes)])).rows[0].data;
+ const initial=(await load()).payload.appointments.find(item=>item.id===id);
+ assert.equal((await db.query("select has_function_privilege('anon','public.linkare_patch_appointment_v1(uuid,text,bigint,jsonb,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorEdit:true});
+ const first=await patch({type:'Seguimiento'},{type:'Prioritaria'});
+ assert.equal(first.appointment.type,'Prioritaria');assert.equal(first.appointment.__revision,2);
+ await actor('owner');
+ const merged=await patch({start:initial.start,end:initial.end},{start:'2099-03-10T15:00:00Z',end:'2099-03-10T15:45:00Z'});
+ assert.equal(merged.merged,true);assert.equal(merged.appointment.type,'Prioritaria');assert.equal(merged.appointment.start,'2099-03-10T15:00:00Z');
+ assert.deepEqual(merged.appointment.reminderLog,[{id:'existing'}]);
+ const status=await patch({status:'pending'},{status:'confirmed'},3);assert.equal(status.appointment.__revision,4);assert.equal(status.appointment.confirmedBy,ids.owner);
+ await actor('secretary');
+ const conflict=await patch({status:'pending'},{status:'completed'},3);
+ assert.equal(conflict.code,'FIELD_CONFLICT');assert.deepEqual(conflict.fields,['status']);assert.equal(conflict.current.status,'confirmed');
+ const resolved=await patch({status:'confirmed'},{status:'completed'},4);
+ assert.equal(resolved.appointment.status,'completed');assert.equal(resolved.appointment.type,'Prioritaria');
+ await denied(()=>patch({notes:''},{notes:'private'},5));
+ await actor('other');await denied(()=>patch({status:'completed'},{status:'pending'},5));
+ await actor('owner');
+ const note=await patch({notes:''},{notes:'Private note A'},5);assert.equal(note.appointment.notes,'Private note A');
+ const noteConflict=await patch({notes:''},{notes:'Private note B'},5);assert.equal(noteConflict.code,'FIELD_CONFLICT');assert.deepEqual(noteConflict.fields,['notes']);
+ assert.equal((await load()).payload.appointments.find(item=>item.id===id).notes,'Private note A');
+ await permissions('secretary',{patientsView:true,calendarDoctorView:true,calendarDoctorCancel:true});
+ const cancelled=await patch({status:'completed'},{status:'cancelled'},5);
+ assert.equal(cancelled.appointment.status,'cancelled');assert.equal(cancelled.appointment.cancelledBy,ids.secretary);
+ await denied(()=>patch({type:'Prioritaria'},{type:'Seguimiento'},6));
+});
+
+test('DB: concurrent patient reassignment blocks stale notes or status from attaching to another patient',async()=>{
+ await actor('owner');
+ const id='identity-guard-appointment-qa';
+ await save([
+  {kind:'patient_admin',id:'identity-guard-patient-qa',expectedRevision:0,payload:{name:'Other synthetic patient'}},
+  {kind:'appointment',id,expectedRevision:0,payload:{id,calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',title:'Original synthetic patient',start:'2099-04-10T14:00:00Z',end:'2099-04-10T14:45:00Z',status:'pending'}},
+ ]);
+ const patch=async(base,changes,revision=1)=>(await db.query('select public.linkare_patch_appointment_v1($1,$2,$3,$4::jsonb,$5::jsonb) data',[org,id,revision,JSON.stringify(base),JSON.stringify(changes)])).rows[0].data;
+ const moved=await patch({patientId:'patient',title:'Original synthetic patient'},{patientId:'identity-guard-patient-qa',title:'Other synthetic patient'});
+ assert.equal(moved.saved,true);
+ const stale=await patch({patientId:'patient',status:'pending'},{status:'confirmed'});
+ assert.equal(stale.code,'FIELD_CONFLICT');assert.deepEqual(stale.fields,['patientId']);
+ const note=await patch({patientId:'patient',notes:''},{notes:'Do not misattribute'});
+ assert.equal(note.code,'FIELD_CONFLICT');assert.deepEqual(note.fields,['patientId']);
+ const row=(await load()).payload.appointments.find(item=>item.id===id);
+ assert.equal(row.patientId,'identity-guard-patient-qa');assert.equal(row.status,'pending');assert.equal(row.notes||'','');
 });

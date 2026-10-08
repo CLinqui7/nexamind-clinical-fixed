@@ -124,7 +124,7 @@ import {
   loadProfileAssets,
   loadLegacyPatientHistory,
   createProductionAppointment,
-  setProductionAppointmentStatus,
+  patchProductionAppointment,
   deleteProductionAppointment,
   forgetAppointmentPersistenceBaseline,
   saveProductionState,
@@ -132,6 +132,7 @@ import {
   requestPasswordReset, resendConfirmation, setAccountPassword, changeAccountPassword,
 } from './services/appState.js';
 import {directoryPatient,mergePatients,directoryRange,PatientPageCache,PAGE_LIMIT} from './domain/patient-directory.js';
+import {appointmentEditPatch,appointmentConflictGroups,appointmentConflictLabels,rebaseAppointmentDraft} from './domain/appointment-concurrency.js';
 import {
   CONFIDENTIALITY_LEVELS,
   DEATH_MANNER_OPTIONS,
@@ -1094,7 +1095,7 @@ class App extends React.Component {
   closeModal = () => {if(!this.state.formSaving&&!this.state.documentBusy)this.setState({ modal: null, modalError: '' });};
 
   updateDraft = (key, value) => {
-    this.setState(prev => ({ modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, [key]: value } } : null, modalError: '' }));
+    this.setState(prev => prev.formSaving&&prev.modal?.type==='appointment'?null:({ modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, [key]: value } } : null, modalError: '' }));
   };
 
   updateClinicPhone = (phoneId, key, value) => {
@@ -1737,7 +1738,7 @@ class App extends React.Component {
   openEditAppointment = appointment => {
     if (!this.canCalendar(appointment.calendarId,'Edit')) return this.permissionDenied();
     const selected=this.state.data.patients.find(patient=>patient.id===appointment.patientId)||appointment.patientSummary;
-    this.setState({ appointmentDetails: null, modal: { type: 'appointment', draft: appointmentFormDefaults(this.state.data, new Date(appointment.start), appointment) }, modalError: '',patientLookup:{query:selected?patientDisplayName(selected):'',items:selected?[selected]:[],loading:false} });
+    this.setState({ appointmentDetails: null, modal: { type: 'appointment', original: {...appointment}, draft: appointmentFormDefaults(this.state.data, new Date(appointment.start), appointment) }, modalError: '',patientLookup:{query:selected?patientDisplayName(selected):'',items:selected?[selected]:[],loading:false} });
   };
 
   changeAppointmentPatientSearch = query => {
@@ -1977,19 +1978,50 @@ class App extends React.Component {
     event.preventDefault();
     if(this.state.formSaving)return;
     try {
-      const draft=this.state.modal.draft;const previous=draft.id?this.state.data.appointments.find(item=>item.id===draft.id):null;
+      const modal=this.state.modal;
+      const draft=modal.draft;
+      const previous=draft.id?(modal.original||this.state.data.appointments.find(item=>item.id===draft.id)):null;
+      if(draft.id&&!previous)throw new Error('No se encontró la cita original. Cierre y vuelva a abrir el evento.');
       if(this.state.tourSandbox&&(draft.patientId!==this.tourDemoPatientId||new Date(draft.start)<=new Date()))throw new Error('Use el paciente demo y una fecha futura para esta práctica.');
       if(!previous&&!this.canCalendar(draft.calendarId,'Create'))return this.permissionDenied();
       if(previous&&(!this.canCalendar(previous.calendarId,'Edit')||(previous.calendarId!==draft.calendarId&&!this.canCalendar(draft.calendarId,'Create'))))return this.permissionDenied();
       if(previous&&draft.status==='cancelled'&&previous.status!=='cancelled'&&!this.canCalendar(previous.calendarId,'Cancel'))return this.permissionDenied();
-      const selectedLookup=this.state.patientLookup.items.find(item=>item.id===draft.patientId);
-      const saveData=selectedLookup&&!this.state.data.patients.some(item=>item.id===draft.patientId)
-        ? {...this.state.data,patients:mergePatients(this.state.data.patients,[selectedLookup])}
-        : this.state.data;
+      const selectedLookup=this.state.patientLookup.items.find(item=>item.id===draft.patientId)
+        || (previous?.patientId===draft.patientId&&draft.patientId?{id:draft.patientId,name:previous.title,__summaryOnly:true}:null);
+      const patients=selectedLookup&&!this.state.data.patients.some(item=>item.id===draft.patientId)
+        ? mergePatients(this.state.data.patients,[selectedLookup]) : this.state.data.patients;
+      const appointments=previous&&!this.state.data.appointments.some(item=>item.id===draft.id)
+        ? [...this.state.data.appointments,previous] : this.state.data.appointments;
+      const saveData={...this.state.data,patients,appointments};
       const result = saveAppointment(saveData, draft);
       if(this.state.tourSandbox)this.tourDemoAppointmentId=result.appointment.id;
-      if(previous||this.state.tourSandbox){
+      if(this.state.tourSandbox){
         await this.persistDataUpdate({ data: result.data, modal: null, modalError: '', appointmentDetails: result.appointment }, previous ? 'Evento actualizado.' : 'Evento creado correctamente.');
+        return;
+      }
+      if(previous){
+        if(['dirty','saving'].includes(this.state.remoteSaveStatus))await this.flushChanges();
+        const epoch=this.authEpoch,organizationId=this.state.remoteOrganizationId;
+        const patch=appointmentEditPatch(previous,result.appointment,{canEditNotes:this.can('clinicalEdit')&&this.can('appointmentsManage')});
+        this.setState({formSaving:true,remoteSaveStatus:'saving',modalError:'',saveError:''});
+        const response=await patchProductionAppointment(organizationId,previous.id,Number(previous.__revision),patch.base,patch.changes);
+        if(epoch!==this.authEpoch||!this.mounted)return;
+        if(response.conflict){
+          this.setState(current=>({formSaving:false,remoteSaveStatus:'saved',modalError:'',
+            modal:current.modal?.type==='appointment'?{...current.modal,conflict:{...response,changedFields:Object.keys(patch.changes)}}:current.modal}));
+          return;
+        }
+        const saved=response.appointment;
+        mergeAppointmentPersistenceBaseline(organizationId,saved);
+        const savedPatient=saveData.patients.find(item=>item.id===saved.patientId);
+        const nextData={...this.state.data,
+          patients:savedPatient?mergePatients(this.state.data.patients,[savedPatient]):this.state.data.patients,
+          appointments:this.state.data.appointments.map(item=>item.id===saved.id?{...item,...saved}:item)};
+        this.persistedData=nextData;this.directoryCache?.clear();
+        this.setState({data:nextData,modal:null,modalError:'',appointmentDetails:saved,formSaving:false,remoteSaveStatus:'saved'},()=>{
+          this.notify(response.merged?'Cambios compatibles combinados y guardados.':'Evento actualizado.');
+          this.refreshDashboardSummary();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
+        });
         return;
       }
       if(['dirty','saving'].includes(this.state.remoteSaveStatus))await this.flushChanges();
@@ -2134,17 +2166,17 @@ class App extends React.Component {
     }
   };
 
-  updateAppointmentStatus = async (appointmentId, status) => {
+  updateAppointmentField = async (appointmentId, field, value) => {
     if(this.state.appointmentStatusBusyId||this.state.formSaving)return;
     const appointment=this.state.appointmentDetails?.id===appointmentId
       ? this.state.appointmentDetails
       : this.state.data.appointments.find(item=>item.id===appointmentId);
     if(!appointment)return this.notify('No se encontró la cita. Actualice la agenda y vuelva a intentarlo.','danger');
-    if(!this.canCalendar(appointment.calendarId,status==='cancelled'?'Cancel':'Edit'))return this.permissionDenied();
-    if(appointment.status===status)return;
+    if(!this.canCalendar(appointment.calendarId,field==='status'&&value==='cancelled'?'Cancel':'Edit'))return this.permissionDenied();
+    if((appointment[field]||(field==='adminReviewStatus'?'none':'pending'))===value)return;
     if(this.state.tourSandbox){
-      const data=changeAppointmentStatus(this.state.data,appointmentId,status);
-      this.setState({data,appointmentDetails:{...appointment,status}},()=>this.notify('Práctica: cambio visible solo aquí; no se guardó en el servidor.'));
+      const data=field==='status'?changeAppointmentStatus(this.state.data,appointmentId,value):changeAppointmentReviewStatus(this.state.data,appointmentId,value);
+      this.setState({data,appointmentDetails:{...appointment,[field]:value}},()=>this.notify('Práctica: cambio visible solo aquí; no se guardó en el servidor.'));
       return;
     }
     const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
@@ -2152,21 +2184,40 @@ class App extends React.Component {
     this.setState({appointmentStatusBusyId:appointmentId,remoteSaveStatus:'saving',saveError:''});
     try{
       if(needsFlush)await this.flushChanges();
-      const saved=await setProductionAppointmentStatus(org,appointmentId,status);
+      const response=await patchProductionAppointment(org,appointmentId,Number(appointment.__revision),{
+        calendarId:appointment.calendarId??null,eventType:appointment.eventType??null,
+        patientId:appointment.patientId??null,[field]:appointment[field]??null,
+      },{[field]:value});
       if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      const saved=response.conflict?response.current:response.appointment;
       mergeAppointmentPersistenceBaseline(org,saved);
       this.setState(previous=>({
         data:{...previous.data,appointments:previous.data.appointments.map(item=>item.id===appointmentId?{...item,...saved}:item)},
         appointmentDetails:previous.appointmentDetails?.id===appointmentId?{...previous.appointmentDetails,...saved}:previous.appointmentDetails,
         remoteSaveStatus:'saved',
       }),()=>{
-        this.notify(`Cita marcada como ${statusLabel(status).toLowerCase()}.`);
+        this.notify(response.conflict?'Otra persona cambió este dato. Ya ve el valor actual; púlselo de nuevo si aún desea modificarlo.':field==='status'?`Cita marcada como ${statusLabel(value).toLowerCase()}.`:value==='reviewed'?'Cita marcada como revisada.':'Revisión administrativa actualizada.',response.conflict?'warning':'success');
         this.refreshDashboardSummary();
         if(this.state.view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
       });
     }catch(error){
-      if(epoch===this.authEpoch)this.setState({remoteSaveStatus:'error',saveError:readableError(error)},()=>this.notify(`No se cambió el estado: ${readableError(error)}`,'danger'));
+      if(epoch===this.authEpoch)this.setState({remoteSaveStatus:'error',saveError:readableError(error)},()=>this.notify(`No se cambió la cita: ${readableError(error)}`,'danger'));
     }finally{if(epoch===this.authEpoch)this.setState({appointmentStatusBusyId:null});}
+  };
+
+  updateAppointmentStatus = (appointmentId,status) => this.updateAppointmentField(appointmentId,'status',status);
+
+  resolveAppointmentConflict = keepMine => {
+    const modal=this.state.modal;
+    if(modal?.type!=='appointment'||!modal.conflict||this.state.formSaving)return;
+    const {current,fields,changedFields}=modal.conflict;
+    const draft=rebaseAppointmentDraft(modal.draft,current,changedFields,fields,keepMine);
+    const patient=this.state.data.patients.find(item=>item.id===draft.patientId)
+      || this.state.patientLookup.items.find(item=>item.id===draft.patientId);
+    this.setState({modal:{...modal,original:current,draft,conflict:null},modalError:'',
+      patientLookup:{...this.state.patientLookup,query:patient?patientDisplayName(patient):current.title||''}},()=>{
+      this.notify(keepMine?'Revise su elección y pulse Guardar cambios.':'Se conservaron los demás cambios de su borrador. Pulse Guardar cambios.');
+    });
   };
 
   saveMedicationArchive = async event => {
@@ -2214,12 +2265,7 @@ class App extends React.Component {
     finally { if (resource === 'patient') this.patientArchiveInFlight = false; }
   };
 
-  updateAppointmentReview = (appointmentId, adminReviewStatus) => {
-    const appointment=this.state.data.appointments.find(item=>item.id===appointmentId);
-    if (!appointment||!this.canCalendar(appointment.calendarId,'Edit')) return this.permissionDenied();
-    const next=changeAppointmentReviewStatus(this.state.data,appointmentId,adminReviewStatus);
-    this.persistDataUpdate({data:next,appointmentDetails:this.state.appointmentDetails?.id===appointmentId?{...this.state.appointmentDetails,adminReviewStatus}:this.state.appointmentDetails},adminReviewStatus==='reviewed'?'Cita marcada como revisada.':'Cita marcada por revisar.');
-  };
+  updateAppointmentReview = (appointmentId,adminReviewStatus) => this.updateAppointmentField(appointmentId,'adminReviewStatus',adminReviewStatus);
 
   deleteAppointment = async appointmentId => {
     if(this.state.formSaving||this.state.appointmentStatusBusyId)return;
@@ -3329,6 +3375,15 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
     return html`<${Modal} title=${draft.id ? 'Editar evento' : 'Nuevo evento'} subtitle="El calendario y el tipo de evento son obligatorios." onClose=${this.closeModal} size="lg">
       <form className="clinical-form" onSubmit=${this.saveAppointmentForm}>
         ${this.renderModalError()}
+        ${this.state.modal.conflict ? html`<div className="appointment-conflict" role="alert">
+          <b>Otra persona editó este evento al mismo tiempo</b>
+          <p>Los cambios en campos distintos se combinan automáticamente. En ${appointmentConflictGroups(this.state.modal.conflict.fields).map(field=>appointmentConflictLabels[field]||field).join(', ')} ambas personas eligieron valores diferentes. Su borrador sigue aquí; elija qué valor conservar para esos campos.</p>
+          <div className="appointment-conflict-actions">
+            <button type="button" onClick=${()=>this.resolveAppointmentConflict(false)}>Usar cambio reciente</button>
+            <button type="button" onClick=${()=>this.resolveAppointmentConflict(true)}>Conservar mi cambio</button>
+          </div>
+          <small>Después de elegir, revise el formulario y pulse Guardar cambios. No se sobrescribirá nada sin esa acción.</small>
+        </div>` : null}
         <fieldset className="calendar-choice-fieldset">
           <legend>${draft.id ? 'Calendario del evento' : '¿En qué calendario quiere guardar este evento?'}</legend>
           <p className="calendar-choice-hint">Elija una opción. Linkare no seleccionará un calendario por usted.</p>
@@ -3407,9 +3462,9 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
             <${FormField} label="Estado"><select value=${draft.status} onChange=${event => this.updateDraft('status', event.target.value)}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option><option value="completed">Completado</option><option value="cancelled">Cancelado</option><option value="no_show">No se realizó</option></select></${FormField}>
           </div>
           ${!general ? html`<${FormField} label="Revisión administrativa"><select value=${draft.adminReviewStatus || 'none'} onChange=${event => this.updateDraft('adminReviewStatus', event.target.value)}><option value="none">Sin marca</option><option value="pending">Por revisar</option><option value="reviewed">Revisada</option></select></${FormField}>` : null}
-          ${!general && this.can('clinicalView') ? html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>` : null}
+          ${!general && this.can('clinicalView') ? html`<${FormField} label="Notas de preparación clínica"><textarea rows="4" value=${draft.notes} readOnly=${!this.can('clinicalEdit')} onChange=${event => this.updateDraft('notes', event.target.value)} placeholder="Ej. revisar escala, adherencia, efectos y controles"></textarea></${FormField}>` : null}
         </div>
-        <${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear evento'}/>
+        <${FormActions} disabled=${this.state.formSaving||Boolean(this.state.modal.conflict)} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar cambios' : 'Crear evento'}/>
       </form>
     </${Modal}>`;
   }

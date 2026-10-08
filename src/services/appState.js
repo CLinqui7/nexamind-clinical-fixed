@@ -87,6 +87,9 @@ export function mergeAppointmentPersistenceBaseline(organizationId,appointment){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
   if(!appointment?.id || !Number.isInteger(Number(appointment.__revision)))throw new Error('Falta la revisión de la cita guardada.');
   writer.mergeRecord({kind:'appointment',id:appointment.id,payload:pick(appointment,APPOINTMENT_KEYS)},Number(appointment.__revision));
+  if(Number.isInteger(Number(appointment.__notesRevision))&&Number(appointment.__notesRevision)>0){
+    writer.mergeRecord({kind:'appointment_clinical',id:appointment.id,payload:{notes:appointment.notes||''}},Number(appointment.__notesRevision));
+  }
 }
 export function resetPersistence(){activeOrganization=null;writer.reset();}
 export function saveProductionState(organizationId,payload){
@@ -107,6 +110,16 @@ export function createProductionAppointment(organizationId,appointment,{includeC
 export function setProductionAppointmentStatus(organizationId,appointmentId,status){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
   return serializeClinicalWrite(organizationId,()=>rpc('linkare_set_appointment_status_v1',{org:organizationId,p_appointment_id:appointmentId,p_status:status}));
+}
+export async function patchProductionAppointment(organizationId,appointmentId,expectedRevision,base,changes){
+  if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
+  if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error('Falta la revisión de la cita. Actualice la agenda.');
+  const result=await serializeClinicalWrite(organizationId,()=>rpc('linkare_patch_appointment_v1',{
+    org:organizationId,p_appointment_id:appointmentId,p_expected_revision:expectedRevision,p_base:base,p_changes:changes,
+  }));
+  if(result?.conflict&&result.code==='FIELD_CONFLICT'&&Array.isArray(result.fields)&&result.current)return result;
+  if(result?.saved!==true||result.appointment?.id!==appointmentId)throw new Error('No se confirmó la actualización de la cita.');
+  return result;
 }
 export async function deleteProductionAppointment(organizationId,appointmentId,expectedRevision){
   if(!organizationId || organizationId!==activeOrganization)throw new Error('La sesión de guardado no coincide con el consultorio.');
