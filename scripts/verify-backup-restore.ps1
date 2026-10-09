@@ -6,7 +6,9 @@ param(
   [string]$EnrichmentSourceZip,
   [string]$EnrichmentBatch,
   [string]$EnrichmentBackupSha,
-  [string]$EnrichmentPlanSha
+  [string]$EnrichmentPlanSha,
+  [string]$EnrichmentSourceSystem,
+  [int]$EnrichmentCohortSize
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +27,8 @@ try {
   $verifyArgs = @('scripts/verify-backup-restore.mjs','--backup',$plainPath,'--output',$Output,'--organization',$Organization,'--owner',$Owner)
   if ($EnrichmentSourceZip) {
     $verifyArgs += @('--enrichment-source-zip',$EnrichmentSourceZip,'--enrichment-batch',$EnrichmentBatch,'--enrichment-backup-sha',$EnrichmentBackupSha,'--enrichment-plan-sha',$EnrichmentPlanSha)
+    if ($EnrichmentSourceSystem) { $verifyArgs += @('--enrichment-source-system',$EnrichmentSourceSystem) }
+    if ($EnrichmentCohortSize) { $verifyArgs += @('--enrichment-cohort-size',[string]$EnrichmentCohortSize) }
   }
   node @verifyArgs
   if ($LASTEXITCODE -ne 0) { throw 'Backup restore verification failed.' }

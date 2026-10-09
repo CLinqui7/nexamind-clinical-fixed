@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import {readZipEntries} from './lib/zip-reader.mjs';
 import {readFoxProArchive} from './lib/foxpro-reader.mjs';
 import {buildLegacyPlan} from './lib/legacy-plan.mjs';
+import {buildLegacyCohort} from './lib/legacy-cohort.mjs';
 import {buildHistoricalMedicationPlan} from './lib/legacy-medication-plan.mjs';
 
 const args = process.argv.slice(2);
@@ -48,6 +49,12 @@ const migrations = [
   'supabase/migrations/20261003200901_optimize_rls_and_rpc_surface.sql',
   'supabase/migrations/20261005205302_patient_consultation_fee_permissions.sql',
   'supabase/migrations/20261007052123_printable_daily_agenda.sql',
+  'supabase/migrations/20261008170915_historical_medication_mentions.sql',
+  'supabase/migrations/20261008191908_historical_medication_summary.sql',
+  'supabase/migrations/20261008174640_appointment_status_for_visible_calendars.sql',
+  'supabase/migrations/20261008180600_scoped_appointment_delete.sql',
+  'supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql',
+  'supabase/migrations/20261008185940_agenda_previous_visit_date.sql',
 ];
 
 const quote = input => `"${String(input).replaceAll('"', '""')}"`;
@@ -179,6 +186,9 @@ try {
     )).rows[0].count);
   }
   await db.exec('set session_replication_role=origin');
+  // Identity values were inserted explicitly during restore; future writes in
+  // the isolated rehearsal must continue after the highest restored audit ID.
+  await db.query("select setval(pg_get_serial_sequence('public.linkare_audit_v3','id'),coalesce((select max(id) from public.linkare_audit_v3),0)+1,false)");
 
   const countMismatches = Object.entries(backup.tables)
     .filter(([key, rows]) => restoredCounts[key] !== rows.length)
@@ -214,11 +224,27 @@ try {
     if(!sourceBatch||!sourceSha||!sourcePlanSha)throw Error('ENRICHMENT_SOURCE_ARGS_REQUIRED');
     const fileSha=crypto.createHash('sha256').update(fs.readFileSync(enrichmentSourceZip)).digest('hex');
     if(fileSha!==sourceSha)throw Error('ENRICHMENT_BACKUP_SHA_MISMATCH');
-    const source=buildLegacyPlan({tables:readFoxProArchive(readZipEntries(enrichmentSourceZip)),organizationId,sourceSystem:'foxpro-linkare',backupSha:sourceSha});
+    const sourceSystem=value('--enrichment-source-system')||'foxpro-linkare';
+    const cohortSize=value('--enrichment-cohort-size')===null?null:Number(value('--enrichment-cohort-size'));
+    if(cohortSize!==null&&(!Number.isSafeInteger(cohortSize)||cohortSize<1||cohortSize>500||sourceSystem!=='foxpro-linkare-pilot50'))throw Error('ENRICHMENT_COHORT_ARGS_INVALID');
+    const fullSource=buildLegacyPlan({tables:readFoxProArchive(readZipEntries(enrichmentSourceZip)),organizationId,sourceSystem,backupSha:sourceSha});
+    const source=cohortSize===null?fullSource:buildLegacyCohort(fullSource,cohortSize);
     if(source.publicReport.planSha!==sourcePlanSha)throw Error('ENRICHMENT_PLAN_SHA_MISMATCH');
-    const plan=buildHistoricalMedicationPlan(source.records,{organizationId,batchId:sourceBatch});
+    const plan=buildHistoricalMedicationPlan(source.records,{organizationId,sourceSystem,batchId:sourceBatch});
     const before=(await db.query("select count(*)::integer n from public.linkare_records where organization_id=$1 and kind='patient_clinical'",[organizationId])).rows[0].n;
-    await db.exec(fs.readFileSync('supabase/migrations/20261008170915_historical_medication_mentions.sql','utf8'));
+    const sourceBatchExists=(await db.query('select exists(select 1 from linkare_private.legacy_migration_batches_v2 where batch_id=$1) present',[sourceBatch])).rows[0].present;
+    if(!sourceBatchExists){
+      await db.exec('set role service_role');
+      await db.query('select public.linkare_legacy_start_v2($1,$2,$3,$4,$5,$6,$7::jsonb)',
+        [organizationId,sourceBatch,sourceSystem,sourceSha,sourcePlanSha,backup.gitCommit,JSON.stringify(source.publicReport)]);
+      for(let offset=0;offset<source.records.length;offset+=100){
+        await db.query('select public.linkare_legacy_apply_v2($1,$2,$3,$4::jsonb)',
+          [organizationId,sourceBatch,sourceSha,JSON.stringify(source.records.slice(offset,offset+100))]);
+      }
+      const imported=(await db.query('select public.linkare_legacy_verify_v2($1,$2,$3) result',[organizationId,sourceBatch,sourceSha])).rows[0].result;
+      await db.exec('reset role');
+      if(!imported.ok||imported.patients!==source.publicReport.destination.patients)throw Error('ISOLATED_COHORT_IMPORT_FAILED');
+    }
     await db.exec('set role service_role');
     await db.query('select public.linkare_legacy_medication_start_v1($1,$2,$3,$4,$5,$6)',[organizationId,sourceBatch,sourceSha,sourcePlanSha,plan.summary.extractorVersion,plan.items.length]);
     for(let offset=0;offset<plan.items.length;offset+=100){

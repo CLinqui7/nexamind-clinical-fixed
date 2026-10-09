@@ -15,7 +15,15 @@ $clientDir = Join-Path $resolvedDestination 'pg-client'
 New-Item -ItemType Directory -Force -Path $clientDir | Out-Null
 npm install --prefix $clientDir pg@8.16.3 --no-audit --no-fund | Out-Null
 
-$dumpDryRun = npx --yes supabase@2.115.0 db dump --linked --dry-run 2>&1 | Out-String
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  $dumpDryRun = npx --yes supabase@2.115.0 db dump --linked --dry-run 2>&1 | Out-String
+  $dumpExitCode = $LASTEXITCODE
+} finally {
+  $ErrorActionPreference = $previousErrorActionPreference
+}
+if ($dumpExitCode -ne 0) { throw 'Unable to obtain temporary database connection.' }
 function Read-TemporaryConnectionValue([string]$Name) {
   $match = [regex]::Match($dumpDryRun, "(?m)^export $Name=(.+)$")
   if (-not $match.Success) { throw "Missing $Name in the temporary database connection." }
