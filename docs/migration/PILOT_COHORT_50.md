@@ -25,3 +25,14 @@ Esta herramienta copia una cohorte clínica **real** solo cuando el dueño autor
 9. Probar en navegador búsqueda, apertura, historia y medicamentos de un caso reciente y otro antiguo. No usar nombres ni capturas con datos clínicos en GitHub o reportes públicos.
 
 El rollback automatizado solo es seguro mientras no existan cambios modernos dependientes ni se haya enriquecido; antes de intentarlo, verificar las referencias de medicamentos y el fingerprint. Conservar el respaldo cifrado y usar recuperación selectiva si los pacientes piloto fueron editados.
+
+## Resultado del piloto autorizado (2026-10-08)
+
+- Destino verificado: `f5cf65b6-284d-4454-9285-4035b90f7db7`, propiedad del usuario `2145feac-5306-494a-bb06-cd1d227d162f`. La copia real a sus tres miembros activos fue autorizada en el chat antes de escribir.
+- Lote: `8319278d-16f4-41d7-ae54-5b90330548a6`; plan SHA-256: `d8059306fe140fe327645bddf2568f2bb62084f98a5591e204b279381ac73cbb`.
+- Respaldo lógico actual restaurado en PostgreSQL aislado: 42 tablas, 325,529 filas, cero diferencias de recuento. En esa restauración también se ensayó la cohorte completa y su enriquecimiento de medicamentos.
+- Aplicación conciliada: 50 fichas, 2,513 filas de origen, 3,711 entradas históricas, cero huérfanos, cero citas/avisos/tratamientos activos creados.
+- Medicamentos: 2,771 menciones históricas no verificadas de 1,230 textos fuente; 304 textos no permitieron extracción estructurada y siguen íntegros en la historia. Ninguna mención se activó como tratamiento actual.
+- Antes/después: 13 pacientes del destino pasaron a 63. Se compararon por fingerprint los 5,564 registros preexistentes de ambos consultorios: cero modificados, cero faltantes, cero colisiones con el piloto.
+- Permisos: la cuenta propietaria pudo leer las menciones clínicas; la secretaria activa no pudo consultarlas.
+- Las capturas de navegador y los informes detallados permanecen privados fuera de GitHub; no se publican datos de pacientes reales.
