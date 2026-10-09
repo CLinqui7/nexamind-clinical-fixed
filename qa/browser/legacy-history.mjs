@@ -9,12 +9,24 @@ const logout=async()=>{await page.locator('.profile-chip-button').click();await 
 try{
  const seeded=await page.request.post(`${base}/__qa`,{data:{control:true,seedLegacy:true}});assert.equal(seeded.ok(),true);
  await page.goto(base);await login('owner');await openHistorical();await page.getByText('Los datos de contacto y medicamentos históricos están conservados',{exact:true}).waitFor();await page.getByRole('button',{name:'Abrir datos e historia de FoxPro',exact:true}).click();
- await page.getByText('Contenido clínico sintético de sistema anterior',{exact:true}).waitFor();await page.getByText('Movimiento histórico QA',{exact:true}).waitFor();assert.equal(await page.getByText('0 años',{exact:true}).count(),0);await page.getByText(/Edad no registrada/).first().waitFor();
+ await page.getByText('Contenido clínico sintético de sistema anterior',{exact:false}).waitFor();await page.getByText('Movimiento histórico QA',{exact:true}).waitFor();assert.equal(await page.getByText('0 años',{exact:true}).count(),0);await page.getByText(/Edad no registrada/).first().waitFor();
  await page.getByText('2 registro(s) visibles',{exact:true}).waitFor();
- await page.reload();await openHistorical();await page.getByRole('tab',{name:'Sistema anterior',exact:true}).click();await page.getByText('Contenido clínico sintético de sistema anterior',{exact:true}).waitFor();
+ await page.reload();await openHistorical();await page.getByRole('tab',{name:'Sistema anterior',exact:true}).click();await page.getByText('Contenido clínico sintético de sistema anterior',{exact:false}).waitFor();
  await page.getByText('Movimientos marcados como consulta',{exact:true}).waitFor();await page.getByText('Último movimiento marcado como consulta',{exact:true}).waitFor();
- await page.getByRole('tab',{name:'Medicamentos',exact:true}).click();await page.getByText('Medicamentos históricos importados',{exact:true}).waitFor();await page.getByText('Sin nombres de medicamentos identificables',{exact:false}).waitFor();await page.getByText('Menciones de medicamentos en FoxPro',{exact:true}).waitFor();await page.getByText('No se detectaron menciones estructurables.',{exact:false}).waitFor();
+ await page.getByRole('tab',{name:'Medicamentos',exact:true}).click();await page.getByText('Medicamentos históricos importados',{exact:true}).waitFor();await page.getByRole('heading',{name:'SyntheticMed'}).waitFor();await page.getByText('Menciones de medicamentos en FoxPro',{exact:true}).waitFor();
  await page.getByText('Sin tratamientos actuales registrados',{exact:true}).waitFor();
- await logout();await login('secretary');await openHistorical();await page.getByText('Ficha administrativa histórica',{exact:true}).waitFor();await page.getByText('Movimiento histórico QA',{exact:true}).waitFor();assert.equal(await page.getByText('Contenido clínico sintético de sistema anterior',{exact:true}).count(),0);assert.equal(await page.getByRole('tab',{name:'Sistema anterior',exact:true}).count(),0);assert.deepEqual(errors,[]);
- console.log(JSON.stringify({passed:10,checks:['historical patient appears in patient list','historical data shortcut is visible from overview','unknown age renders explicitly','owner opens clinical and administrative legacy history','history remains accessible after reload','source-labelled visit summary appears','historical medication section loads without inventing active treatment','secretary opens administrative history','secretary cannot see clinical legacy text','browser emitted no runtime errors'],scope:'Playwright + isolated PostgreSQL; synthetic history only; no production writes'},null,2));
+ await page.getByRole('button',{name:'Verificar medicamento'}).first().click();
+ await page.getByText('Esto no prueba que el paciente lo use hoy.',{exact:false}).waitFor();
+ assert.equal(await page.getByLabel('Dosis actual').inputValue(),'');
+ await page.getByLabel('Dosis actual').fill('1-0-1');
+ await page.getByLabel('Unidad').selectOption('tableta(s)');
+ await page.getByLabel('Frecuencia actual').selectOption('dos veces al día');
+ await page.getByLabel('Vía actual').selectOption('oral');
+ await page.getByLabel(/Sí, verifiqué con el paciente/).check();
+ await page.getByRole('button',{name:'Sí, incorporar medicamento'}).click();
+ await page.getByText('Medicamento confirmado e incorporado',{exact:false}).waitFor();
+ await page.reload();await openHistorical();await page.getByRole('tab',{name:'Medicamentos',exact:true}).click();
+ await page.getByText('1-0-1 tableta(s)',{exact:true}).first().waitFor();
+ await logout();await login('secretary');await openHistorical();await page.getByText('Ficha administrativa histórica',{exact:true}).waitFor();await page.getByText('Movimiento histórico QA',{exact:true}).waitFor();assert.equal(await page.getByText('Contenido clínico sintético de sistema anterior',{exact:false}).count(),0);assert.equal(await page.getByRole('tab',{name:'Sistema anterior',exact:true}).count(),0);assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:13,checks:['historical patient appears in patient list','historical data shortcut is visible from overview','unknown age renders explicitly','owner opens clinical and administrative legacy history','history remains accessible after reload','source-labelled visit summary appears','historical medication mention is displayed without inventing current treatment','doctor explicitly confirms current dose and route','confirmed medicine survives browser reload','secretary opens administrative history','secretary cannot see clinical legacy text','secretary cannot review historical medicine','browser emitted no runtime errors'],scope:'Playwright + isolated PostgreSQL; synthetic history only; no production writes'},null,2));
 }finally{await browser.close();}

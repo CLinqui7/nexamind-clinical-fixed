@@ -172,6 +172,9 @@ export function loadHistoricalMedicationMentions(organizationId,patientId,cursor
 export function loadHistoricalMedicationSummary(organizationId,patientId,cursor=null,limit=20){
   return rpc('linkare_legacy_medication_summary_v1',{org:organizationId,p_patient_id:patientId,p_cursor:cursor,p_limit:Math.min(20,limit)});
 }
+export function reviewHistoricalMedication(organizationId,patientId,mentionId,decision,medication=null){
+  return rpc('linkare_review_legacy_medication_v1',{p_org:organizationId,p_patient_id:patientId,p_mention_id:mentionId,p_decision:decision,p_medication:medication});
+}
 export function loadHistoricalVisitSummary(organizationId,patientId){
   return rpc('linkare_legacy_visit_summary_v1',{org:organizationId,p_patient_id:patientId});
 }

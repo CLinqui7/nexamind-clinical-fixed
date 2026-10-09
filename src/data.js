@@ -81,6 +81,7 @@ function firstDoseFromTimeline(patient) {
 }
 
 function normalizeMedication(medication, patient, index = 0) {
+  const verifiedLegacy = medication?.source === 'foxpro_verified';
   const parsed = parseDose(medication?.dose || `${medication?.doseValue ?? ''} ${medication?.doseUnit ?? 'mg'}`);
   const initial = firstDoseFromTimeline(patient);
   const currentDose = medication?.dose || (parsed.value !== null ? `${parsed.value} ${parsed.unit}` : 'Dosis no registrada');
@@ -88,7 +89,7 @@ function normalizeMedication(medication, patient, index = 0) {
     ? medication.doseHistory
     : [
         ...(initial ? [{ id: `dh_${patient.id}_${index}_0`, date: initial.date, doseValue: initial.value, doseUnit: initial.unit, dose: `${initial.value} ${initial.unit}`, reason: initial.reason }] : []),
-        { id: `dh_${patient.id}_${index}_1`, date: medication?.startDate || patient.lastVisit || new Date().toISOString(), doseValue: parsed.value, doseUnit: parsed.unit, dose: currentDose, reason: 'Dosis actual registrada' },
+        { id: `dh_${patient.id}_${index}_1`, date: verifiedLegacy ? (medication?.reviewedAt || null) : (medication?.startDate || patient.lastVisit || new Date().toISOString()), doseValue: parsed.value, doseUnit: parsed.unit, dose: currentDose, reason: verifiedLegacy ? 'Dosis confirmada en revisión histórica' : 'Dosis actual registrada' },
       ].filter((item, position, array) => position === 0 || item.dose !== array[position - 1].dose);
 
   return {
@@ -103,7 +104,7 @@ function normalizeMedication(medication, patient, index = 0) {
     customFrequency: medication?.customFrequency || '',
     route: medication?.route || 'oral',
     indication: medication?.indication || patient.diagnosis || 'Sin indicación registrada',
-    startDate: medication?.startDate || patient.lastVisit || new Date().toISOString(),
+    startDate: verifiedLegacy ? (medication?.startDate || null) : (medication?.startDate || patient.lastVisit || new Date().toISOString()),
     endDate: medication?.endDate || null,
     status: ({held:'suspended',stopped:'discontinued'})[medication?.status] || medication?.status || 'active',
     isPrimary: medication?.isPrimary ?? index === 0,
@@ -113,6 +114,9 @@ function normalizeMedication(medication, patient, index = 0) {
     internalNotes: medication?.internalNotes || '',
     reportedNotes: medication?.reportedNotes || '',
     source: medication?.source || 'clinical',
+    sourceMentionId: medication?.sourceMentionId || null,
+    sourceHistoryId: medication?.sourceHistoryId || null,
+    sourceBatchId: medication?.sourceBatchId || null,
     createdBy: medication?.createdBy || null,
     createdAt: medication?.createdAt || null,
     reviewedBy: medication?.reviewedBy || null,

@@ -134,9 +134,9 @@ export function patientEditFormDefaults(patient) {
 export function medicationFormDefaults(patient, medication = null) {
   const customFrequency = medication && !FREQUENCIES.includes(medication.frequency) ? medication.frequency : medication?.customFrequency || '';
   return {
-    id: medication?.id || '', patientId: patient?.id || '', name: medication?.name || '', class: medication?.class || 'ISRS', indication: medication?.indication || patient?.diagnosis || '',
+    id: medication?.id || '', patientId: patient?.id || '', source: medication?.source || '', name: medication?.name || '', class: medication?.class || 'ISRS', indication: medication?.indication || patient?.diagnosis || '',
     doseValue: medication?.doseValue ?? '', doseUnit: medication?.doseUnit || 'mg', frequency: customFrequency ? 'otra' : medication?.frequency || 'una vez al día', route: medication?.route || 'oral',
-    customFrequency, frequencySlots: medication?.frequencySlots || [], startDate: String(medication?.startDate || new Date().toISOString()).slice(0, 10), isPrimary: medication?.isPrimary ?? true, isPrn: medication?.isPrn ?? false, notes: medication?.clinicalNotes || medication?.notes || '',
+    customFrequency, frequencySlots: medication?.frequencySlots || [], startDate: medication?.source==='foxpro_verified' && !medication?.startDate ? '' : String(medication?.startDate || new Date().toISOString()).slice(0, 10), isPrimary: medication?.isPrimary ?? true, isPrn: medication?.isPrn ?? false, notes: medication?.clinicalNotes || medication?.notes || '',
   };
 }
 
@@ -561,7 +561,7 @@ export function updateMedication(data, patientId, draft) {
     frequencySlots: frequencySlotsFor(draft.frequency, draft.customFrequency),
     customFrequency: draft.frequency === 'otra' ? cleanText(draft.customFrequency) : '',
     route: draft.route || 'oral',
-    startDate: clinicalDateIso(draft.startDate),
+    startDate: previous.source==='foxpro_verified' && !draft.startDate ? null : clinicalDateIso(draft.startDate),
     isPrimary: Boolean(draft.isPrimary),
     isPrn: Boolean(draft.isPrn),
     notes: cleanText(draft.notes),

@@ -26,6 +26,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261008182418_merge_concurrent_appointment_edits.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008185940_agenda_previous_visit_date.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008191908_historical_medication_summary.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261009054502_historical_medication_clinician_review.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -266,6 +267,54 @@ test('DB: historical medication mentions stay source-linked, idempotent and invi
  await permissions('secretary',{patientsView:true,clinicalView:true});await denied(()=>db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20)',[org,patient]));await denied(()=>db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20)',[org,patient]));
  assert.doesNotMatch(JSON.stringify((await db.query('select public.linkare_patient_detail_v1($1,$2) data',[org,patient])).rows[0].data),/SyntheticMed/);
  await actor('other');await denied(()=>db.query('select public.linkare_legacy_visit_summary_v1($1,$2)',[org,patient]));
+});
+
+test('DB: doctor review adds only a confirmed source-linked medication and preserves existing treatment',async()=>{
+ const patient='61000000-0000-5000-8000-000000000011';
+ const mention='61000000-0000-5000-8000-000000000014';
+ const second='61000000-0000-5000-8000-000000000016';
+ const existing={id:'modern_medication',name:'Modern treatment',dose:'5 mg',status:'active',startDate:'2026-09-01',isPrimary:true};
+ await db.exec('reset role');
+ await db.query("insert into public.linkare_records(organization_id,kind,id,payload,revision,deleted,updated_by) values($1,'patient_clinical',$2,$3::jsonb,1,false,$4)",[org,patient,JSON.stringify({medications:[existing],notes:[{id:'modern_note',text:'Preserve this'}]}),ids.owner]);
+ const existingStored=(await db.query("select payload->'medications'->0 medicine from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0].medicine;
+ const review=(id,decision,data,o=org,p=patient)=>db.query('select public.linkare_review_legacy_medication_v1($1,$2,$3,$4,$5::jsonb) data',[o,p,id,decision,JSON.stringify(data)]);
+ const confirmed={confirmedCurrent:true,name:'SyntheticMed',doseValue:'1-0-1',doseUnit:'tableta(s)',frequency:'dos veces al día',route:'oral',indication:'Confirmed QA',startDate:'',reviewNote:'Patient confirmed current use'};
+ await permissions('secretary',{patientsView:true,clinicalView:true,medicationsManage:true});
+ await denied(()=>review(mention,'activate',confirmed));
+ await permissions('nurse',{patientsView:true,clinicalView:true,medicationsManage:true});
+ await denied(()=>review(mention,'activate',confirmed));
+ await actor('owner');
+ await assert.rejects(()=>review(mention,'activate',{...confirmed,confirmedCurrent:false}),/CURRENT_USE_CONFIRMATION_REQUIRED/);
+ await assert.rejects(()=>review(mention,'activate',{...confirmed,doseValue:''}),/INVALID_CONFIRMED_MEDICATION/);
+ await assert.rejects(()=>review(mention,'activate',{...confirmed,startDate:'2027-01-01'}),/INVALID_START_DATE/);
+ await assert.rejects(()=>review(mention,'activate',{...confirmed,name:'Modern treatment'}),/MEDICATION_ALREADY_PRESENT/);
+ await db.exec('reset role');
+ assert.equal((await db.query('select count(*)::int n from linkare_private.legacy_medication_mentions_v1 where organization_id=$1 and patient_id=$2 and review_status<>\'unreviewed\'',[org,patient])).rows[0].n,0);
+ await actor('owner');
+ const result=(await review(mention,'activate',confirmed)).rows[0].data;
+ assert.equal(result.ok,true);assert.equal(result.reviewStatus,'confirmed_current');
+ assert.equal((await review(mention,'activate',confirmed)).rows[0].data.duplicate,true);
+ const record=(await db.query("select payload,revision from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0];
+ assert.equal(record.revision,2);assert.deepEqual(record.payload.notes,[{id:'modern_note',text:'Preserve this'}]);
+ assert.deepEqual(record.payload.medications[0],existingStored);
+ const added=record.payload.medications[1];
+ assert.equal(added.source,'foxpro_verified');assert.equal(added.sourceMentionId,mention);
+ assert.equal(added.doseValue,'1-0-1');assert.equal(added.startDate,null);assert.equal(added.isPrimary,false);
+ await db.exec('reset role');
+ assert.equal((await db.query('select review_status,linked_medication_id,reviewed_by from linkare_private.legacy_medication_mentions_v1 where organization_id=$1 and id=$2',[org,mention])).rows[0].linked_medication_id,added.id);
+ await actor('owner');
+ const grouped=(await db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20) data',[org,patient])).rows[0].data;
+ assert.equal(grouped.items[0].mentionId,second);assert.equal(grouped.items[0].reviewStatus,'historical_unverified');
+ await db.exec('reset role');
+ await assert.rejects(()=>db.query("update public.linkare_records set payload=jsonb_set(payload,'{medications,1,sourceMentionId}','\"forged\"'::jsonb) where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient]),/HISTORICAL_MEDICATION_PROVENANCE_IMMUTABLE/);
+ await actor('owner');
+ await permissions('doctor',{patientsView:true,clinicalView:true,medicationsManage:true});
+ const rejected=(await review(second,'not_current',{reviewNote:'Historical only'})).rows[0].data;
+ assert.equal(rejected.reviewStatus,'not_current');
+ assert.equal((await review(second,'not_current',{reviewNote:'Historical only'})).rows[0].data.duplicate,true);
+ await actor('owner');
+ assert.equal((await db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20) data',[org,patient])).rows[0].data.items[0].reviewStatus,'not_current');
+ assert.equal((await db.query("select jsonb_array_length(payload->'medications') n from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0].n,2);
 });
 
 test('DB: v4 bootstrap is small and the directory returns distinct recent patients in pages of 20',async()=>{
