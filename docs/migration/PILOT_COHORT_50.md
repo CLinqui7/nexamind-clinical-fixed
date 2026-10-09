@@ -36,3 +36,10 @@ El rollback automatizado solo es seguro mientras no existan cambios modernos dep
 - Antes/después: 13 pacientes del destino pasaron a 63. Se compararon por fingerprint los 5,564 registros preexistentes de ambos consultorios: cero modificados, cero faltantes, cero colisiones con el piloto.
 - Permisos: la cuenta propietaria pudo leer las menciones clínicas; la secretaria activa no pudo consultarlas.
 - Las capturas de navegador y los informes detallados permanecen privados fuera de GitHub; no se publican datos de pacientes reales.
+
+## Verificación visual y publicación
+
+- El frontend con la corrección del contador de historia paginada y el estado vacío de tratamientos actuales se publicó en Vercel como despliegue `dpl_2Z3shqpocaFZfCv5r8tZ8t7J9EQV` y se promovió al dominio principal `https://nexamind-clinical.vercel.app`. El dominio sirvió el bundle `/assets/index-CvcOcYmH.js` tras la promoción.
+- `qa/browser/production-cohort.mjs` pasó en el dominio principal con la cuenta propietaria: búsqueda individual de un paciente reciente y uno antiguo, apertura del expediente, lectura de historia clínica y de menciones históricas no verificadas, contador correcto de entradas paginadas y ausencia de errores JavaScript. Las capturas quedaron en almacenamiento temporal privado, no en Git.
+- El dominio temporal del despliegue exige autenticación propia de Vercel y no fue usado como prueba clínica: la prueba autenticada se ejecutó sobre el dominio principal después de la promoción. No se cambió la protección del despliegue temporal.
+- Esta prueba visual cubre dos muestras de la cohorte, no una revisión médica de las 2,771 menciones. Ninguna debe tratarse como medicación actual hasta que el profesional la verifique.
