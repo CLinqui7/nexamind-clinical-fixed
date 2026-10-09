@@ -20,3 +20,13 @@ Este cambio no repite la carga FoxPro ni transforma automáticamente anotaciones
 5. Verificar conteos y huella de medicamentos idénticos antes/después, lectura del resumen por propietario y denegación a Secretaría. Después publicar el commit ya subido a GitHub en Vercel y comprobar el dominio productivo.
 
 La contraseña de la cuenta del médico, la conexión temporal, los respaldos y los expedientes nunca se guardan en Git. Una prueba aislada o un despliegue de frontend, por sí solos, no prueban que un paciente real haya confirmado un tratamiento.
+
+## Resultado productivo verificado (2026-10-09)
+
+- Código publicado primero en GitHub, rama `codex/foxpro-structured-migration`, commit funcional `cd75365476ba2d81a1c9bae2669ed05d5f0b83c5` (incluye el flujo y el ajuste del rol temporal del despliegue).
+- Destino comprobado por el correo exacto `clinicafortinmagana@gmail.com`: propietario activo de “Clinica Fortin Magaña”, organización `2ca5b8d4-d711-4ec7-833a-9d018ef067ca`. No se cambió su cuenta, contraseña, rol ni permisos.
+- Respaldo lógico previo cifrado con DPAPI, fuera de Git: `%TEMP%\linkare-clinician-review-backup-20261008\production-logical-backup.dpapi`, SHA-256 cifrado `ff60ca36d4e9c10908091deb3d2d187aba10d7bd22ccde1e3e4bbab36b644a71`. Restauración aislada comprobada: 42 tablas, 334,726 filas y cero diferencias de conteo. Está ligado al usuario de Windows que lo cifró; no reemplaza la política de respaldos periódicos de la plataforma.
+- Migración `20261009054502` aplicada y registrada de forma atómica, sin `db push --include-all`. Antes/después: 5,372 pacientes, 140,202 entradas históricas, 46 expedientes clínicos modernos, 132 medicamentos modernos y 63,911 menciones históricas del consultorio principal; huella de medicamentos idéntica. Las 63,911 menciones siguen `unreviewed`: **ningún tratamiento fue activado automáticamente**.
+- El RPC de resumen devolvió el identificador de la mención al propietario y rechazó a Secretaría. `npm run check`: 169 pruebas y build satisfactorios. Playwright aislado: 13 comprobaciones, incluida confirmación explícita, persistencia tras recarga y bloqueo para Secretaría.
+- Vista previa protegida `dpl_7TyJGr7J4odxLCYQ68m5zD65PpmT` verificada con `vercel curl`: HTML y JavaScript contenían el botón y RPC nuevos. Promovida a `https://nexamind-clinical.vercel.app`; alias productivo `dpl_FbxNZf7HjjW3BFBAmkj8hDqiHgYd`, estado Ready, sirve el nuevo archivo `index-CCJjQ2bp.js` y no el anterior.
+- No se hizo una sesión de navegador productivo con un expediente real ni se aprobó un medicamento real: esa decisión corresponde al médico tras verificar su uso actual. El ensayo visual fue sintético y la comprobación productiva de permisos fue de solo lectura.
