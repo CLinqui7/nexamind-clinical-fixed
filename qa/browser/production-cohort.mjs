@@ -28,12 +28,19 @@ const ordered=[...patients.values()].sort((a,b)=>b.lastDate.localeCompare(a.last
 const samples=[{label:'recent',patient:ordered[0]},{label:'old',patient:ordered.at(-1)}];
 fs.mkdirSync(shotDir,{recursive:true});
 const browser=await chromium.launch({channel:process.env.LINKARE_BROWSER||'msedge',headless:true});
-const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const base=process.env.LINKARE_PRODUCTION_URL||'https://nexamind-clinical.vercel.app';
+const context=await browser.newContext({viewport:{width:1440,height:1000}});
+if(process.env.VERCEL_OIDC_TOKEN){
+  await context.route(`${new URL(base).origin}/**`,route=>route.continue({headers:{
+    ...route.request().headers(),'x-vercel-trusted-oidc-idp-token':process.env.VERCEL_OIDC_TOKEN
+  }}));
+}
+const page=await context.newPage();
 page.setDefaultTimeout(20000);
 const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.name));
 let stage='open';
 try{
-  await page.goto(process.env.LINKARE_PRODUCTION_URL||'https://nexamind-clinical.vercel.app',{waitUntil:'domcontentloaded',timeout:30000});
+  await page.goto(base,{waitUntil:'domcontentloaded',timeout:30000});
   stage='login';
   await page.locator('input[type=email]').fill(email);
   await page.locator('input[type=password]').fill(password);
