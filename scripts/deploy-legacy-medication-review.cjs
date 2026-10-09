@@ -53,6 +53,9 @@ async function verifyAccess(client){
 (async()=>{
   const client=new Client(connection);await client.connect();
   try{
+    // Supabase's temporary CLI login can assume postgres, but has no direct
+    // privilege on auth.users or DDL references to it.
+    await client.query('set role postgres');
     const target=(await client.query('select u.id::text user_id,m.organization_id::text org_id,o.name,m.role::text role,m.active from auth.users u join public.organization_members m on m.user_id=u.id join public.organizations o on o.id=m.organization_id where lower(u.email)=lower($1)',[preflight.targetEmail])).rows;
     if(target.length!==1||target[0].user_id!==preflight.targets[0].user_id||target[0].org_id!==preflight.organizationId||target[0].role!=='owner'||!target[0].active)throw new Error('LIVE_TARGET_CHANGED');
     const before=await state(client);

@@ -16,6 +16,7 @@ Este cambio no repite la carga FoxPro ni transforma automáticamente anotaciones
 2. Ejecutar `phase3-production-control.ps1 -Mode preflight` para el correo exacto y hash del ZIP. Comprobar lote y organización; no elegir la primera organización disponible.
 3. Generar respaldo lógico actual cifrado con `backup-production.ps1` fuera de Git y comprobarlo mediante `verify-backup-restore.ps1`. Nunca incluir los JSON de respaldo ni los reportes privados en el repositorio.
 4. No usar `supabase db push --include-all`: el historial remoto omite antiguas migraciones locales. Aplicar **solo** `20261009054502_historical_medication_clinician_review.sql`, junto con su fila de historial, mediante `deploy-legacy-medication-review.ps1 -Mode apply -PreflightReport ... -RestoreReport ...`.
+   El inicio de sesión temporal del CLI asume `postgres` únicamente durante esta conexión para poder validar `auth.users` y la referencia de auditoría; el script no imprime ni persiste su contraseña.
 5. Verificar conteos y huella de medicamentos idénticos antes/después, lectura del resumen por propietario y denegación a Secretaría. Después publicar el commit ya subido a GitHub en Vercel y comprobar el dominio productivo.
 
 La contraseña de la cuenta del médico, la conexión temporal, los respaldos y los expedientes nunca se guardan en Git. Una prueba aislada o un despliegue de frontend, por sí solos, no prueban que un paciente real haya confirmado un tratamiento.
