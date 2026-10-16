@@ -1,28 +1,77 @@
-import {supabaseAdmin} from '../_shared/supabase-admin.ts';
-import {deliverReminder,configuredProviders,sendEmail,sendWhatsApp} from '../_shared/reminders.ts';
-function same(a:string,b:string){if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;}
-Deno.serve(async request=>{
- const secret=Deno.env.get('LINKARE_CRON_SECRET')||'';const received=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
- if(request.method!=='POST'||secret.length<32||!same(secret,received))return new Response('Unauthorized',{status:401});
- try{const db=supabaseAdmin(),now=Date.now(),providers=configuredProviders();let processed=0,accepted=0;
- const {data:orgs,error}=await db.from('linkare_subscriptions_v3').select('organization_id').or(`complimentary_access.eq.true,current_period_end.gt.${new Date(now-7*86400000).toISOString()}`).limit(100);if(error)throw error;
- for(const {organization_id:org} of orgs||[]){
-  const {data:settings}=await db.from('linkare_records').select('payload').eq('organization_id',org).eq('kind','settings').eq('id','clinic').maybeSingle();
-  const {data:appointments}=await db.from('linkare_records').select('id,payload').eq('organization_id',org).eq('kind','appointment').eq('deleted',false).gt('payload->>start',new Date(now).toISOString()).lt('payload->>start',new Date(now+73*3600000).toISOString()).limit(200);
-  for(const a of appointments||[]){
-   const {data:patient}=await db.from('linkare_records').select('payload').eq('organization_id',org).eq('kind','patient_admin').eq('id',a.payload.patientId).eq('deleted',false).maybeSingle();const prefs=patient?.payload?.notificationPreferences;
-   if(!prefs||prefs.enabled===false||prefs.consentStatus!=='granted')continue;
-   const eligible=(prefs.reminderHours?.length?prefs.reminderHours:(settings?.payload?.reminderHours||[24,8])).map(Number).filter(h=>[2,8,24,48,72].includes(h)&&now>=Date.parse(a.payload.start)-h*3600000).sort((a,b)=>a-b).slice(0,1);
-   for(const hours of eligible){
-    for(const channel of prefs.channels||[]){if(!providers[channel as 'email'|'sms'|'whatsapp']||processed>=50)continue;processed++;
-     try{const result=await deliverReminder(org,a.id,channel,Number(hours),null);if(!result.duplicate)accepted++;}catch{/* Persisted provider failures are reviewed; no blind resend. */}
+import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { gmailConfigured, sendGmailEmail } from '../_shared/gmail.ts';
+import { localDate, secretaryAgendaItems, secretaryAgendaMessage } from '../_shared/secretary-agenda.ts';
+import { calendarPermissionAllowed, permissionAllowed } from '../_shared/permissions.ts';
+
+function same(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return difference === 0;
+}
+
+Deno.serve(async request => {
+  const secret = Deno.env.get('LINKARE_CRON_SECRET') || '';
+  const received = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (request.method !== 'POST' || secret.length < 32 || !same(secret, received)) return new Response('Unauthorized', { status: 401 });
+  const organizationId = Deno.env.get('LINKARE_DAILY_AGENDA_ORG_ID') || '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organizationId) || !gmailConfigured()) {
+    return Response.json({ ok: false, code: 'DAILY_AGENDA_NOT_CONFIGURED' }, { status: 503 });
+  }
+  try {
+    const db = supabaseAdmin();
+    const timezone = Deno.env.get('CLINIC_TIMEZONE') || 'America/El_Salvador';
+    const now = new Date(), date = localDate(now, timezone);
+    const { data: calendar, error: calendarError } = await db.from('linkare_calendars_v1').select('id').eq('organization_id', organizationId).eq('code', 'doctor').eq('is_active', true).maybeSingle();
+    if (calendarError || !calendar) throw new Error('No se encontró el calendario Doctor.');
+    const { data: members, error: memberError } = await db.from('organization_members').select('user_id,role,active,permissions').eq('organization_id', organizationId).eq('role', 'secretary').eq('active', true);
+    if (memberError) throw memberError;
+    const secretaries = (members || []).filter(member => permissionAllowed(member, 'patientsView') && calendarPermissionAllowed(member, 'doctor', 'View'));
+    if (!secretaries.length) return Response.json({ ok: true, date, recipients: 0, accepted: 0, skipped: 0, failed: 0 });
+
+    const appointments: any[] = [];
+    const lower = new Date(now.getTime() - 36 * 3600000).toISOString();
+    const upper = new Date(now.getTime() + 36 * 3600000).toISOString();
+    for (let offset = 0; offset < 5000; offset += 500) {
+      const { data: page, error } = await db.from('linkare_records').select('id,payload').eq('organization_id', organizationId).eq('kind', 'appointment').eq('deleted', false).gte('payload->>start', lower).lt('payload->>start', upper).order('id').range(offset, offset + 499);
+      if (error) throw error;
+      appointments.push(...(page || []));
+      if (!page || page.length < 500) break;
+      if (offset === 4500) throw new Error('La agenda supera el límite de consulta; no se enviará un resumen incompleto.');
     }
-   }
+    const patientIds = [...new Set(appointments.map(row => String(row.payload?.patientId || '')).filter(Boolean))];
+    const patients = new Map<string, any>();
+    for (let offset = 0; offset < patientIds.length; offset += 100) {
+      const { data: rows, error } = await db.from('linkare_records').select('id,payload').eq('organization_id', organizationId).eq('kind', 'patient_admin').eq('deleted', false).in('id', patientIds.slice(offset, offset + 100));
+      if (error) throw error;
+      for (const row of rows || []) patients.set(row.id, row.payload);
+    }
+
+    let accepted = 0, skipped = 0, failed = 0;
+    for (const member of secretaries) {
+      const { data: identity, error: identityError } = await db.auth.admin.getUserById(member.user_id);
+      const destination = String(identity?.user?.email || '').trim();
+      if (identityError || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(destination)) { failed++; continue; }
+      const items = secretaryAgendaItems(appointments, patients, member, calendar.id, date, timezone);
+      const dedupeKey = `${organizationId}:secretary:${member.user_id}:daily_agenda:${date}`;
+      const { data: delivery, error: reserveError } = await db.from('linkare_notification_deliveries').insert({
+        organization_id: organizationId, channel: 'email', destination, status: 'queued', dedupe_key: dedupeKey,
+        message_preview: `Agenda de citas ${date}`, metadata: { type: 'secretary_daily_agenda', date, recipientUserId: member.user_id, appointmentCount: items.length },
+      }).select('id').single();
+      if (reserveError?.code === '23505') { skipped++; continue; }
+      if (reserveError || !delivery) { failed++; continue; }
+      try {
+        const sent = await sendGmailEmail(destination, `Agenda de citas de hoy - ${date}`, secretaryAgendaMessage(date, items));
+        const { error: updateError } = await db.from('linkare_notification_deliveries').update({ status: 'sent', provider: sent.provider, provider_message_id: sent.id, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', delivery.id);
+        if (updateError) throw updateError;
+        accepted++;
+      } catch {
+        failed++;
+        await db.from('linkare_notification_deliveries').update({ status: 'failed', error_message: 'No se pudo confirmar la aceptación de Gmail; revisar antes de reintentar.', updated_at: new Date().toISOString() }).eq('id', delivery.id);
+      }
+    }
+    return Response.json({ ok: failed === 0, date, recipients: secretaries.length, accepted, skipped, failed }, { status: failed ? 503 : 200, headers: { 'Cache-Control': 'no-store' } });
+  } catch {
+    return Response.json({ ok: false, code: 'DAILY_AGENDA_DISPATCH_FAILED' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
-  const timezone=Deno.env.get('CLINIC_TIMEZONE')||'America/El_Salvador',day=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}),tomorrow=day.format(new Date(now+30*3600000));const tomorrowAppointments=(appointments||[]).map((r:any)=>r.payload).filter((a:any)=>a.start&&!['cancelled','no_show'].includes(a.status)&&day.format(new Date(a.start))===tomorrow).sort((a:any,b:any)=>Date.parse(a.start)-Date.parse(b.start));
-  if(tomorrowAppointments.length){const {data:recipients}=await db.from('linkare_personal_reminder_recipients_v1').select('id,name,destination,channel').eq('organization_id',org).eq('enabled',true).limit(20);const time=new Intl.DateTimeFormat('es-SV',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),first=time.format(new Date(tomorrowAppointments[0].start)),last=time.format(new Date(tomorrowAppointments.at(-1).end||tomorrowAppointments.at(-1).start));for(const recipient of recipients||[]){if(!providers[recipient.channel as 'email'|'sms'|'whatsapp']||processed>=50)continue;processed++;const message=`Mañana tiene agenda clínica de ${first} a ${last}.`;const key=`${org}:personal:${recipient.id}:${tomorrow}:${recipient.channel}`;const {data:audit,error:reserve}=await db.from('linkare_notification_deliveries').insert({organization_id:org,appointment_id:`personal:${tomorrow}`,channel:recipient.channel,destination:recipient.destination,status:'queued',dedupe_key:key,metadata:{kind:'personal_schedule',date:tomorrow}}).select('id').single();if(reserve?.code==='23505')continue;if(reserve)continue;try{const sent=recipient.channel==='email'?await sendEmail(recipient.destination,'Agenda clínica de mañana',message):await sendWhatsApp(recipient.destination,message);await db.from('linkare_notification_deliveries').update({status:'sent',provider:sent.provider,provider_message_id:sent.id,sent_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',audit.id);accepted++;}catch{await db.from('linkare_notification_deliveries').update({status:'failed',error_message:'No se pudo confirmar la aceptación del proveedor.',updated_at:new Date().toISOString()}).eq('id',audit.id);}}
-  }
- }
- return Response.json({ok:true,processed,accepted},{headers:{'Cache-Control':'no-store'}});
- }catch{return Response.json({ok:false,message:'Dispatcher failed'},{status:503});}
 });

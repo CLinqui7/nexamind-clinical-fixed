@@ -69,9 +69,7 @@ Google: habilitar Calendar API y configurar OAuth web con callback `https://<ref
 
 Apple: descargar .ics o suscribirse al feed privado. Actualizaciones dependen de la frecuencia de la app de calendario. El feed no permite editar citas en Linkare.
 
-Recordatorios: conectar Resend/Twilio/Meta según canal. Meta requiere una plantilla aprobada con un parámetro de cuerpo y versión Graph explícita. Registrar consentimiento, teléfono E.164 y horario del paciente.
-
-Para envío programado configurar un job cada 5 minutos que haga POST a `/functions/v1/reminder-dispatch` con `Authorization: Bearer <LINKARE_CRON_SECRET>`. Guardar ese secreto en el almacén seguro del programador, no en Git ni en el historial SQL. Una longitud mínima de 32 caracteres es obligatoria. No se creó ningún job remoto durante esta entrega. El dispatcher procesa hasta 50 envíos por corrida, 100 consultorios; revisar escalado del scheduler si se supera ese volumen. No reintentar ciegamente un envío ambiguo para evitar duplicados.
+La agenda diaria de Secretaría usa Gmail API y el cron publicado de Vercel a las 14:00 UTC; requiere una autorización OAuth con gmail.send. El correo de invitación de Supabase Auth no sirve para la agenda. Consultar docs/OPERATIONS-AND-REMINDERS.md para configuración, destinatarios, auditoría y límites del plan Hobby. Los recordatorios individuales al paciente siguen siendo manuales y conservan sus reglas de consentimiento y proveedor.
 
 ## 6. Prueba de aceptación y publicación
 
