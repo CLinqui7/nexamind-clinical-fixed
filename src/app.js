@@ -539,7 +539,7 @@ class App extends React.Component {
       const today=secretaryTodayAppointments(normalized,doctor.id,now);
       if(epoch===this.authEpoch&&request===this.secretaryAgendaRequest)this.setState({secretaryAgenda:{day,items:today,loading:false,error:'',loadedAt:Date.now()}});
     }catch(error){
-      if(epoch===this.authEpoch&&request===this.secretaryAgendaRequest)this.setState(previous=>({secretaryAgenda:{...previous.secretaryAgenda,day,items:[],loading:false,error:readableError(error),loadedAt:0}}));
+      if(epoch===this.authEpoch&&request===this.secretaryAgendaRequest)this.setState(previous=>({secretaryAgenda:{...previous.secretaryAgenda,day,items:[],loading:false,error:readableError(error),loadedAt:Date.now()}}));
     }
   };
 
@@ -2528,6 +2528,7 @@ class App extends React.Component {
     const today = new Date(this.state.dashboardNow);
     const agenda=this.state.secretaryAgenda;
     const agendaCurrent=agenda.day===clinicDayAndMinutes(today).day;
+    const secretaryCanSeeDoctor=user?.role==='secretary'&&this.can('patientsView')&&this.canDoctorCalendar('View');
     const todayAppointments=user?.role==='secretary'?(agendaCurrent?agenda.items:[]):appointments.filter(item=>isSameDay(item.start,today)&&item.status!=='cancelled').sort((left,right)=>new Date(left.start)-new Date(right.start));
     const pending = appointments.filter(item => item.status === 'pending' && new Date(item.start) >= today).length;
     const reminders = getReminderQueue(this.state.data, today);
@@ -2541,16 +2542,16 @@ class App extends React.Component {
         actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} key="new-patient" tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.canAnyCalendar('Create') ? html`<${Button} key="new-event" icon="plus" onClick=${() => this.openNewAppointment()}>Nuevo evento</${Button}>` : null}</div>`}
       />
       <div className="simple-help administrative-help" data-tour="secretary-privacy"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
-      ${user?.role==='secretary'&&this.can('patientsView')&&this.canDoctorCalendar('View')&&showSecretaryAgendaNotice(today)&&agendaCurrent&&!agenda.loading&&!agenda.error?html`<div className="secretary-agenda-notice" role="status"><${Icon} name="calendar" size=${21}/><div><b>Agenda de hoy · ${todayAppointments.length} cita${todayAppointments.length===1?'':'s'}</b><span>Revisa las citas de hoy del calendario del doctor. Se actualizan mientras tengas Linkare abierto.</span></div><button onClick=${() => document.querySelector('.secretary-agenda-list')?.scrollIntoView({behavior:'smooth',block:'center'})}>Ver citas</button></div>`:null}
+      ${secretaryCanSeeDoctor&&showSecretaryAgendaNotice(today)&&agendaCurrent&&!agenda.loading&&!agenda.error?html`<div className="secretary-agenda-notice" role="status"><${Icon} name="calendar" size=${21}/><div><b>Agenda de hoy · ${todayAppointments.length} cita${todayAppointments.length===1?'':'s'}</b><span>Revisa las citas de hoy del calendario del doctor. Se actualizan mientras tengas Linkare abierto.</span></div><button onClick=${() => document.querySelector('.secretary-agenda-list')?.scrollIntoView({behavior:'smooth',block:'center'})}>Ver citas</button></div>`:null}
       <div className="kpi-grid secretary-kpis">
-        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${user?.role==='secretary'?(agenda.loading||!agendaCurrent?'…':todayAppointments.length):(this.state.dashboardSummary?.appointments?.today??todayAppointments.length)} hint=${user?.role==='secretary'?'calendario del doctor':'programadas para hoy'} icon="calendar" tone="blue"/>
+        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${user?.role==='secretary'?(secretaryCanSeeDoctor?(agenda.loading||!agendaCurrent?'…':todayAppointments.length):'—'):(this.state.dashboardSummary?.appointments?.today??todayAppointments.length)} hint=${user?.role==='secretary'?'calendario del doctor':'programadas para hoy'} icon="calendar" tone="blue"/>
         <${KpiCard} label="Por confirmar" value=${pending} hint="citas futuras pendientes" icon="clock" tone="purple"/>
         <${KpiCard} label="Recordatorios listos" value=${due.length} hint="requieren envío o revisión" icon="message" tone=${due.length ? 'coral' : 'teal'}/>
         <${KpiCard} label="Pacientes" value=${this.state.dashboardSummary?.patients?.total??patients.length} hint="expedientes no archivados" icon="patients" tone="blue"/>
       </div>
       <div className="dashboard-grid">
         <${Card} className="span-7" title="Agenda de hoy" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button key="print-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button key="save-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button></div>`}>
-          <div className="secretary-agenda-list">${user?.role==='secretary'&&agenda.error?html`<p role="alert">No se pudo cargar la agenda de hoy. ${agenda.error} <button className="text-button" onClick=${this.refreshSecretaryAgenda}>Reintentar</button></p>`:user?.role==='secretary'&&(agenda.loading||!agendaCurrent)?html`<p>Cargando las citas de hoy…</p>`:todayAppointments.length?todayAppointments.map(appointment=>{
+          <div className="secretary-agenda-list">${user?.role==='secretary'&&!secretaryCanSeeDoctor?html`<p>El médico no te ha dado acceso al calendario Doctor.</p>`:user?.role==='secretary'&&agenda.error?html`<p role="alert">No se pudo cargar la agenda de hoy. ${agenda.error} <button className="text-button" onClick=${this.refreshSecretaryAgenda}>Reintentar</button></p>`:user?.role==='secretary'&&(agenda.loading||!agendaCurrent)?html`<p>Cargando las citas de hoy…</p>`:todayAppointments.length?todayAppointments.map(appointment=>{
             const patient=patients.find(item=>item.id===appointment.patientId)||appointment.patientSummary;
             return html`<button key=${appointment.id} className="secretary-agenda-row" onClick=${()=>this.setState({appointmentDetails:appointment})}><time>${agendaTimeLabel(appointment.start,'America/El_Salvador')}</time><${Avatar} patient=${patient}/><div><b>${patient?.name||appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Badge} tone=${appointment.status==='confirmed'?'success':'warning'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`;
           }):html`<${EmptyState} icon="calendar" title="No hay citas hoy" text="Puede crear una cita con el botón superior."/>`}</div>
