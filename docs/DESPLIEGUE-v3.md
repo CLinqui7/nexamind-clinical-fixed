@@ -69,7 +69,7 @@ Google: habilitar Calendar API y configurar OAuth web con callback `https://<ref
 
 Apple: descargar .ics o suscribirse al feed privado. Actualizaciones dependen de la frecuencia de la app de calendario. El feed no permite editar citas en Linkare.
 
-La agenda diaria de Secretaría usa la misma cuenta Gmail del SMTP personalizado de Supabase Auth mediante una contraseña de aplicación guardada aparte para la Edge Function (puede ser una nueva), o Gmail API como alternativa, y el cron publicado de Vercel a las 14:00 UTC. El correo de invitación de Supabase Auth no sirve para la agenda. Consultar docs/OPERATIONS-AND-REMINDERS.md para configuración, destinatarios, auditoría y límites del plan Hobby. Los recordatorios individuales al paciente siguen siendo manuales y conservan sus reglas de consentimiento y proveedor.
+La agenda de hoy aparece en el dashboard de Secretaría desde las 08:00, hora de El Salvador. No hay cron ni envío automático por correo para esta agenda. Consultar docs/OPERATIONS-AND-REMINDERS.md para el comportamiento y sus límites. Los correos de invitación siguen usando Supabase Auth; los recordatorios individuales al paciente siguen siendo manuales y conservan sus reglas de consentimiento y proveedor.
 
 ## 6. Prueba de aceptación y publicación
 

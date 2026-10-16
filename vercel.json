@@ -7,12 +7,6 @@
       "destination": "/index.html"
     }
   ],
-  "crons": [
-    {
-      "path": "/api/reminder-dispatch",
-      "schedule": "0 14 * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/",

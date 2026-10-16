@@ -2,16 +2,15 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const root=process.cwd(),compiled=JSON.parse(fs.readFileSync('qa/backend/compiled.json','utf8'));
 const ORG='00000000-0000-4000-8000-000000000011',USER='00000000-0000-4000-8000-000000000012';
 function harness(options={}){
- let handler,cache=new Map(),calls=[],sent=[],changes=[],smtpSent=[],smtpConnections=[];
+ let handler,cache=new Map(),calls=[],sent=[],changes=[];
  const env={SUPABASE_URL:'https://qa.invalid',SUPABASE_ANON_KEY:'qa-public',SUPABASE_SERVICE_ROLE_KEY:'qa-server',WOMPI_CLIENT_ID:'qa-app',WOMPI_CLIENT_SECRET:'qa-secret-never-live',APP_PUBLIC_URL:'https://linkare.example.invalid',...options.env};
  const order={id:'order1',external_reference:'LINKARE-order1',plan_code:'semiannual',plan_name:'Profesional semestral',amount_cents:22000,months:6,currency:'USD',status:'creating',is_test:true};
- class Query{constructor(table){this.table=table;this.filters=[];}select(){return this;}eq(k,v){this.filters.push([k,v]);return this;}gte(){return this;}lt(){return this;}order(){return this;}range(){return this;}in(){return this;}update(v){changes.push({table:this.table,...v});return this;}insert(v){changes.push({table:this.table,...v});return this;}async maybeSingle(){if(options.dailyAgenda&&this.table==='linkare_calendars_v1')return {data:{id:'doctor-calendar'},error:null};return {data:options.memberAbsent?null:{id:'member',role:options.role||'owner',active:options.active!==false,permissions:options.permissions||{}},error:null};}async single(){return {data:{id:'delivery-qa'},error:null};}then(resolve,reject){if(options.dailyAgenda){const kind=this.filters.find(([key])=>key==='kind')?.[1];const data=this.table==='organization_members'?[options.dailyAgenda.member]:this.table==='linkare_records'&&kind==='appointment'?options.dailyAgenda.appointments:this.table==='linkare_records'&&kind==='patient_admin'?options.dailyAgenda.patients:[];return Promise.resolve({data,error:null}).then(resolve,reject);}return Promise.resolve({data:[],error:null}).then(resolve,reject);}}
- const db={auth:{getUser:async token=>({data:{user:token==='valid-token'?{id:USER,email:'doctor@example.invalid',email_confirmed_at:'2026-09-01'}:null},error:token==='valid-token'?null:{message:'invalid'}}),admin:{getUserById:async()=>({data:{user:{email:'secretary@example.invalid'}},error:null})}},from:t=>new Query(t),rpc:async(name,args)=>{calls.push({name,args});if(name==='linkare_rate_v3')return {data:true,error:null};if(name==='linkare_reserve_order_v3')return {data:{existing:options.existing===true,order:options.existing?{...order,payment_url:'https://s.wompi.sv/existing',status:'pending',is_test:false}:order},error:null};if(name==='linkare_confirm_payment_v3')return {data:{ok:true},error:null};return {data:null,error:null};}};
- const fetch=async(url,init={})=>{sent.push({url,body:init.body?.toString()});if(url==='https://oauth2.googleapis.com/token')return new Response(JSON.stringify({access_token:'qa-gmail-access'}));if(url==='https://gmail.googleapis.com/gmail/v1/users/me/messages/send')return new Response(JSON.stringify({id:'qa-gmail-message'}));if(url.includes('connect/token'))return new Response(JSON.stringify({access_token:'qa-oauth'}));if(url.endsWith('/Aplicativo'))return new Response(JSON.stringify({nombre:'QA',estaProductivo:true,numeroCuenta:'DO-NOT-EXPOSE'}));if(url.endsWith('/EnlacePago'))return new Response(JSON.stringify({idEnlace:'link1',urlEnlace:'https://s.wompi.sv/qa',estaProductivo:true}));throw Error('Unexpected outbound request');};
+ class Query{constructor(table){this.table=table;this.filters=[];}select(){return this;}eq(k,v){this.filters.push([k,v]);return this;}update(v){changes.push({table:this.table,...v});return this;}insert(v){changes.push({table:this.table,...v});return this;}async maybeSingle(){return {data:options.memberAbsent?null:{id:'member',role:options.role||'owner',active:options.active!==false,permissions:options.permissions||{}},error:null};}then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}}
+ const db={auth:{getUser:async token=>({data:{user:token==='valid-token'?{id:USER,email:'doctor@example.invalid',email_confirmed_at:'2026-09-01'}:null},error:token==='valid-token'?null:{message:'invalid'}})},from:t=>new Query(t),rpc:async(name,args)=>{calls.push({name,args});if(name==='linkare_rate_v3')return {data:true,error:null};if(name==='linkare_reserve_order_v3')return {data:{existing:options.existing===true,order:options.existing?{...order,payment_url:'https://s.wompi.sv/existing',status:'pending',is_test:false}:order},error:null};if(name==='linkare_confirm_payment_v3')return {data:{ok:true},error:null};return {data:null,error:null};}};
+ const fetch=async(url,init={})=>{sent.push({url,body:init.body?.toString()});if(url.includes('connect/token'))return new Response(JSON.stringify({access_token:'qa-oauth'}));if(url.endsWith('/Aplicativo'))return new Response(JSON.stringify({nombre:'QA',estaProductivo:true,numeroCuenta:'DO-NOT-EXPOSE'}));if(url.endsWith('/EnlacePago'))return new Response(JSON.stringify({idEnlace:'link1',urlEnlace:'https://s.wompi.sv/qa',estaProductivo:true}));throw Error('Unexpected outbound request');};
  const context=vm.createContext({Request,Response,Headers,URL,URLSearchParams,TextEncoder,TextDecoder,AbortSignal,console:{error:()=>{},log:()=>{}},crypto:crypto.webcrypto,fetch,Deno:{env:{get:k=>env[k]},serve:fn=>handler=fn},Date,setTimeout,clearTimeout,btoa});
- const nodemailer={createTransport:config=>{smtpConnections.push(config);return {sendMail:async mail=>{smtpSent.push(mail);return options.smtpReject?{accepted:[],messageId:'qa-rejected'}:{accepted:[mail.to],messageId:'qa-smtp-message'};},close:()=>{}};}};
- function load(file){file=path.posix.normalize(file);if(cache.has(file))return cache.get(file).exports;const entry=compiled.modules[file];assert.ok(entry,'Missing compiled fixture '+file);assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex'),entry.sha256,'Rebuild backend QA fixture after editing '+file);const module={exports:{}};cache.set(file,module);const fn=vm.runInContext(`(function(require,module,exports){${entry.javascript}\n})`,context);fn(p=>p.startsWith('npm:nodemailer@')?{default:nodemailer}:(p.startsWith('https://esm.sh/@supabase/')||p.startsWith('npm:@supabase/'))?{createClient:()=>db}:load(path.posix.join(path.posix.dirname(file),p)),module,module.exports);return module.exports;}
- return {load,calls,sent,changes,smtpSent,smtpConnections,env,request:async (name,input={},token='valid-token')=>{load(`supabase/functions/${name}/index.ts`);return handler(new Request('https://qa.invalid/function',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(input)}));},raw:async(name,raw,hash)=>{load(`supabase/functions/${name}/index.ts`);return handler(new Request('https://qa.invalid/function',{method:'POST',headers:{'wompi_hash':hash||''},body:raw}));}};
+ function load(file){file=path.posix.normalize(file);if(cache.has(file))return cache.get(file).exports;const entry=compiled.modules[file];assert.ok(entry,'Missing compiled fixture '+file);assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex'),entry.sha256,'Rebuild backend QA fixture after editing '+file);const module={exports:{}};cache.set(file,module);const fn=vm.runInContext(`(function(require,module,exports){${entry.javascript}\n})`,context);fn(p=>(p.startsWith('https://esm.sh/@supabase/')||p.startsWith('npm:@supabase/'))?{createClient:()=>db}:load(path.posix.join(path.posix.dirname(file),p)),module,module.exports);return module.exports;}
+ return {load,calls,sent,changes,env,request:async (name,input={},token='valid-token')=>{load(`supabase/functions/${name}/index.ts`);return handler(new Request('https://qa.invalid/function',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(input)}));},raw:async(name,raw,hash)=>{load(`supabase/functions/${name}/index.ts`);return handler(new Request('https://qa.invalid/function',{method:'POST',headers:{'wompi_hash':hash||''},body:raw}));}};
 }
 test('payment endpoint rejects requests without a real bearer token',async()=>{const h=harness(),r=await h.request('wompi-create-link',{organizationId:ORG,planCode:'annual'},null);assert.equal(r.status,401);assert.equal(h.sent.length,0);});
 test('secretary cannot generate a payment even with extra fake permissions',async()=>{const h=harness({role:'secretary',permissions:{doctor:true,settingsManage:true}}),r=await h.request('wompi-create-link',{organizationId:ORG,planCode:'monthly'});assert.equal(r.status,403);assert.equal(h.sent.length,0);});
@@ -25,70 +24,5 @@ test('webhook rejects a missing or forged HMAC',async()=>{for(const hash of ['',
 test('webhook rejects an event for another application despite valid HMAC',async()=>{const h=harness(),raw=JSON.stringify({...event(),Aplicativo:{Id:'other-app'}}),r=await h.raw('wompi-webhook',raw,sign(raw));assert.equal(r.status,400);assert.equal(h.calls.length,0);});
 test('nonproductive event does not activate a real subscription',async()=>{const h=harness(),raw=JSON.stringify({...event(),EsProductiva:false}),r=await h.raw('wompi-webhook',raw,sign(raw));assert.equal(r.status,400);assert.equal(h.calls.length,0);});
 test('verified webhook passes exact cents and reference to database validator',async()=>{const h=harness(),raw=JSON.stringify(event()),r=await h.raw('wompi-webhook',raw,sign(raw));assert.equal(r.status,200);assert.equal(h.calls[0].name,'linkare_confirm_payment_v3');assert.equal(h.calls[0].args.amount,22000);assert.equal(h.calls[0].args.ref,'LINKARE-order1');});
-test('daily secretary agenda includes only authorized doctor appointments and no clinical notes',()=>{
- const h=harness(),agenda=h.load('supabase/functions/_shared/secretary-agenda.ts');
- const member={role:'secretary',active:true,permissions:{patientsView:true,calendarDoctorView:true}};
- const patients=new Map([['p1',{name:'Ana\nLópez'}],['p2',{name:'Luis Pérez'}]]);
- const appointments=[
-  {payload:{patientId:'p2',calendarId:'doctor-calendar',start:'2026-10-15T16:00:00Z',status:'scheduled',notes:'PRIVATE_NOTE'}},
-  {payload:{patientId:'p1',calendarId:'doctor-calendar',start:'2026-10-15T14:30:00Z',status:'confirmed',medications:['SECRET']}},
-  {payload:{patientId:'p1',calendarId:'doctor-calendar',start:'2026-10-15T18:00:00Z',status:'cancelled'}},
-  {payload:{patientId:'p1',calendarId:'wife-calendar',start:'2026-10-15T18:00:00Z',status:'scheduled'}},
-  {payload:{patientId:'p1',calendarId:'doctor-calendar',start:'2026-10-16T14:00:00Z',status:'scheduled'}},
- ];
- const items=agenda.secretaryAgendaItems(appointments,patients,member,'doctor-calendar','2026-10-15','America/El_Salvador');
- assert.equal(items.length,2);assert.equal(items[0].time,'08:30');assert.equal(items[0].patientName,'Ana López');assert.equal(items[1].patientName,'Luis Pérez');
- const message=agenda.secretaryAgendaMessage('2026-10-15',items);assert.ok(!message.includes('PRIVATE_NOTE'));assert.ok(!message.includes('SECRET'));assert.ok(!message.includes('\nLópez'));
- assert.equal(agenda.secretaryAgendaItems(appointments,patients,{...member,permissions:{patientsView:true}},'doctor-calendar','2026-10-15','America/El_Salvador').length,0);
-});
-test('Gmail agenda sender uses the limited send API and safe UTF-8 MIME',async()=>{
- const h=harness({env:{GMAIL_CLIENT_ID:'qa-client',GMAIL_CLIENT_SECRET:'qa-secret',GMAIL_REFRESH_TOKEN:'qa-refresh',GMAIL_SENDER_EMAIL:'clinic@example.invalid'}}),gmail=h.load('supabase/functions/_shared/gmail.ts');
- assert.equal(gmail.gmailConfigured(),true);
- assert.throws(()=>gmail.gmailRawMessage('unsafe\n@example.invalid','secretary@example.invalid','Agenda','Body'));
- const sent=await gmail.sendGmailEmail('secretary@example.invalid','Agenda de hoy','José Pérez · 08:30');
- assert.equal(sent.id,'qa-gmail-message');assert.equal(h.sent[0].url,'https://oauth2.googleapis.com/token');assert.equal(h.sent[1].url,'https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
- const raw=JSON.parse(h.sent[1].body).raw;const mime=Buffer.from(raw.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');
- assert.ok(mime.includes('To: <secretary@example.invalid>'));assert.ok(mime.includes('From: <clinic@example.invalid>'));assert.ok(mime.includes('Content-Transfer-Encoding: base64'));
- assert.ok(Buffer.from(mime.split('\r\n\r\n')[1].replace(/\s/g,''),'base64').toString('utf8').includes('José Pérez'));
- assert.ok(!mime.includes('qa-secret'));assert.ok(!mime.includes('qa-refresh'));
-});
-test('SMTP agenda sender uses the configured Gmail account over TLS port 465',async()=>{
- const h=harness({env:{LINKARE_SMTP_USER:'clinic@example.invalid',LINKARE_SMTP_PASSWORD:'qa-app-password',LINKARE_SMTP_FROM:'clinic@example.invalid'}}),smtp=h.load('supabase/functions/_shared/smtp.ts');
- assert.equal(smtp.smtpConfigured(),true);
- await assert.rejects(()=>smtp.sendSmtpEmail('unsafe\n@example.invalid','Agenda','Body'));
- const sent=await smtp.sendSmtpEmail('secretary@example.invalid','Agenda de hoy','José Pérez · 08:30');
- assert.equal(sent.provider,'gmail-smtp');assert.equal(sent.id,'qa-smtp-message');
- assert.equal(h.smtpConnections[0].host,'smtp.gmail.com');assert.equal(h.smtpConnections[0].port,465);assert.equal(h.smtpConnections[0].secure,true);
- assert.equal(h.smtpSent[0].to,'secretary@example.invalid');assert.ok(h.smtpSent[0].text.includes('José Pérez'));
- assert.ok(!JSON.stringify(h.smtpSent).includes('qa-app-password'));
-});
-test('SMTP sender does not claim delivery when the recipient is rejected',async()=>{
- const h=harness({env:{LINKARE_SMTP_USER:'clinic@example.invalid',LINKARE_SMTP_PASSWORD:'qa-app-password',LINKARE_SMTP_FROM:'clinic@example.invalid'},smtpReject:true}),smtp=h.load('supabase/functions/_shared/smtp.ts');
- await assert.rejects(()=>smtp.sendSmtpEmail('secretary@example.invalid','Agenda','Body'));
-});
-test('daily dispatcher fails closed without configured organization and Gmail',async()=>{
- const h=harness({env:{LINKARE_CRON_SECRET:'s'.repeat(32)}}),response=await h.request('reminder-dispatch',{},'s'.repeat(32));
- assert.equal(response.status,503);assert.equal((await response.json()).code,'DAILY_AGENDA_NOT_CONFIGURED');assert.equal(h.sent.length,0);
-});
-test('daily dispatcher sends only the authorized same-day agenda and records Gmail acceptance',async()=>{
- const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/El_Salvador',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
- const value=type=>parts.find(item=>item.type===type).value,day=`${value('year')}-${value('month')}-${value('day')}`;
- const appointment={id:'appointment-qa',payload:{patientId:'patient-qa',calendarId:'doctor-calendar',start:day+'T18:00:00Z',status:'scheduled',notes:'PRIVATE_NOTE'}};
- const h=harness({env:{LINKARE_CRON_SECRET:'s'.repeat(32),LINKARE_DAILY_AGENDA_ORG_ID:ORG,GMAIL_CLIENT_ID:'qa-client',GMAIL_CLIENT_SECRET:'qa-secret',GMAIL_REFRESH_TOKEN:'qa-refresh',GMAIL_SENDER_EMAIL:'clinic@example.invalid'},dailyAgenda:{member:{user_id:USER,role:'secretary',active:true,permissions:{patientsView:true,calendarDoctorView:true}},appointments:[appointment],patients:[{id:'patient-qa',payload:{name:'Paciente QA'}}]}});
- const response=await h.request('reminder-dispatch',{},'s'.repeat(32));assert.equal(response.status,200);
- const result=await response.json();assert.equal(result.date,day);assert.equal(result.accepted,1);assert.equal(result.failed,0);
- const reserved=h.changes.find(change=>change.table==='linkare_notification_deliveries'&&change.status==='queued');assert.equal(reserved.metadata.type,'secretary_daily_agenda');assert.equal(reserved.metadata.appointmentCount,1);
- const sentRecord=h.changes.find(change=>change.table==='linkare_notification_deliveries'&&change.status==='sent');assert.equal(sentRecord.provider,'gmail');
- const mime=Buffer.from(JSON.parse(h.sent.find(call=>call.url.includes('gmail/v1/users/me/messages/send')).body).raw.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');
- const message=Buffer.from(mime.split('\r\n\r\n')[1].replace(/\s/g,''),'base64').toString('utf8');assert.ok(message.includes('Paciente QA'));assert.ok(!message.includes('PRIVATE_NOTE'));
-});
-test('daily dispatcher prefers the existing Gmail SMTP account when configured',async()=>{
- const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/El_Salvador',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
- const value=type=>parts.find(item=>item.type===type).value,day=`${value('year')}-${value('month')}-${value('day')}`;
- const h=harness({env:{LINKARE_CRON_SECRET:'s'.repeat(32),LINKARE_DAILY_AGENDA_ORG_ID:ORG,LINKARE_SMTP_USER:'clinic@example.invalid',LINKARE_SMTP_PASSWORD:'qa-app-password',LINKARE_SMTP_FROM:'clinic@example.invalid'},dailyAgenda:{member:{user_id:USER,role:'secretary',active:true,permissions:{patientsView:true,calendarDoctorView:true}},appointments:[{id:'qa-appointment',payload:{patientId:'qa-patient',calendarId:'doctor-calendar',start:day+'T18:00:00Z',status:'scheduled',notes:'PRIVATE_NOTE'}}],patients:[{id:'qa-patient',payload:{name:'Paciente QA'}}]}});
- const response=await h.request('reminder-dispatch',{},'s'.repeat(32));assert.equal(response.status,200);
- assert.equal((await response.json()).accepted,1);assert.equal(h.smtpSent.length,1);assert.ok(h.smtpSent[0].text.includes('Paciente QA'));assert.ok(!h.smtpSent[0].text.includes('PRIVATE_NOTE'));
- assert.equal(h.sent.length,0);assert.equal(h.changes.find(change=>change.status==='sent').provider,'gmail-smtp');
-});
 test('secretary cannot invite another user by calling the team API',async()=>{const h=harness({role:'secretary'}),r=await h.request('linkare-team',{organizationId:ORG,action:'invite',email:'other@example.invalid',name:'Other'});assert.equal(r.status,403);assert.equal(h.changes.length,0);});
 test('generated PDF preserves Spanish names and has a valid xref offset',()=>{const h=harness(),bytes=h.load('supabase/functions/document-templates/index.ts').pdfBytes('Constancia médica','Paciente José Pérez','Dra. Muñoz','JV-123');const pdf=Buffer.from(bytes).toString('latin1');assert.ok(pdf.includes('Constancia médica'));assert.ok(pdf.includes('José Pérez'));assert.ok(pdf.includes('Dra. Muñoz'));const offset=Number(pdf.match(/startxref\n(\d+)/)?.[1]);assert.equal(pdf.slice(offset,offset+4),'xref');});

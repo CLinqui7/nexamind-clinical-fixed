@@ -98,6 +98,7 @@ import {
 } from './practice.js';
 import { downloadPrescriptionPdf } from './prescription-pdf.js';
 import { agendaTimeLabel, buildDailyAgendaPrintHtml, downloadDailyAgendaPdf } from './daily-agenda-pdf.js';
+import { clinicDayAndMinutes, secretaryTodayAppointments, showSecretaryAgendaNotice } from './domain/secretary-dashboard.js';
 import {
   createWompiPaymentLink,
   fetchWompiAppInfo,
@@ -382,7 +383,7 @@ class AppErrorBoundary extends React.Component {
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.agendaSheetRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
+    this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.secretaryAgendaRequest=0;this.agendaSheetRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
     const data=createEmptyData();
     this.state={
       data,authenticatedUserId:null,authView:'login',
@@ -402,7 +403,7 @@ class App extends React.Component {
       selectedCalendarIds:[],
       legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},
-      dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},profileAssetsLoaded:false,profileAssetsLoading:false,
+      dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),patientLoading:false,projection:null,patientLookup:{query:'',items:[],loading:false},profileAssetsLoaded:false,profileAssetsLoading:false,
       tourActive:false,tourSandbox:false,tourIndex:0,tourStepComplete:false,tourMissing:false,tourMarker:null,helpTab:'video',
     };
   }
@@ -426,9 +427,9 @@ class App extends React.Component {
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
-      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
+      patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
-        this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();this.checkConsultationPrompt();
+        this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();if(user.role==='secretary')this.refreshSecretaryAgenda();this.checkConsultationPrompt();
       });
   };
 
@@ -516,6 +517,38 @@ class App extends React.Component {
       const agendaPatients=appointments.filter(item=>item.patientSummary?.id).map(item=>directoryPatient(item.patientSummary));
       this.setState(previous=>({data:{...previous.data,appointments,patients:mergePatients(previous.data.patients,agendaPatients)},agendaRange:{...result,loading:false,error:''}}));
     }catch(error){if(error?.name!=='AbortError'&&request===this.agendaRequest)this.setState({agendaRange:{loading:false,error:readableError(error),hasMore:false,nextCursor:null}});}
+  };
+
+  refreshSecretaryAgenda = async () => {
+    const org=this.state.remoteOrganizationId;
+    const doctor=this.state.data.calendars?.find(calendar=>calendar.code==='doctor'&&calendar.isActive!==false);
+    if(!org||this.activeUser()?.role!=='secretary'||!this.can('patientsView')||!doctor||!this.canCalendar(doctor.id,'View'))return;
+    const epoch=this.authEpoch,request=++this.secretaryAgendaRequest,now=new Date(),day=clinicDayAndMinutes(now).day;
+    this.setState(previous=>({secretaryAgenda:{...previous.secretaryAgenda,loading:true,error:''}}));
+    try{
+      const start=new Date(now.getTime()-36*3600000).toISOString(),end=new Date(now.getTime()+36*3600000).toISOString();
+      const items=[];let cursor=null;
+      do{
+        const result=await loadAgendaRange(org,{start,end,calendarIds:[doctor.id],cursor,limit:200});
+        if(epoch!==this.authEpoch||request!==this.secretaryAgendaRequest)return;
+        items.push(...(result.items||[]));
+        cursor=result.hasMore?result.nextCursor:null;
+        if(cursor&&items.length>=5000)throw new Error('Hay demasiadas citas para mostrar la agenda completa. Consulte el calendario.');
+      }while(cursor);
+      const normalized=normalizeData({appointments:items}).appointments;
+      const today=secretaryTodayAppointments(normalized,doctor.id,now);
+      if(epoch===this.authEpoch&&request===this.secretaryAgendaRequest)this.setState({secretaryAgenda:{day,items:today,loading:false,error:'',loadedAt:Date.now()}});
+    }catch(error){
+      if(epoch===this.authEpoch&&request===this.secretaryAgendaRequest)this.setState(previous=>({secretaryAgenda:{...previous.secretaryAgenda,day,items:[],loading:false,error:readableError(error),loadedAt:0}}));
+    }
+  };
+
+  tickSecretaryAgenda = () => {
+    const now=Date.now();
+    if(this.activeUser()?.role!=='secretary')return;
+    const day=clinicDayAndMinutes(now).day;
+    this.setState({dashboardNow:now});
+    if(this.state.remoteReady&&!this.state.secretaryAgenda.loading&&(this.state.secretaryAgenda.day!==day||now-this.state.secretaryAgenda.loadedAt>5*60000))this.refreshSecretaryAgenda();
   };
 
   loadMoreAgenda = async () => {
@@ -648,6 +681,8 @@ class App extends React.Component {
     this.consultationPromptTimer=setInterval(this.checkConsultationPrompt,30000);
     this.accessTimer=setInterval(this.validateSessionAccess,30000);
     window.addEventListener('focus',this.validateSessionAccess);
+    this.secretaryAgendaTimer=setInterval(this.tickSecretaryAgenda,30000);
+    window.addEventListener('focus',this.tickSecretaryAgenda);
     this.authSubscription=onAuthChange((event,session)=>{
       // Do not await SDK calls inside this callback: Supabase holds its auth lock.
       const eventEpoch=this.authEpoch;
@@ -677,6 +712,7 @@ class App extends React.Component {
     window.removeEventListener('resize',this.scheduleTourMarker);
     this.authSubscription?.unsubscribe();
     clearInterval(this.accessTimer);window.removeEventListener('focus',this.validateSessionAccess);
+    clearInterval(this.secretaryAgendaTimer);window.removeEventListener('focus',this.tickSecretaryAgenda);
     for(const timer of [this.persistTimer,this.toastTimer,this.loadingTimer,this.encounterSaveIndicatorTimer])clearTimeout(timer);
     clearInterval(this.consultationPromptTimer);clearInterval(this.encounterTimer);document.body.style.overflow='';
   }
@@ -1021,6 +1057,7 @@ class App extends React.Component {
     this.setState({view,mobileNav:false,appointmentDetails:null},()=>{
       if(view==='patients'&&!this.state.patientDirectory.items.length)this.refreshPatientDirectory();
       if(view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
+      if(view==='dashboard'&&this.activeUser()?.role==='secretary')this.refreshSecretaryAgenda();
     });
     if(view==='payments')this.loadSubscriptionInvoices();
     if(view==='settings')this.refreshTeam();
@@ -2091,7 +2128,7 @@ class App extends React.Component {
         this.persistedData=nextData;this.directoryCache?.clear();
         this.setState({data:nextData,modal:null,modalError:'',appointmentDetails:saved,formSaving:false,remoteSaveStatus:'saved'},()=>{
           this.notify(response.merged?'Cambios compatibles combinados y guardados.':'Evento actualizado.');
-          this.refreshDashboardSummary();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
+          this.refreshDashboardSummary();this.refreshSecretaryAgenda();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
         });
         return;
       }
@@ -2108,7 +2145,7 @@ class App extends React.Component {
       mergePersistenceBaseline({appointments:[savedAppointment]},revisions,permissions);
       this.persistedData=nextData;this.directoryCache?.clear();
       this.setState({data:nextData,modal:null,modalError:'',appointmentDetails:savedAppointment,formSaving:false,remoteSaveStatus:'saved'},()=>{
-        this.notify('Evento creado correctamente.');this.refreshDashboardSummary();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
+        this.notify('Evento creado correctamente.');this.refreshDashboardSummary();this.refreshSecretaryAgenda();this.refreshAgendaRange();if(this.state.view==='agenda')this.refreshAgendaSheet();
       });
     } catch (error) {
       const detail=readableError(error);
@@ -2269,6 +2306,7 @@ class App extends React.Component {
       }),()=>{
         this.notify(response.conflict?'Otra persona cambió este dato. Ya ve el valor actual; púlselo de nuevo si aún desea modificarlo.':field==='status'?`Cita marcada como ${statusLabel(value).toLowerCase()}.`:value==='reviewed'?'Cita marcada como revisada.':'Revisión administrativa actualizada.',response.conflict?'warning':'success');
         this.refreshDashboardSummary();
+        this.refreshSecretaryAgenda();
         if(this.state.view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
       });
     }catch(error){
@@ -2368,7 +2406,7 @@ class App extends React.Component {
       }),()=>{
         this.persistedData=this.state.data;
         this.notify('Evento eliminado de la agenda y conservado para recuperación.');
-        this.refreshDashboardSummary();this.refreshDailyAgenda();
+        this.refreshDashboardSummary();this.refreshDailyAgenda();this.refreshSecretaryAgenda();
         if(this.state.view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
       });
     }catch(error){
@@ -2487,8 +2525,10 @@ class App extends React.Component {
     const patients = this.state.data.patients.filter(item => !item.archived);
     const { appointments } = this.state.data;
     const user = this.activeUser();
-    const today = new Date();
-    const todayAppointments = appointments.filter(item => isSameDay(item.start, today) && item.status !== 'cancelled').sort((left, right) => new Date(left.start) - new Date(right.start));
+    const today = new Date(this.state.dashboardNow);
+    const agenda=this.state.secretaryAgenda;
+    const agendaCurrent=agenda.day===clinicDayAndMinutes(today).day;
+    const todayAppointments=user?.role==='secretary'?(agendaCurrent?agenda.items:[]):appointments.filter(item=>isSameDay(item.start,today)&&item.status!=='cancelled').sort((left,right)=>new Date(left.start)-new Date(right.start));
     const pending = appointments.filter(item => item.status === 'pending' && new Date(item.start) >= today).length;
     const reminders = getReminderQueue(this.state.data, today);
     const due = reminders.filter(item => item.status === 'due' || item.status === 'overdue');
@@ -2501,18 +2541,19 @@ class App extends React.Component {
         actions=${html`<div className="tour-actions-group">${this.can('patientsCreate') ? html`<${Button} key="new-patient" tone="secondary" icon="userPlus" onClick=${this.openNewPatient}>Nuevo paciente</${Button}>` : null}${this.canAnyCalendar('Create') ? html`<${Button} key="new-event" icon="plus" onClick=${() => this.openNewAppointment()}>Nuevo evento</${Button}>` : null}</div>`}
       />
       <div className="simple-help administrative-help" data-tour="secretary-privacy"><${Icon} name="shield" size=${18}/><p><b>Vista administrativa.</b> Solo muestra contacto, seguro, agenda y recordatorios. El médico decide qué información clínica puede consultar o editar este usuario.</p></div>
+      ${user?.role==='secretary'&&this.can('patientsView')&&this.canDoctorCalendar('View')&&showSecretaryAgendaNotice(today)&&agendaCurrent&&!agenda.loading&&!agenda.error?html`<div className="secretary-agenda-notice" role="status"><${Icon} name="calendar" size=${21}/><div><b>Agenda de hoy · ${todayAppointments.length} cita${todayAppointments.length===1?'':'s'}</b><span>Revisa las citas de hoy del calendario del doctor. Se actualizan mientras tengas Linkare abierto.</span></div><button onClick=${() => document.querySelector('.secretary-agenda-list')?.scrollIntoView({behavior:'smooth',block:'center'})}>Ver citas</button></div>`:null}
       <div className="kpi-grid secretary-kpis">
-        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${this.state.dashboardSummary?.appointments?.today??todayAppointments.length} hint="programadas para hoy" icon="calendar" tone="blue"/>
+        <${KpiCard} tour="secretary-overview" label="Citas de hoy" value=${user?.role==='secretary'?(agenda.loading||!agendaCurrent?'…':todayAppointments.length):(this.state.dashboardSummary?.appointments?.today??todayAppointments.length)} hint=${user?.role==='secretary'?'calendario del doctor':'programadas para hoy'} icon="calendar" tone="blue"/>
         <${KpiCard} label="Por confirmar" value=${pending} hint="citas futuras pendientes" icon="clock" tone="purple"/>
         <${KpiCard} label="Recordatorios listos" value=${due.length} hint="requieren envío o revisión" icon="message" tone=${due.length ? 'coral' : 'teal'}/>
         <${KpiCard} label="Pacientes" value=${this.state.dashboardSummary?.patients?.total??patients.length} hint="expedientes no archivados" icon="patients" tone="blue"/>
       </div>
       <div className="dashboard-grid">
         <${Card} className="span-7" title="Agenda de hoy" action=${html`<div className="agenda-quick-actions">${this.can('agendaSheetView')&&this.canDoctorCalendar('View')?html`<button key="print-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.printAgendaSheet(toDateInput(new Date()))}>Imprimir</button><button key="save-agenda" className="text-button" disabled=${this.state.agendaPrintBusy||this.state.agendaPdfBusy} onClick=${()=>this.downloadAgendaSheet(toDateInput(new Date()))}>Guardar PDF</button>`:null}<button className="text-button" onClick=${() => this.setView('agenda')}>Abrir calendario <${Icon} name="chevronRight" size=${16}/></button></div>`}>
-          <div className="secretary-agenda-list">${todayAppointments.length ? todayAppointments.map(appointment => {
-            const patient = patients.find(item => item.id === appointment.patientId);
-            return html`<button key=${appointment.id} className="secretary-agenda-row" onClick=${() => this.setState({ appointmentDetails: appointment })}><time>${formatTime(appointment.start)}</time><${Avatar} patient=${patient}/><div><b>${patient?.name || appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Badge} tone=${appointment.status === 'confirmed' ? 'success' : 'warning'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`;
-          }) : html`<${EmptyState} icon="calendar" title="No hay citas hoy" text="Puede crear una cita con el botón superior."/>`}</div>
+          <div className="secretary-agenda-list">${user?.role==='secretary'&&agenda.error?html`<p role="alert">No se pudo cargar la agenda de hoy. ${agenda.error} <button className="text-button" onClick=${this.refreshSecretaryAgenda}>Reintentar</button></p>`:user?.role==='secretary'&&(agenda.loading||!agendaCurrent)?html`<p>Cargando las citas de hoy…</p>`:todayAppointments.length?todayAppointments.map(appointment=>{
+            const patient=patients.find(item=>item.id===appointment.patientId)||appointment.patientSummary;
+            return html`<button key=${appointment.id} className="secretary-agenda-row" onClick=${()=>this.setState({appointmentDetails:appointment})}><time>${agendaTimeLabel(appointment.start,'America/El_Salvador')}</time><${Avatar} patient=${patient}/><div><b>${patient?.name||appointment.title}</b><small>${appointment.type} · ${appointment.modality}</small></div><${Badge} tone=${appointment.status==='confirmed'?'success':'warning'}>${statusLabel(appointment.status)}</${Badge}><${Icon} name="chevronRight" size=${16}/></button>`;
+          }):html`<${EmptyState} icon="calendar" title="No hay citas hoy" text="Puede crear una cita con el botón superior."/>`}</div>
         </${Card}>
         <${Card} tour="secretary-reminders" className="span-5" title="Recordatorios" subtitle="Se calculan con los tiempos configurados por el médico.">
           <div className="reminder-mini-list">${[...due, ...upcoming].slice(0, 7).length ? [...due, ...upcoming].slice(0, 7).map(reminder => html`<div key=${reminder.id} className=${`reminder-mini reminder-${reminder.status}`}><span><${Icon} name="message" size=${16}/></span><div><b>${reminder.patient?.name || reminder.appointment.title}</b><small>${reminderLabel(reminder.hours)} · ${formatDateTime(reminder.appointment.start)}</small></div><${Badge} tone=${reminder.status === 'due' || reminder.status === 'overdue' ? 'warning' : 'neutral'}>${reminder.status === 'due' ? 'Enviar' : reminder.status === 'overdue' ? 'Vencido' : 'Próximo'}</${Badge}></div>`) : html`<${EmptyState} icon="check" title="Sin recordatorios pendientes" text="La cola se actualizará según las próximas citas."/>`}</div>
@@ -3762,7 +3803,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
   clearSessionView = () => {
     this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
-    this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',
+    this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),
       formSaving:false,modal:null,appointmentDetails:null,appointmentStatusBusyId:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
       teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };

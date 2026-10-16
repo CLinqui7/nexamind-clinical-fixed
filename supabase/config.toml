@@ -3,7 +3,7 @@ project_id = "linkare-clinical"
 # Gateway JWT verification is disabled per handler. Private handlers explicitly call
 # auth.getUser(bearerToken) and verify active organization membership.
 # Webhook = HMAC; Google callback = single-use state; calendar feed = bearer feed token;
-# reminder-dispatch = dedicated cron secret. Retired endpoints only return HTTP 410.
+# Retired endpoints only return HTTP 410.
 
 [functions.calendar-feed]
 verify_jwt = false
@@ -36,9 +36,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.linkare-team]
-verify_jwt = false
-
-[functions.reminder-dispatch]
 verify_jwt = false
 
 [functions.reminder-provider-status]
