@@ -8,13 +8,13 @@ La función registra una entrega por secretaria y fecha en linkare_notification_
 
 ## Transporte SMTP de Gmail
 
-Las invitaciones a Secretaría usan Supabase Auth inviteUserByEmail. El proyecto tiene SMTP personalizado en smtp.gmail.com:587 para esos correos, pero Supabase Auth no ofrece una API para enviar la agenda desde la Edge Function y no comparte con ella la contraseña guardada en SMTP Settings. La agenda puede usar **la misma cuenta Gmail** con una copia de su contraseña de aplicación en Edge Function Secrets. La función sale a smtp.gmail.com:465 con TLS, porque Supabase Edge Functions bloquea el puerto 587 saliente. No se usan correos de invitación como recordatorios.
+Las invitaciones a Secretaría usan Supabase Auth inviteUserByEmail. El proyecto tiene SMTP personalizado en smtp.gmail.com:587 para esos correos, pero Supabase Auth no ofrece una API para enviar la agenda desde la Edge Function y no comparte con ella la contraseña guardada en SMTP Settings. La agenda puede usar **la misma cuenta Gmail** con una contraseña de aplicación guardada en Edge Function Secrets; puede ser otra contraseña de aplicación de esa cuenta. La función sale a smtp.gmail.com:465 con TLS, porque Supabase Edge Functions bloquea el puerto 587 saliente. No se usan correos de invitación como recordatorios.
 
 Guardar estos valores **solo** en Supabase Edge Function Secrets:
 
 - LINKARE_DAILY_AGENDA_ORG_ID: ID verificado del consultorio que recibirá la agenda.
 - LINKARE_SMTP_USER: usuario de la cuenta Gmail ya configurada en SMTP Settings.
-- LINKARE_SMTP_PASSWORD: **la misma contraseña de aplicación**, que debe cargarse de nuevo porque Supabase Auth no la expone a la Edge Function.
+- LINKARE_SMTP_PASSWORD: contraseña de aplicación de la misma cuenta Gmail; puede crearse una nueva para Linkare porque Supabase Auth no expone la que ya usa.
 - LINKARE_SMTP_FROM: dirección remitente configurada en SMTP Settings o un alias autorizado de la cuenta.
 - LINKARE_CRON_SECRET y CLINIC_TIMEZONE, ya usados por el despachador.
 
