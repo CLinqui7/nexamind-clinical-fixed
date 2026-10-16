@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { gmailConfigured, sendGmailEmail } from '../_shared/gmail.ts';
+import { smtpConfigured, sendSmtpEmail } from '../_shared/smtp.ts';
 import { localDate, secretaryAgendaItems, secretaryAgendaMessage } from '../_shared/secretary-agenda.ts';
 import { calendarPermissionAllowed, permissionAllowed } from '../_shared/permissions.ts';
 
@@ -15,7 +16,7 @@ Deno.serve(async request => {
   const received = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
   if (request.method !== 'POST' || secret.length < 32 || !same(secret, received)) return new Response('Unauthorized', { status: 401 });
   const organizationId = Deno.env.get('LINKARE_DAILY_AGENDA_ORG_ID') || '';
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organizationId) || !gmailConfigured()) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organizationId) || !(smtpConfigured() || gmailConfigured())) {
     return Response.json({ ok: false, code: 'DAILY_AGENDA_NOT_CONFIGURED' }, { status: 503 });
   }
   try {
@@ -61,13 +62,15 @@ Deno.serve(async request => {
       if (reserveError?.code === '23505') { skipped++; continue; }
       if (reserveError || !delivery) { failed++; continue; }
       try {
-        const sent = await sendGmailEmail(destination, `Agenda de citas de hoy - ${date}`, secretaryAgendaMessage(date, items));
+        const subject = `Agenda de citas de hoy - ${date}`;
+        const message = secretaryAgendaMessage(date, items);
+        const sent = smtpConfigured() ? await sendSmtpEmail(destination, subject, message) : await sendGmailEmail(destination, subject, message);
         const { error: updateError } = await db.from('linkare_notification_deliveries').update({ status: 'sent', provider: sent.provider, provider_message_id: sent.id, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', delivery.id);
         if (updateError) throw updateError;
         accepted++;
       } catch {
         failed++;
-        await db.from('linkare_notification_deliveries').update({ status: 'failed', error_message: 'No se pudo confirmar la aceptación de Gmail; revisar antes de reintentar.', updated_at: new Date().toISOString() }).eq('id', delivery.id);
+        await db.from('linkare_notification_deliveries').update({ status: 'failed', error_message: 'No se pudo confirmar la aceptación del correo; revisar antes de reintentar.', updated_at: new Date().toISOString() }).eq('id', delivery.id);
       }
     }
     return Response.json({ ok: failed === 0, date, recipients: secretaries.length, accepted, skipped, failed }, { status: failed ? 503 : 200, headers: { 'Cache-Control': 'no-store' } });
