@@ -29,6 +29,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261009054502_historical_medication_clinician_review.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261027141848_prevent_duplicate_patient_identity.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261027143308_merge_historical_duplicate_patient.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261027144042_editable_historical_medication_groups.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -629,5 +630,30 @@ test('DB: merging a historical duplicate retains both source profiles and all me
  assert.equal(summary.mergedProfiles[0].profile.address,'merge-source');
  assert.equal((await db.query("select count(*)::int n from linkare_private.patient_merge_log_v1 where organization_id=$1 and source_patient_id='merge-source'",[org])).rows[0].n,1);
  await assert.rejects(()=>db.query("select linkare_private.merge_historical_duplicate_patient_v1($1,'merge-source','merge-target')",[org]),/MERGE_PATIENT_NOT_ACTIVE/);
+ await actor('owner');
+});
+
+test('DB: correcting and archiving a historical medication group preserves the source',async()=>{
+ await actor('owner');
+ const nameKey='medicamento ficticio';
+ const edit=payload=>db.query('select public.linkare_set_legacy_medication_group_v1($1,$2,$3,$4::jsonb) data',[org,'merge-target',nameKey,JSON.stringify(payload)]);
+ await edit({name:'Nombre corregido',strengthText:'20 mg',instructionText:'Texto corregido'});
+ const page=async()=>(await db.query("select public.linkare_legacy_medication_summary_v1($1,'merge-target',null,20) data",[org])).rows[0].data.items;
+ let group=(await page()).find(item=>item.nameKey===nameKey);
+ assert.equal(group.name,'Nombre corregido');assert.equal(group.strengthText,'20 mg');
+ assert.equal(group.reviewStatus,'historical_unverified');
+ await edit({archived:true,reason:'Registro duplicado'});
+ group=(await page()).find(item=>item.nameKey===nameKey);
+ assert.equal(group.archived,true);assert.equal(group.archiveReason,'Registro duplicado');
+ await actor('secretary');
+ await denied(()=>edit({name:'Cambio no permitido'}));
+ await actor('owner');
+ await edit({archived:false});
+ group=(await page()).find(item=>item.nameKey===nameKey);
+ assert.equal(group.archived,false);
+ await db.exec('reset role');
+ const mention=(await db.query("select name,strength_text,review_status from linkare_private.legacy_medication_mentions_v1 where patient_id='merge-target' and name='Medicamento ficticio'")).rows[0];
+ assert.equal(mention.name,'Medicamento ficticio');assert.equal(mention.strength_text,'10 mg');assert.equal(mention.review_status,'unreviewed');
+ assert.equal((await db.query("select count(*)::int n from linkare_private.legacy_medication_group_edit_audit_v1 where organization_id=$1 and patient_id='merge-target'",[org])).rows[0].n,3);
  await actor('owner');
 });

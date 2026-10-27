@@ -127,6 +127,7 @@ import {
   loadLegacyPatientHistory,
   loadHistoricalMedicationMentions,
   loadHistoricalMedicationSummary,
+  saveHistoricalMedicationGroup,
   reviewHistoricalMedication,
   loadHistoricalVisitSummary,
   createProductionAppointment,
@@ -1258,6 +1259,52 @@ class App extends React.Component {
     if(!this.can('clinicalView')||!this.can('medicationsManage')||!['owner','doctor'].includes(this.activeUser()?.role))return this.permissionDenied();
     if(!mention?.mentionId&&!mention?.id)return this.notify('Actualice la aplicación para revisar esta mención histórica.','danger');
     this.setState({modal:{type:'historicalMedicationReview',patientId:patient.id,mention,draft:historicalMedicationReviewDraft(mention)},modalError:''});
+  };
+
+  openHistoricalGroupEdit = (patient,item,mode='edit') => {
+    if(!this.can('clinicalView')||!this.can('medicationsManage')||!['owner','doctor'].includes(this.activeUser()?.role))return this.permissionDenied();
+    this.setState({modal:{type:'historicalGroupEdit',mode,patientId:patient.id,nameKey:item.nameKey,draft:{
+      name:item.name,strengthText:item.strengthText||'',instructionText:item.instructionText||'',reason:'',
+    }},modalError:''});
+  };
+
+  refreshHistoricalMedicationGroups = patientId => {
+    this.setState(previous=>({historicalMedicationGroupsByPatient:{
+      ...previous.historicalMedicationGroupsByPatient,
+      [patientId]:{items:[],loaded:false,loading:false},
+    }}),()=>this.loadHistoricalMedicationGroups(patientId));
+  };
+
+  saveHistoricalGroupEdit = async event => {
+    event.preventDefault();
+    const modal=this.state.modal;
+    if(modal?.type!=='historicalGroupEdit'||this.state.formSaving)return;
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    const edit=modal.mode==='archive'
+      ? {archived:true,reason:modal.draft.reason}
+      : {name:modal.draft.name,strengthText:modal.draft.strengthText,instructionText:modal.draft.instructionText};
+    try{
+      this.setState({formSaving:true,modalError:''});
+      const result=await saveHistoricalMedicationGroup(org,modal.patientId,modal.nameKey,edit);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      if(result?.ok!==true)throw new Error('No se confirmó el cambio en la base de datos.');
+      this.setState({formSaving:false,modal:null},()=>this.refreshHistoricalMedicationGroups(modal.patientId));
+      this.notify(modal.mode==='archive'?'Medicamento histórico archivado; el texto original se conserva.':'Corrección guardada; el texto original se conserva.');
+    }catch(error){
+      if(epoch===this.authEpoch&&org===this.state.remoteOrganizationId)this.setState({formSaving:false,modalError:readableError(error)});
+    }
+  };
+
+  restoreHistoricalGroup = async (patient,item) => {
+    if(!this.can('clinicalView')||!this.can('medicationsManage')||!['owner','doctor'].includes(this.activeUser()?.role))return this.permissionDenied();
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    try{
+      const result=await saveHistoricalMedicationGroup(org,patient.id,item.nameKey,{archived:false});
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      if(result?.ok!==true)throw new Error('No se confirmó la restauración en la base de datos.');
+      this.refreshHistoricalMedicationGroups(patient.id);
+      this.notify('Medicamento histórico restaurado en el listado.');
+    }catch(error){if(epoch===this.authEpoch)this.notify(readableError(error),'danger');}
   };
 
   submitHistoricalMedicationReview = async (decision) => {
@@ -2943,18 +2990,22 @@ class App extends React.Component {
   renderHistoricalMedicationGroups(patient){
     const state=this.state.historicalMedicationGroupsByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false};
     const canReview=this.can('clinicalView')&&this.can('medicationsManage')&&['owner','doctor'].includes(this.activeUser()?.role);
+    const activeItems=(state.items||[]).filter(item=>!item.archived);
+    const archivedItems=(state.items||[]).filter(item=>item.archived);
     return html`<${Card} className="span-12" title="Medicamentos históricos importados" subtitle="Agrupados por nombre registrado en FoxPro. La concentración y la indicación corresponden a la última mención fechada disponible, no a una dosis o tratamiento vigente.">
       ${state.error?html`<div className="sync-banner danger" role="alert">No se pudo cargar el resumen histórico. <button onClick=${()=>this.loadHistoricalMedicationGroups(patient.id)}>Reintentar</button></div>`:null}
       ${state.loading&&!state.items?.length?html`<p>Cargando medicamentos históricos…</p>`:null}
       ${state.loaded&&!state.items?.length?html`<p>Sin nombres de medicamentos identificables en las anotaciones. Revise el texto original en “Sistema anterior”.</p>`:null}
-      ${(state.items||[]).length?html`<div className="medication-list">${state.items.map(item=>html`
+      ${state.loaded&&!activeItems.length&&archivedItems.length?html`<p>Todos los medicamentos de esta página fueron archivados del listado. El texto de origen sigue disponible.</p>`:null}
+      ${activeItems.length?html`<div className="medication-list">${activeItems.map(item=>html`
         <article key=${item.nameKey} className="medication-card medication-inactive">
           <div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">Sistema anterior · ${item.mentionCount} mención(es)</span><h3>${item.name}</h3><p>${item.strengthText||'Concentración no registrada'}</p></div></div><${Badge} tone=${item.reviewStatus==='confirmed_current'?'success':item.reviewStatus==='not_current'?'neutral':'warning'}>${item.reviewStatus==='confirmed_current'?'Confirmado por médico':item.reviewStatus==='not_current'?'Revisado: no actual':'Histórico sin verificar'}</${Badge}></div>
           <div className="medication-info-grid"><div><span>Primera fecha conservada</span><b>${item.firstSeenOn?formatDate(item.firstSeenOn):'No consta'}</b></div><div><span>Última fecha conservada</span><b>${item.lastSeenOn?formatDate(item.lastSeenOn):'No consta'}</b></div></div>
           ${item.instructionText?html`<div className="notes-box"><span>Indicación anotada en origen</span><p>${item.instructionText}</p></div>`:null}
           <div className="notes-box"><span>Texto de origen</span><p>${item.sourceExcerpt}</p></div>
-          ${canReview&&item.mentionId&&item.reviewStatus==='historical_unverified'?html`<div className="medication-actions"><${Button} tone="secondary" icon="check" onClick=${()=>this.openHistoricalMedicationReview(patient,item)}>Verificar medicamento</${Button}></div>`:null}
+          ${canReview?html`<div className="medication-actions"><${Button} tone="secondary" icon="edit" onClick=${()=>this.openHistoricalGroupEdit(patient,item)}>Editar listado</${Button}><button type="button" className="text-danger-button" onClick=${()=>this.openHistoricalGroupEdit(patient,item,'archive')}><${Icon} name="trash" size=${16}/> Eliminar del listado</button>${item.mentionId&&item.reviewStatus==='historical_unverified'?html`<${Button} tone="secondary" icon="check" onClick=${()=>this.openHistoricalMedicationReview(patient,item)}>Confirmar uso actual</${Button}>`:null}</div>`:null}
         </article>`)}</div>`:null}
+      ${archivedItems.length?html`<div className="admin-appointment-list"><h4>Eliminados del listado</h4>${archivedItems.map(item=>html`<div key=${item.nameKey}><div><b>${item.name}</b><small>${item.strengthText||'Concentración no registrada'} · Motivo: ${item.archiveReason||'No registrado'}</small></div><${Badge} tone="neutral">Archivado</${Badge}>${canReview?html`<${Button} tone="secondary" onClick=${()=>this.restoreHistoricalGroup(patient,item)}>Restaurar</${Button}>`:null}</div>`)}</div>`:null}
       ${state.hasMore?html`<${Button} tone="secondary" disabled=${state.loading} onClick=${()=>this.loadHistoricalMedicationGroups(patient.id,true)}>${state.loading?'Cargando…':'Ver más medicamentos históricos'}</${Button}>`:null}
       <p className="clinical-footnote">La revisión se aplica solo a la última mención mostrada de cada grupo, no a todas sus anotaciones. No identifica equivalencias entre marcas y genéricos ni confirma uso actual automáticamente. La historia original permanece intacta.</p>
     </${Card}>`;
@@ -3256,6 +3307,7 @@ class App extends React.Component {
     if (modal.type === 'prescriptionVoid') return this.renderPrescriptionVoidModal();
     if (modal.type === 'medication') return this.renderMedicationFormModal();
     if (modal.type === 'historicalMedicationReview') return this.renderHistoricalMedicationReviewModal();
+    if (modal.type === 'historicalGroupEdit') return this.renderHistoricalGroupEditModal();
     if (modal.type === 'dose') return this.renderDoseFormModal();
     if (modal.type === 'medicationStatus') return this.renderMedicationStatusFormModal();
     if (modal.type === 'medicationArchive') return this.renderMedicationArchiveModal();
@@ -3480,6 +3532,22 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
         </div>
         <div className="form-information"><${Icon} name="print" size=${19}/><div><b>Lista para papel membretado</b><p>La impresión incluye clínica, licencia, paciente, indicaciones y espacio para firma y sello. Las observaciones internas no se imprimen.</p></div></div>
         <div data-tour="prescription-form-save"><${FormActions} disabled=${this.state.formSaving || !items.length} onCancel=${this.closeModal} submitLabel=${draft.id ? 'Guardar corrección y abrir receta' : 'Guardar y abrir receta'}/></div>
+      </form>
+    </${Modal}>`;
+  }
+
+  renderHistoricalGroupEditModal() {
+    const {mode,draft}=this.state.modal;
+    const archiving=mode==='archive';
+    return html`<${Modal} title=${archiving?'Eliminar del listado histórico':'Corregir medicamento histórico'} subtitle="El texto de FoxPro se conserva intacto." onClose=${this.closeModal} size="lg">
+      <form className="clinical-form" onSubmit=${this.saveHistoricalGroupEdit}>
+        ${this.renderModalError()}
+        ${archiving?html`<div className="form-warning"><${Icon} name="alert" size=${18}/><span>Se archivará la tarjeta del listado, pero las menciones originales seguirán disponibles en la historia del paciente.</span></div><${FormField} label="Motivo de eliminación" required=${true}><textarea autoFocus rows="3" minLength="3" maxLength="500" value=${draft.reason} onChange=${event=>this.updateDraft('reason',event.target.value)} required></textarea></${FormField}>`:html`
+          <div className="form-grid"><${FormField} label="Nombre que se mostrará" required=${true}><input autoFocus value=${draft.name} maxLength="100" onChange=${event=>this.updateDraft('name',event.target.value)} required/></${FormField}><${FormField} label="Concentración anotada"><input value=${draft.strengthText} maxLength="60" onChange=${event=>this.updateDraft('strengthText',event.target.value)}/></${FormField}></div>
+          <${FormField} label="Indicación anotada"><textarea rows="3" maxLength="700" value=${draft.instructionText} onChange=${event=>this.updateDraft('instructionText',event.target.value)}></textarea></${FormField}>
+          <p className="field-note">Esta corrección cambia la presentación del listado. El texto de origen permanece disponible sin cambios.</p>
+        `}
+        <${FormActions} disabled=${this.state.formSaving} onCancel=${this.closeModal} submitLabel=${archiving?'Eliminar del listado':'Guardar corrección'}/>
       </form>
     </${Modal}>`;
   }
