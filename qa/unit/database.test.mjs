@@ -30,6 +30,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261027141848_prevent_duplicate_patient_identity.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261027143308_merge_historical_duplicate_patient.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261027144042_editable_historical_medication_groups.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261027144440_normalize_historical_medication_group_names.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -656,4 +657,18 @@ test('DB: correcting and archiving a historical medication group preserves the s
  assert.equal(mention.name,'Medicamento ficticio');assert.equal(mention.strength_text,'10 mg');assert.equal(mention.review_status,'unreviewed');
  assert.equal((await db.query("select count(*)::int n from linkare_private.legacy_medication_group_edit_audit_v1 where organization_id=$1 and patient_id='merge-target'",[org])).rows[0].n,3);
  await actor('owner');
+});
+
+test('DB: accented punctuation variants share one unverified historical card',async()=>{
+ await db.exec('reset role');
+ const history='00000000-0000-4000-8000-000000000092';
+ const mention='00000000-0000-4000-8000-000000000094';
+ const batch='00000000-0000-4000-8000-000000000091';
+ await db.query("insert into linkare_private.legacy_medication_mentions_v1(organization_id,id,batch_id,patient_id,history_id,source_text_sha,source_line,name,strength_text,source_excerpt,extraction_method) values($1,$2,$3,'merge-target',$4,repeat('e',64),2,'Medicamento Fictício.','10 mg','Medicamento Fictício. 10 mg','synthetic')",[org,mention,batch,history]);
+ await actor('owner');
+ const page=(await db.query("select public.linkare_legacy_medication_summary_v1($1,'merge-target',null,20) data",[org])).rows[0].data;
+ const groups=page.items.filter(item=>item.nameKey==='medicamento ficticio');
+ assert.equal(groups.length,1);assert.equal(groups[0].mentionCount,2);
+ assert.equal(groups[0].name,'Nombre corregido');
+ assert.equal(groups[0].reviewStatus,'historical_unverified');
 });
