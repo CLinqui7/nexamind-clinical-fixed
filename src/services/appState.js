@@ -154,6 +154,9 @@ export function loadPatientDirectory(organizationId,{scope='recent',query='',cur
 export function loadPatientDetail(organizationId,patientId,{signal}={}){
   return rpc('linkare_patient_detail_v1',{org:organizationId,p_patient_id:patientId},{signal});
 }
+export function findMatchingPatient(organizationId,name,phone){
+  return rpc('linkare_find_patient_match_v1',{org:organizationId,p_name:name,p_phone:phone});
+}
 export function loadAgendaRange(organizationId,{start,end,calendarIds=null,cursor=null,limit=200,signal}={}){
   return rpc('linkare_agenda_range_v1',{org:organizationId,p_start:start,p_end:end,p_calendar_ids:calendarIds?.length?calendarIds:null,p_cursor:cursor,p_limit:Math.min(200,limit)},{signal});
 }

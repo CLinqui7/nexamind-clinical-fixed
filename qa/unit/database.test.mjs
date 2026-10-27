@@ -27,6 +27,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261008185940_agenda_previous_visit_date.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261008191908_historical_medication_summary.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261009054502_historical_medication_clinician_review.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261027141848_prevent_duplicate_patient_identity.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -37,6 +38,22 @@ before(async()=>{
 after(()=>db.close());
 test('DB: a new clinic is free, empty and has no paid period or order',async()=>{const d=await load();assert.equal(d.complimentaryAccess,true);assert.equal(d.entitled,true);assert.equal(d.memberRole,'owner');assert.equal(d.payload.patients.length,0);const s=(await db.query('select * from public.linkare_subscriptions_v3')).rows[0];assert.equal(s.current_period_end,null);assert.equal(s.last_order_id,null);assert.equal((await db.query('select * from public.linkare_orders_v3')).rows.length,0);});
 test('DB: owner can save patients, consultations, appointments and alerts for free',async()=>{await save([{kind:'patient_admin',id:'patient',payload:{name:'Synthetic QA'},expectedRevision:0},{kind:'patient_clinical',id:'patient',payload:{diagnosis:'PRIVATE_DIAGNOSIS',medications:[{name:'PRIVATE_MED'}],documents:[{id:'doc',name:'PRIVATE_DOC'}],consultations:[{id:'signed',status:'signed',signedBy:ids.owner,signedAt:'2026-09-01',freeNotes:'IMMUTABLE'}],notes:[]},expectedRevision:0},{kind:'appointment',id:'appointment',expectedRevision:0,payload:{calendarId:calendarIds.doctor,eventType:'appointment',patientId:'patient',start:'2026-10-01T12:00:00Z',end:'2026-10-01T12:30:00Z'}},{kind:'appointment_clinical',id:'appointment',expectedRevision:0,payload:{notes:'PRIVATE_APPOINTMENT'}},{kind:'alert',id:'alert',expectedRevision:0,payload:{id:'alert',detail:'PRIVATE_ALERT'}}]);const d=await load();assert.equal(d.payload.patients.length,1);assert.equal(d.payload.appointments.length,1);assert.equal(d.payload.alerts.length,1);});
+test('DB: identical name and Salvador phone cannot create another active patient',async()=>{
+ await actor('owner');
+ await save([{kind:'patient_admin',id:'identity-original',expectedRevision:0,payload:{id:'identity-original',name:'José Pérez QA',phone:'7000-0000'}}]);
+ const match=(await db.query("select public.linkare_find_patient_match_v1($1,'Jose  Perez QA','+503 7000 0000') data",[org])).rows[0].data;
+ assert.equal(match.id,'identity-original');
+ await assert.rejects(()=>save([{kind:'patient_admin',id:'identity-second',expectedRevision:0,payload:{id:'identity-second',name:'Jose Perez QA',phone:'+50370000000'}}]),error=>error.code==='23505'&&error.message.includes('PATIENT_ALREADY_EXISTS:identity-original'));
+ await assert.rejects(()=>save([
+  {kind:'patient_admin',id:'identity-batch-a',expectedRevision:0,payload:{id:'identity-batch-a',name:'Paciente Lote QA',phone:'7111-2222'}},
+  {kind:'patient_admin',id:'identity-batch-b',expectedRevision:0,payload:{id:'identity-batch-b',name:'Paciente  Lote QA',phone:'+50371112222'}},
+ ]),error=>error.code==='23505');
+ assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_admin' and id='identity-second'",[org])).rows[0].n,0);
+ await save([{kind:'patient_admin',id:'identity-original',expectedRevision:1,payload:{id:'identity-original',name:'José Pérez QA',phone:'+50370000000',email:'qa@example.invalid'}}]);
+ await actor('other');
+ await denied(()=>db.query("select public.linkare_find_patient_match_v1($1,'Jose Perez QA','70000000')",[org]));
+ await actor('owner');
+});
 test('DB: stale revisions return a typed conflict without overwriting or logging a PostgreSQL error',async()=>{const result=(await save([{kind:'patient_admin',id:'patient',expectedRevision:0,payload:{name:'Stale overwrite'}}])).rows[0].linkare_save_changes_v3;assert.equal(result[0].conflict,true);assert.equal(result[0].code,'REVISION_CONFLICT');assert.equal((await load()).payload.patients[0].name,'Synthetic QA');});
 test('DB: owner has every recognized permission but arbitrary keys are rejected',async()=>{for(const p of ['usersManage','settingsManage','clinicalEdit','documentsManage','billingManage'])assert.equal(await allowed(p),true);assert.equal(await allowed('arbitraryRoot'),false);});
 test('DB: another organization cannot read or write these patients',async()=>{await actor('other');await denied(()=>load());await denied(()=>save([{kind:'patient_admin',id:'patient',expectedRevision:1,payload:{name:'Intruder'}}]));assert.equal((await db.query("select * from public.linkare_records where kind='patient_admin'")).rows.length,0);});

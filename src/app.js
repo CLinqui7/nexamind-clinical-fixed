@@ -120,6 +120,7 @@ import {
   saveAgendaNote,
   loadPatientDirectory,
   loadPatientDetail,
+  findMatchingPatient,
   loadAgendaRange,
   loadDashboardSummary,
   loadProfileAssets,
@@ -1175,7 +1176,7 @@ class App extends React.Component {
   closeModal = () => {if(!this.state.formSaving&&!this.state.documentBusy)this.setState({ modal: null, modalError: '' });};
 
   updateDraft = (key, value) => {
-    this.setState(prev => prev.formSaving&&prev.modal?.type==='appointment'?null:({ modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, [key]: value } } : null, modalError: '' }));
+    this.setState(prev => prev.formSaving&&prev.modal?.type==='appointment'?null:({ modal: prev.modal ? { ...prev.modal, draft: { ...prev.modal.draft, [key]: value },duplicatePatient:['name','phone'].includes(key)?null:prev.modal.duplicatePatient } : null, modalError: '' }));
   };
 
   updateClinicPhone = (phoneId, key, value) => {
@@ -1981,19 +1982,37 @@ class App extends React.Component {
     } catch(error) {
       if(epoch!==this.authEpoch||!this.mounted)return;
       const detail=readableError(error);
-      this.setState({formSaving:false,remoteSaveStatus:'error',saveError:detail,modalError:'No se guardó el registro. '+detail});
+      const duplicateId=String(error?.message||'').match(/PATIENT_ALREADY_EXISTS:([A-Za-z0-9_-]+)/)?.[1];
+      const modal=duplicateId&&this.state.modal?.type==='patient'
+        ? {...this.state.modal,duplicatePatient:{id:duplicateId,name:this.state.modal.draft.name,phone:this.state.modal.draft.phone}}
+        : this.state.modal;
+      this.setState({formSaving:false,remoteSaveStatus:'error',saveError:detail,modalError:'No se guardó el registro. '+detail,modal});
       return false;
     } finally {if(epoch===this.authEpoch)this.savingForm=false;}
   };
 
-  savePatientForm = event => {
+  savePatientForm = async event => {
     event.preventDefault();
+    if(this.state.formSaving)return;
     try {
-      if(this.state.tourSandbox&&this.state.modal.draft.name.trim()!==DEMO_PATIENT_NAME)throw new Error(`Use el nombre ficticio ${DEMO_PATIENT_NAME}.`);
-      const result = createPatient(this.state.data, this.state.modal.draft);
+      const modal=this.state.modal,draft=modal?.draft,epoch=this.authEpoch;
+      if(!draft)return;
+      if(this.state.tourSandbox&&draft.name.trim()!==DEMO_PATIENT_NAME)throw new Error(`Use el nombre ficticio ${DEMO_PATIENT_NAME}.`);
+      if(!this.state.tourSandbox&&draft.name?.trim()&&draft.phone?.trim()){
+        this.setState({formSaving:true,modalError:''});
+        const match=await findMatchingPatient(this.state.remoteOrganizationId,draft.name,draft.phone);
+        if(epoch!==this.authEpoch)return;
+        if(this.state.modal!==modal){this.setState({formSaving:false});return;}
+        this.setState({formSaving:false});
+        if(match?.id){
+          this.setState({modal:{...modal,duplicatePatient:match},modalError:'Este nombre y teléfono ya pertenecen a un expediente. Revíselo antes de crear otro.'});
+          return;
+        }
+      }
+      const result = createPatient(this.state.data, draft);
       if(this.state.tourSandbox)this.tourDemoPatientId=result.patientId;
-      this.persistDataUpdate({ data: result.data, selectedPatientId: result.patientId, view: 'patient', patientTab: 'overview', modal: null, modalError: '' }, 'Paciente registrado correctamente.');
-    } catch (error) { this.handleFormError(error); }
+      await this.persistDataUpdate({ data: result.data, selectedPatientId: result.patientId, view: 'patient', patientTab: 'overview', modal: null, modalError: '' }, 'Paciente registrado correctamente.');
+    } catch (error) { this.setState({formSaving:false});this.handleFormError(error); }
   };
 
   savePatientEditForm = event => {
@@ -3298,6 +3317,7 @@ class App extends React.Component {
     const scale = SCALE_CATALOG.find(item => item.code === draft.scaleCode) || SCALE_CATALOG[0];
     const clinicalFields = this.can('clinicalEdit');
     return html`<${Modal} title="Nuevo paciente" subtitle=${clinicalFields ? 'Registre identificación, contexto, preferencias y una medición inicial.' : 'Registre datos administrativos. El médico completará la información clínica.'} onClose=${this.closeModal} size="xl"><form className="clinical-form" onSubmit=${this.savePatientForm}>${this.renderModalError()}
+      ${this.state.modal.duplicatePatient?html`<div className="form-warning" role="status"><${Icon} name="alert" size=${18}/><span>Ya hay un expediente para ${this.state.modal.duplicatePatient.name} con este teléfono.</span><button type="button" className="text-button" onClick=${()=>{const id=this.state.modal.duplicatePatient.id;this.setState({modal:null,modalError:''},()=>this.openPatient(id));}}>Abrir expediente</button></div>`:null}
       <fieldset data-tour="patient-form-identification"><legend>Identificación y contacto</legend><${ImagePicker} value=${draft.photo} label="Fotografía del paciente" hint="PNG, JPG o WEBP. Se optimiza para cargar rápidamente." onChange=${event => this.handleDraftImage(event, 'photo', { maxDimension: 560, quality: 0.82 })} onRemove=${() => this.updateDraft('photo', '')}/><div className="form-grid"><${FormField} label="Nombre completo" required=${true}><input autoFocus value=${draft.name} onChange=${event => this.updateDraft('name', event.target.value)} placeholder="Ej. Ana Martínez" required/></${FormField}><${FormField} label="Edad" required=${true}><input type="number" min="0" max="120" value=${draft.age} onChange=${event => this.updateDraft('age', event.target.value)} required/></${FormField}></div><div className="form-grid">${clinicalFields ? html`<${FormField} label="Sexo registrado"><select value=${draft.sex} onChange=${event => this.updateDraft('sex', event.target.value)}><option>No registrado</option><option value="F">Femenino</option><option value="M">Masculino</option><option>Otro</option></select></${FormField}>` : null}<${FormField} label="Teléfono"><input value=${draft.phone} onChange=${event => { this.updateDraft('phone', event.target.value); this.updateDraft('reminderPhone', event.target.value); }} placeholder="Ej. +503 7000 0000"/></${FormField}></div><div className="form-grid"><${FormField} label="Correo"><input type="email" value=${draft.email} onChange=${event => { this.updateDraft('email', event.target.value); this.updateDraft('reminderEmail', event.target.value); }} placeholder="paciente@correo.com"/></${FormField}>${this.can('consultationFeeEdit')?html`<${FormField} label="Tarifa habitual de consulta (USD)" hint="Se mostrará al volver a agendar al paciente."><input type="number" inputMode="decimal" min="0" max="100000" step="0.01" value=${draft.consultationFee} onChange=${event=>this.updateDraft('consultationFee',event.target.value)} placeholder="Ej. 120"/></${FormField}>`:null}</div></fieldset>
 
       ${clinicalFields ? html`<fieldset><legend>Identidad y contexto personal <small>Opcional y autoidentificado</small></legend><div className="form-grid"><${FormField} label="Nombre preferido"><input value=${draft.preferredName} onChange=${event => this.updateDraft('preferredName', event.target.value)}/></${FormField}><${FormField} label="Pronombres"><input value=${draft.pronouns} onChange=${event => this.updateDraft('pronouns', event.target.value)} placeholder="Ej. ella, él, elle"/></${FormField}></div><div className="form-grid form-grid-three"><${FormField} label="Sexo asignado al nacer"><select value=${draft.sexAssignedAtBirth} onChange=${event => this.updateDraft('sexAssignedAtBirth', event.target.value)}>${SEX_ASSIGNED_AT_BIRTH_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Identidad de género"><select value=${draft.genderIdentity} onChange=${event => this.updateDraft('genderIdentity', event.target.value)}>${GENDER_IDENTITY_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Orientación sexual"><select value=${draft.sexualOrientation} onChange=${event => this.updateDraft('sexualOrientation', event.target.value)}>${SEXUAL_ORIENTATION_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}></div><div className="form-grid"><${FormField} label="Estado de relación"><select value=${draft.relationshipStatus} onChange=${event => this.updateDraft('relationshipStatus', event.target.value)}>${RELATIONSHIP_STATUS_OPTIONS.map(item => html`<option key=${item}>${item}</option>`)}</select></${FormField}><${FormField} label="Personas significativas y red de apoyo"><input value=${draft.significantPeople} onChange=${event => this.updateDraft('significantPeople', event.target.value)} placeholder="Familia, pareja, amistades o cuidadores"/></${FormField}></div><div className="form-information"><${Icon} name="shield" size=${18}/><div><b>Información sensible y opcional</b><p>Regístrela solo cuando sea clínicamente pertinente y a partir de lo expresado por el paciente. Secretaría no la verá.</p></div></div></fieldset>` : null}

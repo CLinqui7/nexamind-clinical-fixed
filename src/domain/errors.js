@@ -13,6 +13,7 @@ export function readableError(error) {
     INVALID_CONFIRMED_MEDICATION:'Revise nombre, dosis, unidad, frecuencia y vía antes de incorporar el medicamento.',
     INVALID_START_DATE:'Revise la fecha de inicio; puede dejarla vacía si no consta.',
     MEDICATION_ALREADY_PRESENT:'Ya hay un medicamento con ese nombre en la lista actual. No se duplicó ni modificó. Revise el registro existente.',
+    PATIENT_ALREADY_EXISTS:'Ya existe un paciente con el mismo nombre y teléfono. Abra el expediente existente antes de crear otro.',
     REVIEW_ALREADY_DECIDED:'Esta mención ya fue revisada. Actualice el expediente antes de continuar.',
     HISTORICAL_MEDICATION_PROVENANCE_IMMUTABLE:'No se puede alterar la referencia al texto histórico. Actualice el expediente y vuelva a intentarlo.',
     EMAIL_NOT_CONFIRMED:'Confirme su correo antes de ingresar.',
