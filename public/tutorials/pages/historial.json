@@ -1,0 +1,107 @@
+{
+  "id": "historial",
+  "title": "Historial y línea de tiempo",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Historial y línea de tiempo",
+      "text": "El historial reúne acontecimientos de recursos distintos. Lea tipo, fecha y detalle para reconstruir el contexto.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Filtre Medicamentos, Recetas y Consultas en un paciente ficticio y describa qué representa cada tipo.",
+      "start": 13,
+      "end": 29
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Todo",
+      "text": "Seleccione Todo para volver a la secuencia completa disponible. Se combinan registros autorizados del paciente.",
+      "start": 29,
+      "end": 41
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Medicamentos y recetas",
+      "text": "Filtre cada tipo para revisar sus cambios o emisiones. La receta conserva una instantánea; el medicamento conserva su propia evolución.",
+      "start": 41,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Escalas y efectos",
+      "text": "Filtre mediciones u observaciones para comparar el periodo pertinente. Las fechas ayudan a interpretar la secuencia.",
+      "start": 55,
+      "end": 67
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Controles y laboratorios",
+      "text": "Revise resultados junto con unidades y fechas. Un resultado aislado requiere contexto.",
+      "start": 67,
+      "end": 79
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Documentos y consultas",
+      "text": "Seleccione el filtro del recurso que desea localizar. Abra el recurso específico para ver su contenido autorizado.",
+      "start": 79,
+      "end": 91
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Citas",
+      "text": "Revise eventos de agenda dentro de la secuencia. Crear una cita no acredita que la consulta se realizó.",
+      "start": 91,
+      "end": 103
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Fecha y hora",
+      "text": "Distinga registros históricos con fecha sin hora de eventos modernos con hora. No atribuya una hora inexistente al registro anterior.",
+      "start": 103,
+      "end": 117
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Detalle del evento",
+      "text": "Lea la explicación, motivo o valor que acompaña el título. El título por sí solo puede ser insuficiente.",
+      "start": 117,
+      "end": 130
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Registros retirados y versiones",
+      "text": "Use los historiales del recurso para revisar correcciones o anulaciones. La vista activa puede omitir un registro archivado.",
+      "start": 130,
+      "end": 143
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Sistema anterior",
+      "text": "Abra la pestaña correspondiente para la evidencia literal FoxPro. La línea moderna no sustituye todos los textos del sistema anterior.",
+      "start": 143,
+      "end": 156
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una cita en el historial demuestra… La respuesta correcta es: Que hubo un evento de agenda registrado. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 156,
+      "end": 172
+    }
+  ]
+}

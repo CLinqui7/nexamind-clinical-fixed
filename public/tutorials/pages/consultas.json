@@ -1,0 +1,107 @@
+{
+  "id": "consultas",
+  "title": "Listado de consultas y correcciones",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Listado de consultas y correcciones",
+      "text": "Cada consulta conserva su estado y fecha. Los borradores y las notas firmadas requieren acciones diferentes.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. En la práctica abra una libreta, escriba una nota ficticia y vuelva al expediente.",
+      "start": 13,
+      "end": 29
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Iniciar consulta",
+      "text": "Abra una nueva libreta desde el paciente correcto. Se genera un borrador asociado a ese expediente.",
+      "start": 29,
+      "end": 41
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Abrir consulta",
+      "text": "Seleccione una entrada y revise su fecha, estado y autor. Puede ser editable, firmada o de solo lectura.",
+      "start": 41,
+      "end": 53
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Borrador",
+      "text": "Continúe una nota sin firmar cuando tenga permiso. El autoguardado debe confirmarse antes de cerrar.",
+      "start": 53,
+      "end": 65
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Nota firmada",
+      "text": "Consulte el texto y los datos de firma. La firma preserva el contenido de esa versión.",
+      "start": 65,
+      "end": 77
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Corregir consulta",
+      "text": "Use la acción de corrección para documentar información posterior o rectificar con motivo. Se conserva el original firmado y se registra la versión o adenda.",
+      "start": 77,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Anular consulta",
+      "text": "Indique el motivo cuando una nota debe retirarse de uso clínico. El contenido firmado permanece y la anulación es visible.",
+      "start": 92,
+      "end": 105
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Historial de versiones",
+      "text": "Revise quién cambió qué información y cuándo. No confunda fecha de atención con fecha de corrección.",
+      "start": 105,
+      "end": 117
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Cerrar libreta",
+      "text": "Vuelva al expediente comprobando el estado del borrador. Cerrar no equivale a firmar.",
+      "start": 117,
+      "end": 129
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Filtros o estados visibles",
+      "text": "Revise si está viendo borradores, firmadas o registros retirados. Una consulta puede conservarse aunque no esté en la vista activa.",
+      "start": 129,
+      "end": 143
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Permisos de consulta",
+      "text": "Si una acción falta, el propietario debe revisar acceso clínico y gestión de consultas. No use otra cuenta compartida para eludir permisos.",
+      "start": 143,
+      "end": 158
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Para cambiar una nota firmada debe… La respuesta correcta es: Usar una corrección o adenda con historia. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 158,
+      "end": 174
+    }
+  ]
+}

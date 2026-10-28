@@ -1,0 +1,123 @@
+{
+  "id": "foxpro",
+  "title": "Medicamentos e historia original de FoxPro",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Medicamentos e historia original de FoxPro",
+      "text": "Las tarjetas reúnen las menciones del sistema anterior. El cotejo acredita que el texto existe en la historia del paciente.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Compare una tarjeta histórica con su texto de origen y explique qué evidencia falta para afirmar una fecha de suspensión.",
+      "start": 15,
+      "end": 34
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Confirmado en FoxPro",
+      "text": "Lea la etiqueta junto con el texto de origen y las fechas conservadas. Confirma procedencia; una mención antigua no confirma uso actual.",
+      "start": 34,
+      "end": 49
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Primera y última fecha conservada",
+      "text": "Lea las fechas como límites de la documentación disponible. No se convierten automáticamente en fecha de inicio o suspensión.",
+      "start": 49,
+      "end": 63
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Concentración anotada",
+      "text": "Revise la concentración de la última mención fechada disponible. Puede ser distinta de la cantidad que tomaba en cada administración.",
+      "start": 63,
+      "end": 76
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Indicación anotada en origen",
+      "text": "Lea literalmente la pauta extraída y consulte la nota completa si es ambigua. No se inventa una frecuencia cuando el origen no la expresa.",
+      "start": 76,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Texto de origen",
+      "text": "Compare el nombre y la pauta mostrados con el fragmento de FoxPro. Se conserva aunque se corrija la presentación de la tarjeta.",
+      "start": 92,
+      "end": 107
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Historia de tomas",
+      "text": "Abra los registros fechados y las anotaciones donde aparece ese medicamento. Las notas que mencionan suspender se muestran con su texto, para contextualizarlas.",
+      "start": 107,
+      "end": 122
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Editar listado",
+      "text": "Corrija nombre visible, concentración o indicación cuando la extracción necesita ajuste. La corrección no altera el texto FoxPro ni crea un tratamiento activo.",
+      "start": 122,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Eliminar del listado y Restaurar",
+      "text": "Archive una tarjeta con motivo; use Restaurar para devolverla al listado. Sus menciones originales y la auditoría permanecen.",
+      "start": 137,
+      "end": 151
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Confirmar uso actual",
+      "text": "Use el formulario solo después de verificar medicamento, dosis, frecuencia y vía actuales. El profesional confirma explícitamente la incorporación al tratamiento vigente.",
+      "start": 151,
+      "end": 166
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Ver más medicamentos y menciones",
+      "text": "Avance para cargar los siguientes grupos o registros. La primera página no contiene necesariamente toda la historia.",
+      "start": 166,
+      "end": 179
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Sistema anterior",
+      "text": "Abra esta pestaña para leer la historia completa, incluso textos que no generaron una tarjeta. Las notas libres pueden contener información que el extractor no estructuró.",
+      "start": 179,
+      "end": 195
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Prefijo Rp. y nombres parecidos",
+      "text": "Las tarjetas omiten el prefijo de receta para evitar repeticiones. Revise marcas y genéricos con criterio profesional. La agrupación no asume equivalencia entre medicamentos distintos.",
+      "start": 195,
+      "end": 212
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "La última mención de un medicamento significa… La respuesta correcta es: La última documentación disponible. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 212,
+      "end": 227
+    }
+  ]
+}

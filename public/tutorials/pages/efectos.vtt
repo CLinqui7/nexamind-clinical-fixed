@@ -1,139 +1,136 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.709
-Capítulo.
-
-00:00:00.709 --> 00:00:04.333
+00:00:00.000 --> 00:00:03.214
 Efectos observados, controles y laboratorios.
 
-00:00:04.333 --> 00:00:10.635
+00:00:03.214 --> 00:00:08.929
 Registre observaciones fechadas y vinculadas al medicamento cuando corresponda.
 
-00:00:10.635 --> 00:00:14.022
+00:00:08.929 --> 00:00:12.000
 La relación temporal no prueba causalidad.
 
-00:00:14.022 --> 00:00:15.713
+00:00:12.000 --> 00:00:14.171
 Cómo llegar y practicar.
 
-00:00:15.713 --> 00:00:20.504
+00:00:14.171 --> 00:00:20.322
 Abra Pacientes, seleccione la ficha correcta y la pestaña indicada.
 
-00:00:20.504 --> 00:00:28.044
+00:00:20.322 --> 00:00:30.000
 Ubique los formularios de efecto y laboratorio y explique por qué hay que conservar fecha, unidad y rango.
 
-00:00:28.044 --> 00:00:30.064
+00:00:30.000 --> 00:00:32.340
 Registrar efecto observado.
 
-00:00:30.064 --> 00:00:35.525
+00:00:32.340 --> 00:00:38.667
 Abra el formulario y seleccione el medicamento relacionado si se conoce.
 
-00:00:35.525 --> 00:00:39.266
+00:00:38.667 --> 00:00:43.000
 Se conserva una observación con fecha y contexto.
 
-00:00:39.266 --> 00:00:41.141
+00:00:43.000 --> 00:00:45.390
 Nombre del efecto y Otro.
 
-00:00:41.141 --> 00:00:45.267
+00:00:45.390 --> 00:00:50.647
 Seleccione un nombre disponible o escriba uno en Otro.
 
-00:00:45.267 --> 00:00:49.468
+00:00:50.647 --> 00:00:56.000
 Use una descripción entendible para futuras revisiones.
 
-00:00:49.468 --> 00:00:50.906
+00:00:56.000 --> 00:00:57.847
 Severidad y estado.
 
-00:00:50.906 --> 00:00:56.961
+00:00:57.847 --> 00:01:05.625
 Indique severidad y si está activo, resuelto o sin confirmar según lo evaluado.
 
-00:00:56.961 --> 00:01:00.366
+00:01:05.625 --> 00:01:10.000
 Un estado se interpreta junto con las notas.
 
-00:01:00.366 --> 00:01:01.769
+00:01:10.000 --> 00:01:11.830
 Fecha de aparición.
 
-00:01:01.769 --> 00:01:05.461
+00:01:11.830 --> 00:01:16.644
 Registre cuándo empezó el efecto según la fuente.
 
-00:01:05.461 --> 00:01:10.334
+00:01:16.644 --> 00:01:23.000
 La fecha ayuda a relacionarlo temporalmente con cambios de pauta.
 
-00:01:10.334 --> 00:01:12.862
+00:01:23.000 --> 00:01:26.526
 Relación temporal y acción tomada.
 
-00:01:12.862 --> 00:01:17.620
+00:01:26.526 --> 00:01:33.163
 Explique qué ocurrió antes o después y qué acción se documentó.
 
-00:01:17.620 --> 00:01:20.371
+00:01:33.163 --> 00:01:37.000
 No atribuya una causa que no consta.
 
-00:01:20.371 --> 00:01:21.674
+00:01:37.000 --> 00:01:38.603
 Registrar control.
 
-00:01:21.674 --> 00:01:27.392
+00:01:38.603 --> 00:01:45.637
 Documente las mediciones físicas y su fecha con las unidades correspondientes.
 
-00:01:27.392 --> 00:01:30.939
+00:01:45.637 --> 00:01:50.000
 El control aparece en el historial del paciente.
 
-00:01:30.939 --> 00:01:32.430
+00:01:50.000 --> 00:01:51.770
 Nuevo laboratorio.
 
-00:01:32.430 --> 00:01:37.318
+00:01:51.770 --> 00:01:57.574
 Complete prueba, fecha, valor, unidad y rango del informe.
 
-00:01:37.318 --> 00:01:41.047
+00:01:57.574 --> 00:02:02.000
 La bandera debe corresponder al laboratorio.
 
-00:01:41.047 --> 00:01:42.770
+00:02:02.000 --> 00:02:03.975
 Estado del laboratorio.
 
-00:01:42.770 --> 00:01:48.164
+00:02:03.975 --> 00:02:10.160
 Seleccione en rango, alto, bajo o crítico según el resultado reportado.
 
-00:01:48.164 --> 00:01:53.259
+00:02:10.160 --> 00:02:16.000
 Un valor crítico requiere el procedimiento clínico del consultorio.
 
-00:01:53.259 --> 00:01:55.287
+00:02:16.000 --> 00:02:18.582
 Notas y rango de referencia.
 
-00:01:55.287 --> 00:01:59.705
+00:02:18.582 --> 00:02:24.206
 Transcriba el rango aplicable y las aclaraciones relevantes.
 
-00:01:59.705 --> 00:02:03.471
+00:02:24.206 --> 00:02:29.000
 Los rangos pueden cambiar por prueba y laboratorio.
 
-00:02:03.471 --> 00:02:05.414
+00:02:29.000 --> 00:02:31.526
 Editar efecto o control.
 
-00:02:05.414 --> 00:02:09.461
+00:02:31.526 --> 00:02:36.789
 Abra el registro específico y corrija sus campos.
 
-00:02:09.461 --> 00:02:12.699
+00:02:36.789 --> 00:02:41.000
 La versión anterior permanece auditada.
 
-00:02:12.699 --> 00:02:15.671
+00:02:41.000 --> 00:02:44.685
 Eliminar efecto, control o laboratorio.
 
-00:02:15.671 --> 00:02:19.481
+00:02:44.685 --> 00:02:49.409
 Indique el motivo de retirar un registro erróneo.
 
-00:02:19.481 --> 00:02:22.377
+00:02:49.409 --> 00:02:53.000
 Se archiva sin destruir la evidencia.
 
-00:02:22.377 --> 00:02:23.775
+00:02:53.000 --> 00:02:54.942
 Guardar y Cancelar.
 
-00:02:23.775 --> 00:02:29.000
+00:02:54.942 --> 00:03:02.197
 Guarde una vez después de revisar, o cancele para salir sin confirmar.
 
-00:02:29.000 --> 00:02:32.459
+00:03:02.197 --> 00:03:07.000
 Espere el aviso de guardado antes de recargar.
 
-00:02:32.459 --> 00:02:34.219
+00:03:07.000 --> 00:03:08.855
 Compruebe lo aprendido.
 
-00:02:34.219 --> 00:02:42.403
+00:03:08.855 --> 00:03:17.484
 Una relación temporal demuestra… La respuesta correcta es: Solo una secuencia que requiere interpretación.
 
-00:02:42.403 --> 00:02:46.686
+00:03:17.484 --> 00:03:22.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

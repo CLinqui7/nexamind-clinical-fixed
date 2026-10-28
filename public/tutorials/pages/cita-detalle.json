@@ -1,0 +1,139 @@
+{
+  "id": "cita-detalle",
+  "title": "Detalle, estados y eliminación de citas",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Detalle, estados y eliminación de citas",
+      "text": "El detalle permite gestionar una cita concreta. Cada acción puede requerir un permiso distinto por calendario.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Detalle, estados y eliminación de citas. Abra una cita ficticia y distinga confirmar, cancelar y eliminar antes de usar cada acción.",
+      "start": 13,
+      "end": 28
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Abrir detalle",
+      "text": "Pulse el evento y compruebe paciente, calendario y horario. Las acciones siguientes afectan a ese evento.",
+      "start": 28,
+      "end": 40
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Editar",
+      "text": "Abra el formulario si necesita corregir fecha, hora, duración o datos permitidos. Guarde y compruebe la nueva posición en agenda.",
+      "start": 40,
+      "end": 53
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Pendiente y Confirmada",
+      "text": "Seleccione el estado que corresponda a la coordinación realizada. La marca queda atribuida en el servidor.",
+      "start": 53,
+      "end": 65
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Completada y No asistió",
+      "text": "Registre el resultado administrativo cuando corresponda. No asistió es distinto de cancelada.",
+      "start": 65,
+      "end": 77
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Cancelar cita",
+      "text": "Use la acción de cancelación y su confirmación. Conserva el evento cancelado y no equivale a eliminarlo de la base.",
+      "start": 77,
+      "end": 90
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Marcar revisión administrativa",
+      "text": "Indique que necesita revisión o que ya se revisó según los controles visibles. Alimenta el filtro Por revisar del directorio.",
+      "start": 90,
+      "end": 104
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Iniciar consulta",
+      "text": "Con permiso clínico, abra la consulta vinculada al paciente. Verifique de nuevo la identidad en la libreta.",
+      "start": 104,
+      "end": 116
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Eliminar evento",
+      "text": "Revise la confirmación del evento correcto. La eliminación es recuperable y depende de la revisión actual del evento.",
+      "start": 116,
+      "end": 128
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Actualizar ante conflicto",
+      "text": "Si la cita cambió mientras estaba abierta, vuelva a cargar el detalle. Evita aplicar un estado o nota al paciente equivocado.",
+      "start": 128,
+      "end": 142
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Agregar a Google",
+      "text": "Abra el enlace del evento y revise los datos antes de guardarlo en su cuenta de Google. El enlace no demuestra que el evento se haya incorporado.",
+      "start": 142,
+      "end": 159
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Sincronizar con Google",
+      "text": "Si la cuenta está conectada y el botón aparece, solicite la sincronización y compruebe el resultado. No repita una sincronización de resultado incierto sin revisar su estado.",
+      "start": 159,
+      "end": 176
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Agregar a Apple o ICS",
+      "text": "Descargue el archivo autorizado e impórtelo en el calendario que corresponda. El archivo puede contener datos sensibles de la cita.",
+      "start": 176,
+      "end": 191
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Cerrar detalle",
+      "text": "Pulse X o Cerrar para regresar a la agenda. Cerrar no cambia por sí solo el estado.",
+      "start": 191,
+      "end": 203
+    },
+    {
+      "kind": "control",
+      "controlIndex": 13,
+      "title": "Acciones ausentes",
+      "text": "Solicite al propietario revisar permisos de Ver, Crear, Editar, Cancelar y Eliminar del calendario. Poder ver una cita no concede todos los demás permisos.",
+      "start": 203,
+      "end": 218
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Tener permiso de cancelar… La respuesta correcta es: No concede automáticamente permiso de editar. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 218,
+      "end": 233
+    }
+  ]
+}

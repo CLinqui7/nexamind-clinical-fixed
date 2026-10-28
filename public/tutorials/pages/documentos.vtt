@@ -1,136 +1,133 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.714
-Capítulo.
-
-00:00:00.714 --> 00:00:03.489
+00:00:00.000 --> 00:00:03.317
 Documentos, archivos y plantillas.
 
-00:00:03.489 --> 00:00:10.547
+00:00:03.317 --> 00:00:12.000
 Los documentos permanecen vinculados al paciente y protegidos según su confidencialidad.
 
-00:00:10.547 --> 00:00:12.232
+00:00:12.000 --> 00:00:14.092
 Cómo llegar y practicar.
 
-00:00:12.232 --> 00:00:17.005
+00:00:14.092 --> 00:00:20.018
 Abra Pacientes, seleccione la ficha correcta y la pestaña indicada.
 
-00:00:17.005 --> 00:00:25.849
+00:00:20.018 --> 00:00:31.000
 En un expediente ficticio abra una plantilla, identifique sus variables y cancele antes de generar si no hay datos completos.
 
-00:00:25.849 --> 00:00:26.946
+00:00:31.000 --> 00:00:32.105
 Subir archivo.
 
-00:00:26.946 --> 00:00:32.980
+00:00:32.105 --> 00:00:38.184
 Seleccione el archivo correcto, categoría, fecha clínica y confidencialidad.
 
-00:00:32.980 --> 00:00:37.761
+00:00:38.184 --> 00:00:43.000
 Se guarda en almacenamiento privado junto con sus metadatos.
 
-00:00:37.761 --> 00:00:39.412
+00:00:43.000 --> 00:00:45.083
 Nombre y descripción.
 
-00:00:39.412 --> 00:00:44.915
+00:00:45.083 --> 00:00:52.025
 Use un nombre claro y describa el contenido sin sustituir el archivo.
 
-00:00:44.915 --> 00:00:47.274
+00:00:52.025 --> 00:00:55.000
 Facilita localizarlo después.
 
-00:00:47.274 --> 00:00:49.474
+00:00:55.000 --> 00:00:57.384
 Categoría y confidencialidad.
 
-00:00:49.474 --> 00:00:53.191
+00:00:57.384 --> 00:01:01.411
 Seleccione el tipo y nivel de acceso aplicables.
 
-00:00:53.191 --> 00:00:58.350
+00:01:01.411 --> 00:01:07.000
 Un permiso administrativo no autoriza documentos clínicos privados.
 
-00:00:58.350 --> 00:00:59.696
+00:01:07.000 --> 00:01:08.592
 Abrir o descargar.
 
-00:00:59.696 --> 00:01:04.856
+00:01:08.592 --> 00:01:14.694
 Abra el documento autorizado y compruebe nombre, paciente y versión.
 
-00:01:04.856 --> 00:01:09.343
+00:01:14.694 --> 00:01:20.000
 El acceso se entrega mediante un enlace temporal protegido.
 
-00:01:09.343 --> 00:01:11.481
+00:01:20.000 --> 00:01:22.455
 Editar datos del documento.
 
-00:01:11.481 --> 00:01:15.281
+00:01:22.455 --> 00:01:26.818
 Corrija nombre, categoría, fecha o descripción.
 
-00:01:15.281 --> 00:01:19.795
+00:01:26.818 --> 00:01:32.000
 El archivo original y los datos anteriores se conservan.
 
-00:01:19.795 --> 00:01:21.308
+00:01:32.000 --> 00:01:34.327
 Eliminar documento.
 
-00:01:21.308 --> 00:01:25.528
+00:01:34.327 --> 00:01:40.816
 Indique el motivo para retirarlo de la lista activa.
 
-00:01:25.528 --> 00:01:27.598
+00:01:40.816 --> 00:01:44.000
 Se archiva con auditoría.
 
-00:01:27.598 --> 00:01:28.832
+00:01:44.000 --> 00:01:45.308
 Nuevo documento.
 
-00:01:28.832 --> 00:01:34.927
+00:01:45.308 --> 00:01:51.767
 Elija una plantilla disponible de constancia, incapacidad, carta o formulario.
 
-00:01:34.927 --> 00:01:39.865
+00:01:51.767 --> 00:01:57.000
 La clasificación de la plantilla controla los datos permitidos.
 
-00:01:39.865 --> 00:01:41.381
+00:01:57.000 --> 00:01:58.905
 Plantilla y versión.
 
-00:01:41.381 --> 00:01:45.700
+00:01:58.905 --> 00:02:04.333
 Revise el nombre y versión antes de completar variables.
 
-00:01:45.700 --> 00:01:49.412
+00:02:04.333 --> 00:02:09.000
 El documento guarda la versión exacta utilizada.
 
-00:01:49.412 --> 00:01:51.241
+00:02:09.000 --> 00:02:10.962
 Variables del documento.
 
-00:01:51.241 --> 00:01:58.097
+00:02:10.962 --> 00:02:18.321
 Complete fechas, destinatario, días y contenido adicional según los campos que aparezcan.
 
-00:01:58.097 --> 00:02:01.525
+00:02:18.321 --> 00:02:22.000
 Revise ortografía y fechas antes de generar.
 
-00:02:01.525 --> 00:02:03.351
+00:02:22.000 --> 00:02:24.403
 Generar y guardar PDF.
 
-00:02:03.351 --> 00:02:06.671
+00:02:24.403 --> 00:02:28.773
 Pulse una vez y espere la confirmación.
 
-00:02:06.671 --> 00:02:11.402
+00:02:28.773 --> 00:02:35.000
 Se guarda un PDF privado y una copia del texto generado.
 
-00:02:11.402 --> 00:02:13.319
+00:02:35.000 --> 00:02:37.519
 Imprimir o guardar copia.
 
-00:02:13.319 --> 00:02:17.381
+00:02:37.519 --> 00:02:42.860
 Abra el PDF y compruebe los datos antes de entregar.
 
-00:02:17.381 --> 00:02:21.290
+00:02:42.860 --> 00:02:48.000
 Proteja también las copias descargadas e impresas.
 
-00:02:21.290 --> 00:02:22.019
+00:02:48.000 --> 00:02:49.102
 Cancelar.
 
-00:02:22.019 --> 00:02:26.714
+00:02:49.102 --> 00:02:56.204
 Cierre sin generar cuando la información esté incompleta.
 
-00:02:26.714 --> 00:02:29.223
+00:02:56.204 --> 00:03:00.000
 No se crea un documento nuevo.
 
-00:02:29.223 --> 00:02:31.016
+00:03:00.000 --> 00:03:01.769
 Compruebe lo aprendido.
 
-00:02:31.016 --> 00:02:40.059
+00:03:01.769 --> 00:03:10.692
 Editar datos del documento modifica… La respuesta correcta es: Su descripción y metadatos, conservando el original.
 
-00:02:40.059 --> 00:02:44.425
+00:03:10.692 --> 00:03:15.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

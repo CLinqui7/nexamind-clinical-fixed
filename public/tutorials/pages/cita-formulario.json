@@ -1,0 +1,131 @@
+{
+  "id": "cita-formulario",
+  "title": "Crear y editar una cita o evento",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Crear y editar una cita o evento",
+      "text": "Seleccione el destino, la persona y el horario de forma explícita. Revise AM o PM y la fecha completa.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Crear y editar una cita o evento. En la práctica cree una cita futura del paciente demo a las 2:30 p. m. y confirme calendario y duración.",
+      "start": 15,
+      "end": 33
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Calendario",
+      "text": "Seleccione la tarjeta Doctor, Esposa o General autorizada. La aplicación no debe elegir el destino por usted.",
+      "start": 33,
+      "end": 45
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Clase de evento",
+      "text": "Elija cita de paciente o evento general según corresponda. Un evento general no incorpora información clínica.",
+      "start": 45,
+      "end": 57
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Paciente y búsqueda",
+      "text": "Busque y seleccione la ficha correcta; compruebe nombre y teléfono. Escribir un nombre sin seleccionar una ficha no garantiza el vínculo.",
+      "start": 57,
+      "end": 71
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Título",
+      "text": "Use un título apropiado al tipo de evento y al alcance de privacidad. Evite datos clínicos en títulos generales o compartidos.",
+      "start": 71,
+      "end": 84
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Fecha",
+      "text": "Elija el día y revise mes y año. No confunda fecha de captura con fecha de atención.",
+      "start": 84,
+      "end": 96
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Hora, minutos y AM o PM",
+      "text": "Complete cada campo y confirme la representación de 12 horas. 12 a. m. corresponde a medianoche y 12 p. m. a mediodía.",
+      "start": 96,
+      "end": 112
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Duración",
+      "text": "Seleccione el intervalo previsto y compruebe la hora final. Una duración distinta altera el bloque ocupado.",
+      "start": 112,
+      "end": 124
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Tipo y modalidad",
+      "text": "Registre el motivo administrativo y si corresponde presencial o remoto. Ayuda a preparar la agenda.",
+      "start": 124,
+      "end": 136
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Estado",
+      "text": "Seleccione el estado documentado de la cita. Confirmada no equivale a consulta completada.",
+      "start": 136,
+      "end": 148
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Notas autorizadas",
+      "text": "Escriba solo información permitida para su rol y calendario. Secretaría no recibe por este formulario el expediente clínico privado.",
+      "start": 148,
+      "end": 161
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Crear evento y Guardar cambios",
+      "text": "Revise todo y confirme una sola vez. Espere que el servidor responda y compruebe el evento.",
+      "start": 161,
+      "end": 174
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Cancelar o X",
+      "text": "Cierre si todavía no desea guardar. El evento no se crea por abrir el formulario.",
+      "start": 174,
+      "end": 186
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Conflicto entre ediciones",
+      "text": "Revise los campos señalados y conserve o actualice su intención con la versión nueva. No sobrescriba sin leer un cambio hecho por otra persona.",
+      "start": 186,
+      "end": 201
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una cita a las 2:30 p. m. corresponde a… La respuesta correcta es: 14:30. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 201,
+      "end": 216
+    }
+  ]
+}

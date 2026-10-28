@@ -1,0 +1,147 @@
+{
+  "id": "historia-tomas",
+  "title": "Registrar inicio, cambios y final de tratamientos",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Registrar inicio, cambios y final de tratamientos",
+      "text": "La historia de tomas permite documentar cuándo comenzó una pauta, sus cambios, pausas y final, incluyendo episodios pasados.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. En un expediente ficticio registre un inicio y un final con sus fechas; recargue y confirme ambos. Pruebe también una fecha desconocida.",
+      "start": 15,
+      "end": 34
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Abrir historia de tomas",
+      "text": "Pulse Historia de tomas en una tarjeta actual o FoxPro. Se consulta solo el paciente y el medicamento elegidos.",
+      "start": 34,
+      "end": 48
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Registros de FoxPro",
+      "text": "Revise fecha de la nota, pauta extraída y texto original completo. La fecha de la nota se identifica como documentación, no como inicio real.",
+      "start": 48,
+      "end": 63
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Señales en el texto",
+      "text": "Lea expresiones sobre inicio o suspensión dentro de la nota completa. Una instrucción condicional no demuestra que el cambio ocurrió.",
+      "start": 63,
+      "end": 77
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Registrar fecha o cambio",
+      "text": "Abra el formulario para añadir información conocida del tratamiento. Queda un evento propio de Linkare con autor y auditoría.",
+      "start": 77,
+      "end": 91
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Registrar tratamiento pasado",
+      "text": "En Medicamentos, escriba Nombre del tratamiento pasado y abra Registrar tratamiento pasado para un fármaco que no tenga tarjeta actual. Permite documentar episodios antiguos sin activarlos como tratamiento vigente.",
+      "start": 91,
+      "end": 109
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Ver más tratamientos documentados",
+      "text": "Avance en el listado de fechas añadidas en Linkare y abra Historia de tomas del medicamento correspondiente. Cada episodio conserva sus eventos, fechas conocidas y fuentes.",
+      "start": 109,
+      "end": 126
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Tipo de evento",
+      "text": "Elija Inicio, Suspensión temporal, Reinicio, Finalización, Cambio de pauta o Nota. El tipo describe lo documentado para ese episodio.",
+      "start": 126,
+      "end": 139
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Fecha efectiva conocida",
+      "text": "Introduzca la fecha real del evento cuando conste; deje vacío si es desconocida. La aplicación conserva explícitamente la ausencia de fecha.",
+      "start": 139,
+      "end": 153
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Dosis registrada",
+      "text": "Escriba la dosis tal como está documentada, incluyendo unidad y fracciones. Este campo conserva la pauta histórica completa.",
+      "start": 153,
+      "end": 165
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Cada cuánto lo toma",
+      "text": "Escriba frecuencia, horarios y condiciones según la fuente. Puede registrar mañana, noche, intervalos, días de semana o PRN con aclaraciones.",
+      "start": 165,
+      "end": 179
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Vía y fuente o motivo",
+      "text": "Indique la vía conocida y de dónde proviene el dato: nota, receta, paciente o revisión médica. La fuente permite interpretar después una corrección.",
+      "start": 179,
+      "end": 195
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Guardar evento",
+      "text": "Revise paciente, medicamento, fecha y texto antes de enviar. Espere la respuesta del servidor y compruebe que el evento aparece.",
+      "start": 195,
+      "end": 208
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Editar evento",
+      "text": "Abra el evento propio de Linkare, corrija los datos y guarde. Si otra persona lo cambió primero, actualice antes de volver a enviar.",
+      "start": 208,
+      "end": 223
+    },
+    {
+      "kind": "control",
+      "controlIndex": 13,
+      "title": "Retirar evento",
+      "text": "Indique el motivo de retirar un evento erróneo. Queda archivado con su versión anterior en auditoría.",
+      "start": 223,
+      "end": 235
+    },
+    {
+      "kind": "control",
+      "controlIndex": 14,
+      "title": "Tratamiento vigente",
+      "text": "Si además debe cambiar el estado actual del medicamento, use sus controles de estado tras la revisión clínica. La cronología histórica y el estado vigente tienen efectos distintos.",
+      "start": 235,
+      "end": 252
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Si no consta la fecha real de inicio… La respuesta correcta es: Dejar la fecha desconocida y documentar la fuente. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 252,
+      "end": 269
+    }
+  ]
+}

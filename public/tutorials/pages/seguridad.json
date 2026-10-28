@@ -1,0 +1,107 @@
+{
+  "id": "seguridad",
+  "title": "Antecedentes, riesgo y datos sensibles",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Antecedentes, riesgo y datos sensibles",
+      "text": "Distinga antecedentes históricos, situación actual y fuente documentada. Registre solo información que corresponde a la evaluación.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Explique la diferencia entre dato desconocido, antecedente y riesgo actual, sin introducir información real en la práctica.",
+      "start": 13,
+      "end": 30
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Datos clínicos y personales",
+      "text": "Abra Datos y seguro con permiso clínico para los campos ampliados. Las opciones visibles dependen del rol y los permisos.",
+      "start": 30,
+      "end": 44
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Nombre preferido y pronombres",
+      "text": "Registre cómo desea ser llamada la persona, conservando su identificación. El encabezado puede mostrar el nombre preferido.",
+      "start": 44,
+      "end": 57
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Sexo, identidad y orientación",
+      "text": "Complete lo referido y pertinente, respetando opciones no registradas. No infiera información ausente desde otros campos.",
+      "start": 57,
+      "end": 69
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Antecedentes de ideación y autolesión",
+      "text": "Diferencie antecedentes, situación actual y fuente. Un antecedente no equivale por sí solo a riesgo actual.",
+      "start": 69,
+      "end": 82
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Intentos previos y última fecha",
+      "text": "Registre cantidad y fecha si constan; conserve desconocido cuando falten. Cero y desconocido tienen significados distintos.",
+      "start": 82,
+      "end": 95
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Contacto de emergencia y plan de seguridad",
+      "text": "Registre datos autorizados y el plan acordado por el profesional. Revise que los contactos sigan vigentes.",
+      "start": 95,
+      "end": 109
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Riesgo y estado clínico",
+      "text": "Actualice según la evaluación documentada. Las etiquetas del tablero dependen de estos datos.",
+      "start": 109,
+      "end": 121
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Notas de antecedentes",
+      "text": "Explique fecha aproximada, fuente y contexto. Facilita distinguir lo observado de lo referido.",
+      "start": 121,
+      "end": 133
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Fallecimiento y documento de respaldo",
+      "text": "Documente solo hechos conocidos y su fuente antes de activar el modo post mortem. La manera de muerte no se infiere automáticamente.",
+      "start": 133,
+      "end": 148
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Guardar cambios",
+      "text": "Revise la sensibilidad y exactitud de lo escrito antes de confirmar. El permiso de lectura clínica determina quién puede consultar.",
+      "start": 148,
+      "end": 161
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Un dato de intentos previos ausente se registra como… La respuesta correcta es: Desconocido o no registrado. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 161,
+      "end": 177
+    }
+  ]
+}

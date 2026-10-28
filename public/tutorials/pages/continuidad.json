@@ -1,0 +1,139 @@
+{
+  "id": "continuidad",
+  "title": "Guardado, errores, privacidad y aprendizaje",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Guardado, errores, privacidad y aprendizaje",
+      "text": "Aprenda a reconocer qué se guardó y cómo continuar sin perder información o duplicar operaciones.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Guardado, errores, privacidad y aprendizaje. Complete un capítulo, cierre y vuelva a Ayuda para comprobar el progreso. Reproduzca un video con subtítulos.",
+      "start": 12,
+      "end": 27
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Cambios guardados",
+      "text": "Espere esta confirmación después de una operación real. Indica que el servidor aceptó los cambios enviados.",
+      "start": 27,
+      "end": 39
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Guardando cambios",
+      "text": "Mantenga la página abierta mientras termina. Evite recargar o abrir otra cuenta durante el envío.",
+      "start": 39,
+      "end": 51
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Sin conexión",
+      "text": "Revise internet y conserve el formulario o borrador abierto. Los datos escritos aún pueden estar pendientes.",
+      "start": 51,
+      "end": 63
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Reintentar",
+      "text": "Después de recuperar conexión, reintente y compruebe el resultado. Un aviso de error no equivale a que deba repetir un pago o envío externo.",
+      "start": 63,
+      "end": 78
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Conflicto de edición",
+      "text": "Compare los campos cambiados por otra persona y conserve la intención correcta. Actualizar ayuda a evitar sobrescribir información reciente.",
+      "start": 78,
+      "end": 91
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Sesión vencida o permiso revocado",
+      "text": "Vuelva a entrar cuando sea necesario y revise acceso con el propietario. No copie datos clínicos a medios no autorizados para resolver el problema.",
+      "start": 91,
+      "end": 107
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Escuela completa",
+      "text": "Elija capítulo, lea cada control y marque la explicación como comprendida. El progreso se conserva localmente por cuenta y dispositivo.",
+      "start": 107,
+      "end": 120
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Video por pantalla",
+      "text": "Reproduzca, pause, use subtítulos o descargue el capítulo. El video incluye texto completo, música instrumental suave y ejemplos ficticios. Puede silenciar la música y avanzar por pasos.",
+      "start": 120,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Comprobación del capítulo",
+      "text": "Responda la pregunta final y revise la explicación si se equivoca. Completar requiere leer los controles y acertar la comprobación.",
+      "start": 137,
+      "end": 151
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Recorrido interactivo",
+      "text": "Practique con Paciente Demo Linkare en la copia temporal. Al salir se descartan los cambios de la práctica.",
+      "start": 151,
+      "end": 163
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Reiniciar progreso",
+      "text": "Use el control del capítulo si desea repasarlo desde cero. Solo afecta su progreso de aprendizaje local.",
+      "start": 163,
+      "end": 175
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Descargar manual completo",
+      "text": "Use el enlace Manual completo de la escuela para guardar las explicaciones de todas las pantallas en HTML e imprimirlas desde el navegador. La copia no contiene datos de pacientes y puede consultarse sin entrar a la aplicación.",
+      "start": 175,
+      "end": 197
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Soporte",
+      "text": "Describa la pantalla y el error exacto por el canal autorizado. Evite enviar información identificable de pacientes.",
+      "start": 197,
+      "end": 209
+    },
+    {
+      "kind": "control",
+      "controlIndex": 13,
+      "title": "Cerrar sesión",
+      "text": "Revise primero el guardado y cierre su cuenta en equipos compartidos. La privacidad también depende de las copias descargadas y los dispositivos.",
+      "start": 209,
+      "end": 223
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Ante Guardando cambios debe… La respuesta correcta es: Esperar la confirmación y conservar la página abierta. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 223,
+      "end": 238
+    }
+  ]
+}

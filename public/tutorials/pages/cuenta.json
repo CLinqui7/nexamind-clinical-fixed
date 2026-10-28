@@ -1,0 +1,107 @@
+{
+  "id": "cuenta",
+  "title": "Mi cuenta y cambio de contraseña",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Mi cuenta y cambio de contraseña",
+      "text": "La cuenta es individual. Compruebe correo y rol antes de operar y cierre la sesión cuando termine en un equipo compartido.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Mi cuenta y cambio de contraseña. Localice Mi cuenta y los tres campos de contraseña, sin modificar una clave real para practicar.",
+      "start": 15,
+      "end": 30
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Menú del usuario",
+      "text": "Abra el menú del encabezado y elija Mi cuenta. Muestra la identidad de su sesión.",
+      "start": 30,
+      "end": 42
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Rol y permisos asignados",
+      "text": "Lea el rol que aparece y consulte al propietario si no corresponde. El navegador no puede concederse permisos.",
+      "start": 42,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Contraseña actual",
+      "text": "Escriba la clave vigente para validar el cambio. No la envíe por correo o soporte.",
+      "start": 55,
+      "end": 67
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Nueva contraseña",
+      "text": "Use una clave propia de al menos 12 caracteres según la validación mostrada. Evite reutilizar una contraseña compartida.",
+      "start": 67,
+      "end": 79
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Confirmar contraseña",
+      "text": "Repita la nueva clave y compruebe que coincide. Una diferencia impide confirmar el cambio.",
+      "start": 79,
+      "end": 91
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Mostrar u ocultar contraseñas",
+      "text": "Use el ojo solo cuando sea seguro revisar lo escrito. Ocúltelas antes de compartir pantalla.",
+      "start": 91,
+      "end": 103
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Actualizar contraseña",
+      "text": "Confirme una vez y espere la respuesta. La clave cambia en Supabase Auth, no solo en la pantalla.",
+      "start": 103,
+      "end": 115
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Configuración",
+      "text": "Abra la sección si su cuenta tiene acceso. Cambiar contraseña no concede administración del consultorio.",
+      "start": 115,
+      "end": 127
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Cerrar sesión",
+      "text": "Compruebe Cambios guardados antes de salir. La próxima persona debe entrar con su propia cuenta.",
+      "start": 127,
+      "end": 139
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Recuperar acceso",
+      "text": "Si olvidó la clave actual, use la recuperación en la página de acceso. Utilice el enlace más reciente enviado a su propio correo.",
+      "start": 139,
+      "end": 154
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Cambiar su contraseña… La respuesta correcta es: Solo cambia su propia clave de acceso. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 154,
+      "end": 169
+    }
+  ]
+}

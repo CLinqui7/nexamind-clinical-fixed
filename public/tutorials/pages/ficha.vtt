@@ -1,142 +1,139 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.750
-Capítulo.
-
-00:00:00.750 --> 00:00:03.750
+00:00:00.000 --> 00:00:03.043
 Crear, editar y archivar pacientes.
 
-00:00:03.750 --> 00:00:06.499
+00:00:03.043 --> 00:00:05.913
 La ficha identifica al paciente.
 
-00:00:06.499 --> 00:00:12.332
+00:00:05.913 --> 00:00:12.000
 Una corrección conserva el mismo expediente y sus recursos asociados.
 
-00:00:12.332 --> 00:00:14.196
+00:00:12.000 --> 00:00:14.136
 Cómo llegar y practicar.
 
-00:00:14.196 --> 00:00:17.380
+00:00:14.136 --> 00:00:17.785
 Abra Crear, editar y archivar pacientes.
 
-00:00:17.380 --> 00:00:24.291
+00:00:17.785 --> 00:00:25.707
 En la práctica cree Paciente Demo Linkare, revise el contacto y localice Datos y seguro.
 
-00:00:24.291 --> 00:00:27.164
+00:00:25.707 --> 00:00:29.000
 No use personas reales para ensayar.
 
-00:00:27.164 --> 00:00:28.348
+00:00:29.000 --> 00:00:30.333
 Nombre completo.
 
-00:00:28.348 --> 00:00:34.785
+00:00:30.333 --> 00:00:37.583
 Escriba el nombre como consta en la identificación; revise apellidos antes de guardar.
 
-00:00:34.785 --> 00:00:38.706
+00:00:37.583 --> 00:00:42.000
 Ayuda a localizar coincidencias con otros registros.
 
-00:00:38.706 --> 00:00:40.434
+00:00:42.000 --> 00:00:44.100
 Edad y datos personales.
 
-00:00:40.434 --> 00:00:45.472
+00:00:44.100 --> 00:00:50.225
 Complete la edad conocida y los campos autorizados de identificación.
 
-00:00:45.472 --> 00:00:50.223
+00:00:50.225 --> 00:00:56.000
 Una edad histórica distinta puede conservarse como dato anterior.
 
-00:00:50.223 --> 00:00:51.572
+00:00:56.000 --> 00:00:57.481
 Teléfono y correo.
 
-00:00:51.572 --> 00:00:58.389
+00:00:57.481 --> 00:01:04.968
 Registre los contactos correctos; para números internacionales conserve el código de país.
 
-00:00:58.389 --> 00:01:02.060
+00:01:04.968 --> 00:01:09.000
 El teléfono también ayuda a detectar duplicados.
 
-00:01:02.060 --> 00:01:03.158
+00:01:09.000 --> 00:01:10.071
 Seguro médico.
 
-00:01:03.158 --> 00:01:12.024
+00:01:10.071 --> 00:01:18.716
 Indique si tiene seguro y complete aseguradora, plan, afiliación, póliza, copago y autorización si corresponden.
 
-00:01:12.024 --> 00:01:16.417
+00:01:18.716 --> 00:01:23.000
 La información aparece en el expediente administrativo.
 
-00:01:16.417 --> 00:01:17.658
+00:01:23.000 --> 00:01:24.612
 Tarifa habitual.
 
-00:01:17.658 --> 00:01:23.396
+00:01:24.612 --> 00:01:32.070
 Si tiene permiso, registre la tarifa del paciente en su campo específico.
 
-00:01:23.396 --> 00:01:26.420
+00:01:32.070 --> 00:01:36.000
 La tarifa se guarda aparte del nombre.
 
-00:01:26.420 --> 00:01:29.209
+00:01:36.000 --> 00:01:39.033
 Diagnóstico, código, riesgo y estado.
 
-00:01:29.209 --> 00:01:34.336
+00:01:39.033 --> 00:01:44.607
 Solo con permiso clínico, documente lo evaluado por el profesional.
 
-00:01:34.336 --> 00:01:40.217
+00:01:44.607 --> 00:01:51.000
 Los datos clínicos no se entregan a Secretaría sin el acceso correspondiente.
 
-00:01:40.217 --> 00:01:41.332
+00:01:51.000 --> 00:01:52.423
 Datos y seguro.
 
-00:01:41.332 --> 00:01:46.980
+00:01:52.423 --> 00:01:59.635
 Desde el expediente pulse Datos y seguro para corregir una ficha existente.
 
-00:01:46.980 --> 00:01:50.399
+00:01:59.635 --> 00:02:04.000
 Guarde la corrección sobre el mismo paciente.
 
-00:01:50.399 --> 00:01:51.734
+00:02:04.000 --> 00:02:05.773
 Foto del paciente.
 
-00:01:51.734 --> 00:01:56.034
+00:02:05.773 --> 00:02:11.485
 Pulse el control de cámara y elija una imagen autorizada.
 
-00:01:56.034 --> 00:02:00.187
+00:02:11.485 --> 00:02:17.000
 Compruebe que pertenece al paciente antes de confirmar.
 
-00:02:00.187 --> 00:02:02.590
+00:02:17.000 --> 00:02:19.722
 Crear paciente y Guardar cambios.
 
-00:02:02.590 --> 00:02:08.634
+00:02:19.722 --> 00:02:26.567
 Revise campos obligatorios y pulse una sola vez; espere confirmación del servidor.
 
-00:02:08.634 --> 00:02:14.313
+00:02:26.567 --> 00:02:33.000
 Si falla, el formulario debe conservar lo escrito para corregir o reintentar.
 
-00:02:14.313 --> 00:02:15.214
+00:02:33.000 --> 00:02:34.458
 Cancelar o X.
 
-00:02:15.214 --> 00:02:18.470
+00:02:34.458 --> 00:02:39.729
 Cierre el formulario si aún no quiere guardar.
 
-00:02:18.470 --> 00:02:21.726
+00:02:39.729 --> 00:02:45.000
 Los cambios de ese formulario no se confirman.
 
-00:02:21.726 --> 00:02:23.021
+00:02:45.000 --> 00:02:46.561
 Archivar paciente.
 
-00:02:23.021 --> 00:02:28.418
+00:02:46.561 --> 00:02:53.064
 Indique el motivo y revise la segunda confirmación con el nombre completo.
 
-00:02:28.418 --> 00:02:34.174
+00:02:53.064 --> 00:03:00.000
 Retira la ficha de activos y conserva su historia; puede afectar citas futuras.
 
-00:02:34.174 --> 00:02:36.369
+00:03:00.000 --> 00:03:02.855
 Error de duplicado o conflicto.
 
-00:02:36.369 --> 00:02:41.470
+00:03:02.855 --> 00:03:09.487
 Abra el expediente coincidente o actualice la ficha antes de continuar.
 
-00:02:41.470 --> 00:02:44.941
+00:03:09.487 --> 00:03:14.000
 No cambie el nombre para eludir la comprobación.
 
-00:02:44.941 --> 00:02:46.753
+00:03:14.000 --> 00:03:15.983
 Compruebe lo aprendido.
 
-00:02:46.753 --> 00:02:54.236
+00:03:15.983 --> 00:03:24.172
 Para corregir un teléfono… La respuesta correcta es: Editar Datos y seguro del mismo paciente.
 
-00:02:54.236 --> 00:02:58.648
+00:03:24.172 --> 00:03:29.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

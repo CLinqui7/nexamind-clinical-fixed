@@ -1,169 +1,166 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.708
-Capítulo.
-
-00:00:00.708 --> 00:00:03.618
+00:00:00.000 --> 00:00:02.769
 Medicamentos actuales y sus botones.
 
-00:00:03.618 --> 00:00:09.122
+00:00:02.769 --> 00:00:08.154
 El tratamiento muestra medicamentos registrados, sus dosis y estados.
 
-00:00:09.122 --> 00:00:16.121
+00:00:08.154 --> 00:00:15.000
 Revise nombre y pauta completa, especialmente si el mismo fármaco tiene tomas distintas.
 
-00:00:16.121 --> 00:00:17.950
+00:00:15.000 --> 00:00:16.969
 Cómo llegar y practicar.
 
-00:00:17.950 --> 00:00:23.131
+00:00:16.969 --> 00:00:22.549
 Abra Pacientes, seleccione la ficha correcta y la pestaña indicada.
 
-00:00:23.131 --> 00:00:30.978
+00:00:22.549 --> 00:00:31.000
 En el recorrido seguro agregue Medicamento ficticio y distinga dosis, unidad, frecuencia, vía y fecha.
 
-00:00:30.978 --> 00:00:32.676
+00:00:31.000 --> 00:00:32.637
 Agregar medicamento.
 
-00:00:32.676 --> 00:00:40.232
+00:00:32.637 --> 00:00:39.924
 Complete nombre, clase, indicación, dosis, unidad, frecuencia, vía y fecha si se conoce.
 
-00:00:40.232 --> 00:00:45.496
+00:00:39.924 --> 00:00:45.000
 El sistema conserva un identificador y metadatos de creación.
 
-00:00:45.496 --> 00:00:46.601
+00:00:45.000 --> 00:00:46.250
 Nombre y clase.
 
-00:00:46.601 --> 00:00:53.231
+00:00:46.250 --> 00:00:53.750
 Escriba el producto registrado; los paréntesis permiten aclarar marca o principio activo.
 
-00:00:53.231 --> 00:00:58.757
+00:00:53.750 --> 00:01:00.000
 La clase es una clasificación y no verifica equivalencias entre productos.
 
-00:00:58.757 --> 00:00:59.848
+00:01:00.000 --> 00:01:01.172
 Dosis y unidad.
 
-00:00:59.848 --> 00:01:04.358
+00:01:01.172 --> 00:01:06.016
 Distinga concentración del producto de cantidad administrada.
 
-00:01:04.358 --> 00:01:08.505
+00:01:06.016 --> 00:01:10.469
 Escriba el valor y seleccione la unidad correspondiente.
 
-00:01:08.505 --> 00:01:12.724
+00:01:10.469 --> 00:01:15.000
 Una cifra sin unidad puede interpretarse incorrectamente.
 
-00:01:12.724 --> 00:01:15.565
+00:01:15.000 --> 00:01:18.183
 Frecuencia y frecuencia personalizada.
 
-00:01:15.565 --> 00:01:18.033
+00:01:18.183 --> 00:01:20.948
 Seleccione la pauta documentada.
 
-00:01:18.033 --> 00:01:23.192
+00:01:20.948 --> 00:01:26.728
 Use Otra cuando no exista una opción exacta y describa los horarios.
 
-00:01:23.192 --> 00:01:27.005
+00:01:26.728 --> 00:01:31.000
 La pauta debe poder leerse sin tener que adivinar.
 
-00:01:27.005 --> 00:01:28.628
+00:01:31.000 --> 00:01:33.260
 Vía y fecha de inicio.
 
-00:01:28.628 --> 00:01:33.274
+00:01:33.260 --> 00:01:39.733
 Seleccione la vía indicada y registre la fecha real si consta.
 
-00:01:33.274 --> 00:01:37.773
+00:01:39.733 --> 00:01:46.000
 La fecha de captura no demuestra cuándo comenzó el paciente.
 
-00:01:37.773 --> 00:01:39.957
+00:01:46.000 --> 00:01:48.211
 Principal y según necesidad.
 
-00:01:39.957 --> 00:01:43.311
+00:01:48.211 --> 00:01:51.605
 Principal elige la referencia del tablero.
 
-00:01:43.311 --> 00:01:47.524
+00:01:51.605 --> 00:01:55.868
 Según necesidad identifica una pauta PRN documentada.
 
-00:01:47.524 --> 00:01:52.594
+00:01:55.868 --> 00:02:01.000
 Ninguna casilla completa por sí sola las instrucciones clínicas.
 
-00:01:52.594 --> 00:01:53.821
+00:02:01.000 --> 00:02:02.488
 Notas clínicas.
 
-00:01:53.821 --> 00:01:58.563
+00:02:02.488 --> 00:02:08.240
 Escriba contexto, fuente y aclaraciones de la indicación.
 
-00:01:58.563 --> 00:02:02.487
+00:02:08.240 --> 00:02:13.000
 No sustituyen los campos de dosis y frecuencia.
 
-00:02:02.487 --> 00:02:02.998
+00:02:13.000 --> 00:02:13.656
 Editar.
 
-00:02:02.998 --> 00:02:08.405
+00:02:13.656 --> 00:02:20.594
 Corrija los datos del medicamento seleccionado y revise antes de guardar.
 
-00:02:08.405 --> 00:02:11.839
+00:02:20.594 --> 00:02:25.000
 Se conserva la versión previa en su historial.
 
-00:02:11.839 --> 00:02:13.017
+00:02:25.000 --> 00:02:26.313
 Cambiar dosis.
 
-00:02:13.017 --> 00:02:18.653
+00:02:26.313 --> 00:02:32.594
 Registre nueva dosis, unidad, frecuencia, fecha efectiva y motivo.
 
-00:02:18.653 --> 00:02:22.607
+00:02:32.594 --> 00:02:37.000
 Permite comparar la pauta anterior y la nueva.
 
-00:02:22.607 --> 00:02:24.191
+00:02:37.000 --> 00:02:38.891
 Suspender y Reactivar.
 
-00:02:24.191 --> 00:02:28.801
+00:02:38.891 --> 00:02:44.394
 Use Suspender para una pausa y Reactivar tras revisión clínica.
 
-00:02:28.801 --> 00:02:33.410
+00:02:44.394 --> 00:02:49.896
 Complete Fecha efectiva del cambio para indicar cuándo ocurrió.
 
-00:02:33.410 --> 00:02:38.523
+00:02:49.896 --> 00:02:56.000
 El estado cambia conservando el evento, la fecha efectiva y su motivo.
 
-00:02:38.523 --> 00:02:40.225
+00:02:56.000 --> 00:02:58.072
 Completar y Descontinuar.
 
-00:02:40.225 --> 00:02:46.012
+00:02:58.072 --> 00:03:05.116
 Complete un esquema terminado o descontinúe según lo documentado por el profesional.
 
-00:02:46.012 --> 00:02:50.845
+00:03:05.116 --> 00:03:11.000
 El medicamento deja de ser tratamiento activo y permanece en historia.
 
-00:02:50.845 --> 00:02:52.453
+00:03:11.000 --> 00:03:13.028
 Eliminar medicamento.
 
-00:02:52.453 --> 00:02:56.817
+00:03:13.028 --> 00:03:18.531
 Indique por qué fue agregado por error o está duplicado.
 
-00:02:56.817 --> 00:03:01.947
+00:03:18.531 --> 00:03:25.000
 Se archiva con autor, fecha y motivo; no se destruye la evidencia.
 
-00:03:01.947 --> 00:03:03.256
+00:03:25.000 --> 00:03:26.500
 Historia de tomas.
 
-00:03:03.256 --> 00:03:09.945
+00:03:26.500 --> 00:03:34.167
 Abra la cronología del medicamento para leer registros FoxPro y fechas añadidas en Linkare.
 
-00:03:09.945 --> 00:03:15.035
+00:03:34.167 --> 00:03:40.000
 Diferencia primera mención, inicio real conocido y final documentado.
 
-00:03:15.035 --> 00:03:16.808
+00:03:40.000 --> 00:03:42.133
 Medicamentos informados.
 
-00:03:16.808 --> 00:03:21.461
+00:03:42.133 --> 00:03:47.733
 Revise el registro pendiente de Secretaría antes de activarlo.
 
-00:03:21.461 --> 00:03:25.007
+00:03:47.733 --> 00:03:52.000
 Capturar lo informado no equivale a prescribir.
 
-00:03:25.007 --> 00:03:26.692
+00:03:52.000 --> 00:03:54.014
 Compruebe lo aprendido.
 
-00:03:26.692 --> 00:03:36.801
+00:03:54.014 --> 00:04:06.097
 Dos tomas del mismo nombre con dosis y horarios diferentes… La respuesta correcta es: Pueden ser parte de una pauta y requieren revisión.
 
-00:03:36.801 --> 00:03:40.903
+00:04:06.097 --> 00:04:11.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

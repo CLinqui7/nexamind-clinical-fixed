@@ -1,0 +1,115 @@
+{
+  "id": "inicio",
+  "title": "Inicio y navegación",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Inicio y navegación",
+      "text": "Inicio reúne la agenda y los indicadores del consultorio. Los números y los accesos cambian según los permisos de su cuenta.",
+      "start": 0,
+      "end": 14
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Inicio y navegación. Abra Inicio, identifique la fecha y el estado de guardado y localice Pacientes, Agenda y Ayuda.",
+      "start": 14,
+      "end": 28
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Inicio",
+      "text": "Pulse Inicio en la barra superior desde cualquier sección. Regresa al tablero; no elimina ni guarda por sí solo un formulario abierto.",
+      "start": 28,
+      "end": 42
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Pacientes",
+      "text": "Pulse Pacientes para abrir el directorio y buscar el expediente antes de registrar información. La ficha se abre al seleccionar una tarjeta del paciente.",
+      "start": 42,
+      "end": 57
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Agenda",
+      "text": "Abra Agenda para combinar los calendarios autorizados. Los filtros de calendario cambian la vista, no los eventos.",
+      "start": 57,
+      "end": 69
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Mi plan",
+      "text": "Abra esta sección para revisar la modalidad y el acceso del consultorio. El acceso gratuito y los datos de facturación se muestran tal como estén configurados.",
+      "start": 69,
+      "end": 85
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Resultados",
+      "text": "Abra Resultados para revisar indicadores y tendencias disponibles. Son resúmenes de datos registrados, no diagnósticos automáticos.",
+      "start": 85,
+      "end": 97
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Alertas",
+      "text": "Abra Alertas y revise los casos pendientes antes de resolverlos. Una alerta requiere revisar el expediente y su contexto.",
+      "start": 97,
+      "end": 109
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Agenda de hoy y aviso de las 8:00",
+      "text": "Revise la fecha del consultorio, la hora y el paciente. A partir de las 8:00 aparece el aviso del día cuando hay citas aplicables. Es una notificación del dashboard; no acredita envío de correo al paciente.",
+      "start": 109,
+      "end": 132
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Tarjetas e indicadores",
+      "text": "Lea el nombre del indicador y su periodo antes de comparar cantidades. La cifra depende del registro y de los permisos; abra el detalle para actuar.",
+      "start": 132,
+      "end": 148
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Ayuda",
+      "text": "Abra Ayuda y elija Escuela completa, video general, guía o preguntas. Puede retomar un capítulo sin modificar pacientes.",
+      "start": 148,
+      "end": 160
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Campana, configuración y menú personal",
+      "text": "La campana abre avisos; el engranaje abre Configuración; el menú personal permite gestionar su sesión. Los controles administrativos pueden faltar según su rol.",
+      "start": 160,
+      "end": 176
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Menú móvil",
+      "text": "En pantallas pequeñas abra el menú para ver los destinos de navegación. Cierre el menú después de elegir una sección.",
+      "start": 176,
+      "end": 189
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "¿El aviso de las 8:00 prueba que se envió correo? La respuesta correcta es: No; el aviso corresponde al dashboard. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 189,
+      "end": 206
+    }
+  ]
+}

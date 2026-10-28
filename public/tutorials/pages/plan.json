@@ -1,0 +1,115 @@
+{
+  "id": "plan",
+  "title": "Mi plan y acceso del consultorio",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Mi plan y acceso del consultorio",
+      "text": "Esta página informa el estado de acceso y las modalidades disponibles. Revise el estado real antes de iniciar cualquier operación de facturación.",
+      "start": 0,
+      "end": 16
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Mi plan y acceso del consultorio. Localice el estado de acceso sin iniciar una operación de pago real.",
+      "start": 16,
+      "end": 30
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Mi plan",
+      "text": "Abra la sección desde navegación. Consulte la modalidad y estado que muestra el servidor.",
+      "start": 30,
+      "end": 42
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Acceso gratuito",
+      "text": "Cuando se indique acceso gratuito, puede trabajar con las funciones concedidas por permisos. No necesita generar un pago para guardar pacientes en esta configuración.",
+      "start": 42,
+      "end": 57
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Comparar modalidades",
+      "text": "Lea duración, importe y condiciones visibles. La comparación no crea por sí sola una orden.",
+      "start": 57,
+      "end": 69
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Elegir modalidad o generar pago",
+      "text": "Solo si necesita contratar y la función está habilitada, revise importe, moneda y periodo antes de confirmar. No use pagos reales para practicar el tutorial.",
+      "start": 69,
+      "end": 86
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Enlace o código de pago",
+      "text": "Verifique la referencia y el destinatario antes de continuar. Abrir un enlace no acredita que una orden se pagó.",
+      "start": 86,
+      "end": 100
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Estado de orden",
+      "text": "Espere la confirmación del proveedor y servidor. Un retorno a la página no sustituye la confirmación de pago.",
+      "start": 100,
+      "end": 113
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Actualizar estado",
+      "text": "Consulte la orden existente antes de generar otra si el resultado es ambiguo. Evita órdenes o pagos duplicados.",
+      "start": 113,
+      "end": 125
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Historial y vigencia",
+      "text": "Revise fechas y referencias de las operaciones existentes. La vigencia procede de registros validados.",
+      "start": 125,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Continuar pago en Wompi y Abrir pago",
+      "text": "Abra únicamente la orden existente que haya revisado. No genere otra orden si el resultado del pago es ambiguo.",
+      "start": 137,
+      "end": 152
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Ver detalle",
+      "text": "Abra una orden pagada para revisar importe, referencia y vigencia. Este detalle no sustituye un documento fiscal.",
+      "start": 152,
+      "end": 164
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Permisos de facturación",
+      "text": "La administración del plan pertenece a las cuentas autorizadas. Secretaría no puede atribuirse permisos o modificar precios.",
+      "start": 164,
+      "end": 176
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Volver de un enlace de pago significa… La respuesta correcta es: Que debe comprobarse el estado validado. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 176,
+      "end": 192
+    }
+  ]
+}

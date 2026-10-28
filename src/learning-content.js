@@ -1,4 +1,4 @@
-// Product instructions, shared by the interactive school and its narrated videos.
+// Product instructions, shared by the interactive school and its reading videos.
 // Every example is descriptive; this catalog never sends a clinical write.
 const chapter=(id,title,view,tab,permission,intro,rows,exercise,question,answers,correct=0)=>({id,title,view,tab,permission,intro,controls:rows.trim().split('\n').map(row=>{const [label,how,result]=row.split('|');return {label,how,result};}),exercise,quiz:{question,answers,correct},video:`/tutorials/pages/${id}.mp4`,captions:`/tutorials/pages/${id}.vtt`});
 export const LEARNING_CHAPTERS=[
@@ -372,7 +372,7 @@ Reintentar|Después de recuperar conexión, reintente y compruebe el resultado.|
 Conflicto de edición|Compare los campos cambiados por otra persona y conserve la intención correcta.|Actualizar ayuda a evitar sobrescribir información reciente.
 Sesión vencida o permiso revocado|Vuelva a entrar cuando sea necesario y revise acceso con el propietario.|No copie datos clínicos a medios no autorizados para resolver el problema.
 Escuela completa|Elija capítulo, lea cada control y marque la explicación como comprendida.|El progreso se conserva localmente por cuenta y dispositivo.
-Video por pantalla|Reproduzca, pause, use subtítulos o descargue el capítulo.|El video incluye narración y ejemplos ficticios.
+Video por pantalla|Reproduzca, pause, use subtítulos o descargue el capítulo.|El video incluye texto completo, música instrumental suave y ejemplos ficticios. Puede silenciar la música y avanzar por pasos.
 Comprobación del capítulo|Responda la pregunta final y revise la explicación si se equivoca.|Completar requiere leer los controles y acertar la comprobación.
 Recorrido interactivo|Practique con Paciente Demo Linkare en la copia temporal.|Al salir se descartan los cambios de la práctica.
 Reiniciar progreso|Use el control del capítulo si desea repasarlo desde cero.|Solo afecta su progreso de aprendizaje local.

@@ -1,0 +1,107 @@
+{
+  "id": "sistema-anterior",
+  "title": "Sistema anterior y expedientes fusionados",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Sistema anterior y expedientes fusionados",
+      "text": "Esta sección conserva la procedencia histórica y las diferencias entre expedientes fusionados.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Localice una fecha histórica desconocida y explique por qué debe permanecer sin inventar.",
+      "start": 12,
+      "end": 27
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Ficha administrativa histórica",
+      "text": "Revise domicilio, teléfonos, profesión y otros campos de origen. Pueden diferir de los datos actuales y se identifican como históricos.",
+      "start": 27,
+      "end": 41
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Edad en expediente anterior",
+      "text": "Lea la edad como dato del registro fusionado. La edad actual procede de la ficha reciente.",
+      "start": 41,
+      "end": 53
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Actividad de consulta en FoxPro",
+      "text": "Revise movimientos marcados como consulta y último movimiento disponible. Son marcas del origen, no un total clínico certificado de visitas.",
+      "start": 53,
+      "end": 68
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Movimientos y anotaciones",
+      "text": "Lea el título, fecha y alcance administrativo o clínico. El contenido depende de sus permisos.",
+      "start": 68,
+      "end": 80
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Texto original",
+      "text": "Consulte el texto literal cuando una tarjeta estructurada sea ambigua. Puede contener medicamentos o contexto no identificados automáticamente.",
+      "start": 80,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Cargar más",
+      "text": "Pulse para consultar el siguiente grupo de registros del paciente. El historial se carga por páginas.",
+      "start": 92,
+      "end": 104
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Ficha histórica adicional",
+      "text": "Revise los campos conservados de otro expediente fusionado. La fusión preserva diferencias en lugar de inventar un dato único.",
+      "start": 104,
+      "end": 117
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Expediente clínico anterior",
+      "text": "Con acceso clínico, revise los tratamientos y datos del expediente anterior. El tratamiento vigente conserva el expediente actualizado más recientemente.",
+      "start": 117,
+      "end": 131
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Reintentar",
+      "text": "Si una sección falla, pulse su botón Reintentar tras revisar conexión. No duplique pacientes porque una carga haya fallado.",
+      "start": 131,
+      "end": 143
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Acceso administrativo",
+      "text": "Secretaría consulta únicamente el alcance permitido. Las notas clínicas privadas siguen protegidas por el servidor.",
+      "start": 143,
+      "end": 155
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Un tratamiento en Expediente clínico anterior… La respuesta correcta es: Se conserva como historia del registro previo. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 155,
+      "end": 171
+    }
+  ]
+}

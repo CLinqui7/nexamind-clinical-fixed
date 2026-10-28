@@ -1,0 +1,115 @@
+{
+  "id": "libreta",
+  "title": "Libreta clínica: escribir, guardar y firmar",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Libreta clínica: escribir, guardar y firmar",
+      "text": "La libreta reúne apartados clínicos y un estado de guardado. Revise siempre el paciente y el estado de la nota.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra el expediente y la sección Consultas. Complete Notas libres y Motivo en la práctica ficticia; identifique el estado de guardado antes de salir.",
+      "start": 15,
+      "end": 31
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Panel del paciente",
+      "text": "Compruebe nombre, diagnóstico y contexto antes de escribir. Evita documentar en el expediente equivocado.",
+      "start": 31,
+      "end": 43
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Notas libres",
+      "text": "Escriba la narración pertinente de la consulta. El borrador se guarda automáticamente si hay conexión y permisos.",
+      "start": 43,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Motivo y evolución",
+      "text": "Organice la razón de consulta y los cambios desde la visita previa. La información queda en apartados identificables.",
+      "start": 55,
+      "end": 68
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Riesgo y seguridad",
+      "text": "Documente la valoración y el plan según lo evaluado. Los campos no calculan por sí solos una decisión clínica.",
+      "start": 68,
+      "end": 81
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Medicamentos y tolerabilidad",
+      "text": "Registre la discusión del tratamiento y efectos referidos. Cambiar un texto de la consulta no sustituye editar la pauta del medicamento.",
+      "start": 81,
+      "end": 95
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Otros apartados de la libreta",
+      "text": "Abra cada sección visible y registre solo lo pertinente. La disponibilidad depende de la plantilla y los permisos.",
+      "start": 95,
+      "end": 109
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Estado Guardando",
+      "text": "Espere a que cambie a Guardado en el servidor. No cierre ni recargue mientras indique error o cambios pendientes.",
+      "start": 109,
+      "end": 122
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Reintentar guardado",
+      "text": "Si aparece un error, conserve la nota abierta y revise la conexión antes de reintentar. Confirme después que el servidor aceptó el borrador.",
+      "start": 122,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Finalizar y firmar",
+      "text": "Revise el texto completo, fecha y paciente antes de confirmar la firma. La versión firmada queda protegida; cambios posteriores requieren corrección.",
+      "start": 137,
+      "end": 151
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Cerrar y volver",
+      "text": "Use el control de salida para regresar al expediente. Compruebe si quedó borrador o firmada según su intención.",
+      "start": 151,
+      "end": 164
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Solo lectura",
+      "text": "Si la libreta está bloqueada, lea el estado y revise el permiso. No intente modificar una nota firmada desde un campo deshabilitado.",
+      "start": 164,
+      "end": 178
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Cerrar una libreta significa… La respuesta correcta es: Salir de la vista; debe revisar si quedó borrador o firmada. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 178,
+      "end": 195
+    }
+  ]
+}

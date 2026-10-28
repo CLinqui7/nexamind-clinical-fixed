@@ -1,0 +1,115 @@
+{
+  "id": "seguimiento",
+  "title": "Seguimiento y escalas",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Seguimiento y escalas",
+      "text": "Las mediciones fechadas permiten comparar evolución. Complete el instrumento y sus condiciones con el contexto correspondiente.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Localice las mediciones y explique por qué dos puntuaciones requieren revisar fechas y contexto.",
+      "start": 12,
+      "end": 28
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Registrar evolución",
+      "text": "Abra el formulario del paciente correcto. Se crea una medición nueva y fechada.",
+      "start": 28,
+      "end": 40
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Fecha de evaluación",
+      "text": "Registre cuándo se evaluó, no solo cuándo se digitó. Las gráficas usan la fecha para ordenar puntos.",
+      "start": 40,
+      "end": 52
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Escala e ítems",
+      "text": "Seleccione el instrumento y complete cada pregunta según la evaluación. La puntuación deriva de las respuestas registradas.",
+      "start": 52,
+      "end": 64
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Adherencia",
+      "text": "Registre la estimación y su fuente si está disponible. Una estimación no confirma dispensación ni administración.",
+      "start": 64,
+      "end": 76
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Sueño, apetito y funcionamiento",
+      "text": "Complete los campos conocidos y describa cambios relevantes. Evite convertir datos faltantes en resultados normales.",
+      "start": 76,
+      "end": 88
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Notas y observaciones",
+      "text": "Añada contexto, limitaciones y fuente de la información. Ayuda a interpretar diferencias entre evaluaciones.",
+      "start": 88,
+      "end": 100
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Guardar evolución",
+      "text": "Revise fecha y resultados y envíe una vez. La nueva observación aparece en seguimiento e historial.",
+      "start": 100,
+      "end": 112
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Gráfica y selector",
+      "text": "Cambie el tipo de gráfica o instrumento visible cuando haya mediciones. Una curva refleja datos guardados y no prueba causalidad.",
+      "start": 112,
+      "end": 126
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Editar registro",
+      "text": "Abra la medición que necesita corregirse y guarde su corrección. Se conserva el contenido anterior.",
+      "start": 126,
+      "end": 138
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Eliminar registro",
+      "text": "Indique el motivo para retirarlo de la vista activa. La auditoría permite reconstruir lo ocurrido.",
+      "start": 138,
+      "end": 150
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Cancelar",
+      "text": "Cierre el formulario si no está listo para documentar. No se crea una nueva medición.",
+      "start": 150,
+      "end": 162
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una mejoría en una gráfica… La respuesta correcta es: Debe interpretarse con el contexto clínico. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 162,
+      "end": 177
+    }
+  ]
+}

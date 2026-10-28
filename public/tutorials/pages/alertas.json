@@ -1,0 +1,99 @@
+{
+  "id": "alertas",
+  "title": "Alertas y pendientes",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Alertas y pendientes",
+      "text": "Las alertas orientan la revisión. Abra la ficha y lea el contexto antes de resolver un pendiente.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Alertas y pendientes. Identifique título, paciente, fecha y estado de una alerta ficticia.",
+      "start": 12,
+      "end": 24
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Abrir Alertas",
+      "text": "Use la navegación y revise el alcance visible. Las alertas dependen del registro y los permisos.",
+      "start": 24,
+      "end": 36
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Grupos de prioridad y Revisadas",
+      "text": "Lea las listas de prioridad alta, media, seguimiento y revisadas. Mover una alerta de estado requiere su acción específica.",
+      "start": 36,
+      "end": 50
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Tarjeta de alerta",
+      "text": "Lea título, detalle, paciente y fecha. La prioridad visual no sustituye una valoración clínica.",
+      "start": 50,
+      "end": 62
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Abrir paciente",
+      "text": "Revise el expediente relacionado antes de actuar. Confirme la identidad y la información que originó el aviso.",
+      "start": 62,
+      "end": 74
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Marcar revisada",
+      "text": "Pulse después de completar la revisión correspondiente. El cambio conserva el registro y lo muestra entre las revisadas.",
+      "start": 74,
+      "end": 86
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Reabrir",
+      "text": "En la lista Revisadas, pulse Reabrir si necesita volver a atender el pendiente. La alerta regresa a estado abierto.",
+      "start": 86,
+      "end": 98
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Volver a alertas",
+      "text": "Regrese para continuar con el siguiente pendiente. Compruebe que el estado se guardó.",
+      "start": 98,
+      "end": 110
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Sin alertas visibles",
+      "text": "Revise filtros y permisos antes de concluir que no hay pendientes. La ausencia de una alerta no certifica ausencia de riesgo.",
+      "start": 110,
+      "end": 124
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Reintentar o actualizar",
+      "text": "Si la sección falla, conserve el contexto y vuelva a cargar. No repita cambios ambiguos sin revisar el resultado.",
+      "start": 124,
+      "end": 137
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Cambiar un filtro de alerta… La respuesta correcta es: Solo cambia lo mostrado. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 137,
+      "end": 151
+    }
+  ]
+}

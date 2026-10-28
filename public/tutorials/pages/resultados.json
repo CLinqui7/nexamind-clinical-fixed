@@ -1,0 +1,99 @@
+{
+  "id": "resultados",
+  "title": "Resultados e indicadores",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Resultados e indicadores",
+      "text": "Los resultados resumen los datos disponibles. Revise filtros, periodos y cantidad de observaciones antes de comparar.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Resultados e indicadores. Lea una gráfica y explique qué representan sus ejes y de dónde proceden los datos.",
+      "start": 12,
+      "end": 26
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Resultados en navegación",
+      "text": "Abra la sección con el permiso correspondiente. Se muestran indicadores del alcance autorizado.",
+      "start": 26,
+      "end": 38
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Alcance de los indicadores",
+      "text": "Lea las explicaciones del conjunto disponible; esta pantalla no ofrece un selector de periodo. No suponga que una gráfica incluye años que no fueron cargados.",
+      "start": 38,
+      "end": 54
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Tarjetas de indicadores",
+      "text": "Lea el nombre y unidad de cada indicador. No todas las tarjetas representan el mismo conjunto de pacientes.",
+      "start": 54,
+      "end": 67
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Gráficas",
+      "text": "Revise ejes, leyenda y número de puntos antes de interpretar una tendencia. Pocos datos o fechas faltantes limitan una comparación.",
+      "start": 67,
+      "end": 80
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Escalas",
+      "text": "Compare mediciones del mismo instrumento y contexto. Instrumentos distintos no son necesariamente intercambiables.",
+      "start": 80,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Adherencia y funcionamiento",
+      "text": "Revise cómo fueron registrados y si son estimaciones. Un porcentaje no acredita administración del fármaco.",
+      "start": 92,
+      "end": 104
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Tratamientos y tolerabilidad",
+      "text": "Consulte los datos del expediente que originan un resultado. El resumen no demuestra causalidad.",
+      "start": 104,
+      "end": 116
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Exportaciones disponibles",
+      "text": "Si su cuenta permite exportar, revise el alcance antes de descargar. Proteja el archivo y confirme que el periodo es el correcto.",
+      "start": 116,
+      "end": 130
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Volver al expediente",
+      "text": "Abra Pacientes y revise la fuente del indicador. Las correcciones se realizan sobre el recurso correspondiente.",
+      "start": 130,
+      "end": 142
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una tendencia agregada… La respuesta correcta es: Requiere revisar periodo y calidad de los datos. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 142,
+      "end": 157
+    }
+  ]
+}

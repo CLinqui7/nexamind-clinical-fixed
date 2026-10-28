@@ -1,0 +1,115 @@
+{
+  "id": "directorio",
+  "title": "Directorio y búsqueda de pacientes",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Directorio y búsqueda de pacientes",
+      "text": "Busque primero para evitar expedientes duplicados. El directorio consulta la base completa y presenta resultados en páginas.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Directorio y búsqueda de pacientes. Busque un paciente ficticio en el recorrido seguro y explique por qué debe probar Todos antes de crear otra ficha.",
+      "start": 13,
+      "end": 30
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Buscar paciente",
+      "text": "Escriba una parte del nombre o teléfono; espere el resultado antes de volver a escribir. La consulta no se limita a las tarjetas de la página visible.",
+      "start": 30,
+      "end": 46
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Recientes",
+      "text": "Seleccione la cohorte de actividad reciente y lea la fecha de corte mostrada. La fecha de actividad no equivale a la fecha de creación.",
+      "start": 46,
+      "end": 61
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Todos",
+      "text": "Use Todos cuando no encuentre a alguien en Recientes. Un expediente antiguo puede existir aunque no tenga actividad reciente.",
+      "start": 61,
+      "end": 73
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Sin actividad",
+      "text": "Seleccione Sin actividad para localizar expedientes sin una actividad válida registrada. Esto no significa que la persona no haya sido atendida: puede faltar evidencia utilizable.",
+      "start": 73,
+      "end": 88
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "En esta página y total no archivado",
+      "text": "Lea el contador de tarjetas y el total del consultorio por separado. El contador de la página no representa todos los pacientes de la base.",
+      "start": 88,
+      "end": 106
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Archivados",
+      "text": "Abra la vista de archivados para consultar expedientes retirados del listado activo. Archivar conserva historia y no equivale a destruir al paciente.",
+      "start": 106,
+      "end": 120
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Tarjeta del paciente",
+      "text": "Compare nombre y contacto y pulse la tarjeta correcta. Se carga ese expediente por su identificador.",
+      "start": 120,
+      "end": 132
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Anterior y siguiente",
+      "text": "Avance o retroceda en la paginación conservando los filtros. La ausencia de una tarjeta en esta página no implica que se haya borrado.",
+      "start": 132,
+      "end": 147
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Nuevo paciente",
+      "text": "Pulse después de buscar nombre y teléfono. Complete los datos requeridos. La base rechaza un duplicado activo con el mismo nombre y teléfono normalizados.",
+      "start": 147,
+      "end": 162
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Abrir expediente existente",
+      "text": "Si el formulario detecta coincidencia, elija la ficha existente y revise sus datos. Evita repartir notas y medicamentos entre dos expedientes.",
+      "start": 162,
+      "end": 176
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Reintentar",
+      "text": "Si falla la búsqueda, compruebe conexión y pulse Reintentar. Un error de carga no demuestra que el paciente no exista.",
+      "start": 176,
+      "end": 189
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Si un paciente no aparece en Recientes… La respuesta correcta es: Buscar en Todos y comprobar el contacto. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 189,
+      "end": 205
+    }
+  ]
+}

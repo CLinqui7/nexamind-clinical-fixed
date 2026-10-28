@@ -1,0 +1,123 @@
+{
+  "id": "perfil",
+  "title": "Perfil, teléfonos, enlaces y conexiones",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Perfil, teléfonos, enlaces y conexiones",
+      "text": "Los datos del perfil aparecen en documentos y encabezados. Los enlaces compartidos deben corresponder al destinatario y alcance correctos.",
+      "start": 0,
+      "end": 14
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Perfil, teléfonos, enlaces y conexiones. Revise tres etiquetas de teléfono y explique qué información puede contener un enlace familiar.",
+      "start": 14,
+      "end": 28
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Editar perfil",
+      "text": "Abra el perfil del consultorio y revise nombre, especialidad y profesional. Los documentos pueden conservar una instantánea de sus datos al emitirse.",
+      "start": 28,
+      "end": 42
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "JVPM",
+      "text": "Escriba el registro profesional correcto. En la receta se muestra arriba; el sello puede contenerlo también.",
+      "start": 42,
+      "end": 54
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Dirección y correo",
+      "text": "Registre datos de contacto que puedan entregarse a pacientes. Revise su ortografía en la vista de impresión.",
+      "start": 54,
+      "end": 66
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Agregar teléfono",
+      "text": "Cree una fila por contacto: clínica, celular de clínica o médico. Cada teléfono conserva su etiqueta.",
+      "start": 66,
+      "end": 78
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Editar o eliminar teléfono",
+      "text": "Corrija el número seleccionado o retire esa fila. Revise el conjunto completo antes de guardar.",
+      "start": 78,
+      "end": 90
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Logo",
+      "text": "Cargue una imagen autorizada y compruebe su legibilidad. Se usa en la identidad visual del consultorio.",
+      "start": 90,
+      "end": 102
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Guardar perfil",
+      "text": "Confirme y después revise una receta o documento de ejemplo. El guardado debe ser aceptado por el servidor.",
+      "start": 102,
+      "end": 114
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Google o Apple",
+      "text": "Revise la conexión disponible, su cuenta y permisos antes de vincular. Una conexión puede requerir autorización adicional del proveedor.",
+      "start": 114,
+      "end": 127
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Copiar enlace de calendario",
+      "text": "Seleccione el alcance correcto: paciente propio, completo autorizado o bloques familiares. El destinatario del enlace puede consultar lo que permita ese alcance.",
+      "start": 127,
+      "end": 142
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Enlaces de calendario y Revocar",
+      "text": "Revise fecha, estado y alcance y revoque un enlace que ya no deba funcionar. Revocar el acceso no borra citas de la clínica.",
+      "start": 142,
+      "end": 158
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Contactos personales",
+      "text": "Si la función está habilitada, registre solo un contacto autorizado para bloques de agenda. Compruebe el proveedor y el alcance antes de esperar entregas.",
+      "start": 158,
+      "end": 173
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Desconectar o cancelar",
+      "text": "Cierre una conexión o formulario según su intención. No repita una operación de resultado incierto sin revisar su estado.",
+      "start": 173,
+      "end": 186
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Un enlace familiar de agenda debe mostrar… La respuesta correcta es: Bloques Ocupado sin pacientes ni diagnósticos. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 186,
+      "end": 202
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "id": "medicamentos",
+  "title": "Medicamentos actuales y sus botones",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Medicamentos actuales y sus botones",
+      "text": "El tratamiento muestra medicamentos registrados, sus dosis y estados. Revise nombre y pauta completa, especialmente si el mismo fármaco tiene tomas distintas.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. En el recorrido seguro agregue Medicamento ficticio y distinga dosis, unidad, frecuencia, vía y fecha.",
+      "start": 15,
+      "end": 31
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Agregar medicamento",
+      "text": "Complete nombre, clase, indicación, dosis, unidad, frecuencia, vía y fecha si se conoce. El sistema conserva un identificador y metadatos de creación.",
+      "start": 31,
+      "end": 45
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Nombre y clase",
+      "text": "Escriba el producto registrado; los paréntesis permiten aclarar marca o principio activo. La clase es una clasificación y no verifica equivalencias entre productos.",
+      "start": 45,
+      "end": 60
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Dosis y unidad",
+      "text": "Distinga concentración del producto de cantidad administrada. Escriba el valor y seleccione la unidad correspondiente. Una cifra sin unidad puede interpretarse incorrectamente.",
+      "start": 60,
+      "end": 75
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Frecuencia y frecuencia personalizada",
+      "text": "Seleccione la pauta documentada. Use Otra cuando no exista una opción exacta y describa los horarios. La pauta debe poder leerse sin tener que adivinar.",
+      "start": 75,
+      "end": 91
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Vía y fecha de inicio",
+      "text": "Seleccione la vía indicada y registre la fecha real si consta. La fecha de captura no demuestra cuándo comenzó el paciente.",
+      "start": 91,
+      "end": 106
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Principal y según necesidad",
+      "text": "Principal elige la referencia del tablero. Según necesidad identifica una pauta PRN documentada. Ninguna casilla completa por sí sola las instrucciones clínicas.",
+      "start": 106,
+      "end": 121
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Notas clínicas",
+      "text": "Escriba contexto, fuente y aclaraciones de la indicación. No sustituyen los campos de dosis y frecuencia.",
+      "start": 121,
+      "end": 133
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Editar",
+      "text": "Corrija los datos del medicamento seleccionado y revise antes de guardar. Se conserva la versión previa en su historial.",
+      "start": 133,
+      "end": 145
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Cambiar dosis",
+      "text": "Registre nueva dosis, unidad, frecuencia, fecha efectiva y motivo. Permite comparar la pauta anterior y la nueva.",
+      "start": 145,
+      "end": 157
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Suspender y Reactivar",
+      "text": "Use Suspender para una pausa y Reactivar tras revisión clínica. Complete Fecha efectiva del cambio para indicar cuándo ocurrió. El estado cambia conservando el evento, la fecha efectiva y su motivo.",
+      "start": 157,
+      "end": 176
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Completar y Descontinuar",
+      "text": "Complete un esquema terminado o descontinúe según lo documentado por el profesional. El medicamento deja de ser tratamiento activo y permanece en historia.",
+      "start": 176,
+      "end": 191
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Eliminar medicamento",
+      "text": "Indique por qué fue agregado por error o está duplicado. Se archiva con autor, fecha y motivo; no se destruye la evidencia.",
+      "start": 191,
+      "end": 205
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Historia de tomas",
+      "text": "Abra la cronología del medicamento para leer registros FoxPro y fechas añadidas en Linkare. Diferencia primera mención, inicio real conocido y final documentado.",
+      "start": 205,
+      "end": 220
+    },
+    {
+      "kind": "control",
+      "controlIndex": 13,
+      "title": "Medicamentos informados",
+      "text": "Revise el registro pendiente de Secretaría antes de activarlo. Capturar lo informado no equivale a prescribir.",
+      "start": 220,
+      "end": 232
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Dos tomas del mismo nombre con dosis y horarios diferentes… La respuesta correcta es: Pueden ser parte de una pauta y requieren revisión. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 232,
+      "end": 251
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "id": "configuracion",
+  "title": "Configuración: apariencia y preferencias",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Configuración: apariencia y preferencias",
+      "text": "Las preferencias ayudan a adaptar el trabajo. Revise qué cambios son personales y cuáles pertenecen al consultorio.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Configuración: apariencia y preferencias. Pruebe texto grande y reducir movimiento, revise su efecto y restablezca la preferencia si corresponde.",
+      "start": 13,
+      "end": 27
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Engranaje",
+      "text": "Abra Configuración desde la barra superior. Las secciones administrativas dependen de su rol.",
+      "start": 27,
+      "end": 39
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Texto grande",
+      "text": "Active esta opción si necesita mejorar la lectura. Revise tablas y formularios después del cambio.",
+      "start": 39,
+      "end": 51
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Reducir movimiento",
+      "text": "Active la preferencia si las animaciones dificultan el uso. La navegación debe continuar funcionando.",
+      "start": 51,
+      "end": 63
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Anticipaciones de recordatorios",
+      "text": "Las horas previas que aparecen son preferencias de recordatorio. El aviso diario de las 8:00 se muestra en el dashboard. Una preferencia no acredita que exista un proveedor de envío externo activo.",
+      "start": 63,
+      "end": 82
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Guardar y respuesta visual",
+      "text": "Espere la confirmación del cambio. Si falla el servidor, revise el aviso antes de repetir.",
+      "start": 82,
+      "end": 94
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Perfil del consultorio",
+      "text": "Abra el editor de identidad para datos de encabezados y recetas. Use el capítulo Perfil para revisar teléfonos y datos profesionales.",
+      "start": 94,
+      "end": 108
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Equipo",
+      "text": "Busque las cuentas del consultorio y sus permisos. Cada persona debe usar su propio acceso.",
+      "start": 108,
+      "end": 120
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Calendarios e integraciones",
+      "text": "Revise el alcance de enlaces o conexiones antes de compartir. No incluya información de pacientes en un alcance familiar.",
+      "start": 120,
+      "end": 133
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Ayuda y recorrido",
+      "text": "Abra Escuela completa o el recorrido seguro para repetir prácticas. El progreso de aprendizaje pertenece al dispositivo y cuenta utilizados.",
+      "start": 133,
+      "end": 147
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una preferencia visual… La respuesta correcta es: No concede permisos clínicos. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 147,
+      "end": 160
+    }
+  ]
+}

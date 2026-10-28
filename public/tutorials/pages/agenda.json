@@ -1,0 +1,123 @@
+{
+  "id": "agenda",
+  "title": "Agenda: mes, semana, día y calendarios",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Agenda: mes, semana, día y calendarios",
+      "text": "La agenda combina solo los calendarios que su cuenta puede consultar. Cada evento conserva su propio calendario.",
+      "start": 0,
+      "end": 14
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Agenda: mes, semana, día y calendarios. Active dos calendarios en la práctica y cambie de Mes a Día sin modificar eventos.",
+      "start": 14,
+      "end": 29
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Filtros Doctor, Esposa y General",
+      "text": "Active o desactive cada calendario autorizado. Ocultar un calendario no elimina sus eventos.",
+      "start": 29,
+      "end": 41
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Mes",
+      "text": "Seleccione Mes para ver la distribución mensual y los días con eventos. Pulse un día o evento para inspeccionar su detalle.",
+      "start": 41,
+      "end": 54
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Semana",
+      "text": "Seleccione Semana para comparar horarios entre días. La columna y posición corresponden a fecha y hora del evento.",
+      "start": 54,
+      "end": 66
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Día",
+      "text": "Seleccione Día para concentrarse en una fecha. Revise duración y estado antes de modificar.",
+      "start": 66,
+      "end": 78
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Hoy",
+      "text": "Pulse Hoy para volver a la fecha actual del consultorio. No cambia las fechas de citas guardadas.",
+      "start": 78,
+      "end": 90
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Flechas anterior y siguiente",
+      "text": "Avance por meses, semanas o días según la vista activa. Lea el encabezado después de navegar.",
+      "start": 90,
+      "end": 102
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Nuevo evento",
+      "text": "Abra el formulario y seleccione primero el calendario. Su permiso de creación debe existir para ese calendario.",
+      "start": 102,
+      "end": 114
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Evento en la cuadrícula",
+      "text": "Pulse la tarjeta y confirme calendario, paciente, fecha y estado. Abre el detalle de ese evento.",
+      "start": 114,
+      "end": 126
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Filtros de estado y revisión",
+      "text": "Seleccione pendientes, confirmadas o marcas administrativas según necesite. La selección modifica la vista, no el estado de las citas.",
+      "start": 126,
+      "end": 140
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Exportar vista",
+      "text": "Exporte únicamente el alcance visible autorizado cuando necesite un archivo de calendario. Proteja el archivo; exportar no acredita sincronización automática.",
+      "start": 140,
+      "end": 153
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Agenda del día",
+      "text": "Use la sección de agenda imprimible para una fecha específica. Tiene permiso propio y usa el calendario Doctor.",
+      "start": 153,
+      "end": 166
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Compartir calendarios",
+      "text": "Revise alcance y destinatario antes de copiar un enlace. Los enlaces familiares muestran bloques ocupados sin información clínica.",
+      "start": 166,
+      "end": 178
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Ocultar General en un filtro… La respuesta correcta es: Cambia únicamente la vista. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 178,
+      "end": 192
+    }
+  ]
+}

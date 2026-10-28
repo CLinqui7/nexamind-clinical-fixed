@@ -1,118 +1,115 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.662
-Capítulo.
-
-00:00:00.662 --> 00:00:03.826
+00:00:00.000 --> 00:00:03.679
 Sistema anterior y expedientes fusionados.
 
-00:00:03.826 --> 00:00:10.817
+00:00:03.679 --> 00:00:12.000
 Esta sección conserva la procedencia histórica y las diferencias entre expedientes fusionados.
 
-00:00:10.817 --> 00:00:12.543
+00:00:12.000 --> 00:00:13.978
 Cómo llegar y practicar.
 
-00:00:12.543 --> 00:00:17.433
+00:00:13.978 --> 00:00:19.582
 Abra Pacientes, seleccione la ficha correcta y la pestaña indicada.
 
-00:00:17.433 --> 00:00:23.904
+00:00:19.582 --> 00:00:27.000
 Localice una fecha histórica desconocida y explique por qué debe permanecer sin inventar.
 
-00:00:23.904 --> 00:00:26.219
+00:00:27.000 --> 00:00:29.599
 Ficha administrativa histórica.
 
-00:00:26.219 --> 00:00:31.071
+00:00:29.599 --> 00:00:35.048
 Revise domicilio, teléfonos, profesión y otros campos de origen.
 
-00:00:31.071 --> 00:00:36.371
+00:00:35.048 --> 00:00:41.000
 Pueden diferir de los datos actuales y se identifican como históricos.
 
-00:00:36.371 --> 00:00:38.479
+00:00:41.000 --> 00:00:43.824
 Edad en expediente anterior.
 
-00:00:38.479 --> 00:00:41.942
+00:00:43.824 --> 00:00:48.462
 Lea la edad como dato del registro fusionado.
 
-00:00:41.942 --> 00:00:45.329
+00:00:48.462 --> 00:00:53.000
 La edad actual procede de la ficha reciente.
 
-00:00:45.329 --> 00:00:47.721
+00:00:53.000 --> 00:00:55.775
 Actividad de consulta en FoxPro.
 
-00:00:47.721 --> 00:00:53.253
+00:00:55.775 --> 00:01:02.191
 Revise movimientos marcados como consulta y último movimiento disponible.
 
-00:00:53.253 --> 00:00:58.261
+00:01:02.191 --> 00:01:08.000
 Son marcas del origen, no un total clínico certificado de visitas.
 
-00:00:58.261 --> 00:01:00.411
+00:01:08.000 --> 00:01:10.579
 Movimientos y anotaciones.
 
-00:01:00.411 --> 00:01:05.126
+00:01:10.579 --> 00:01:16.231
 Lea el título, fecha y alcance administrativo o clínico.
 
-00:01:05.126 --> 00:01:08.269
+00:01:16.231 --> 00:01:20.000
 El contenido depende de sus permisos.
 
-00:01:08.269 --> 00:01:09.384
+00:01:20.000 --> 00:01:21.132
 Texto original.
 
-00:01:09.384 --> 00:01:14.665
+00:01:21.132 --> 00:01:26.491
 Consulte el texto literal cuando una tarjeta estructurada sea ambigua.
 
-00:01:14.665 --> 00:01:20.095
+00:01:26.491 --> 00:01:32.000
 Puede contener medicamentos o contexto no identificados automáticamente.
 
-00:01:20.095 --> 00:01:20.946
+00:01:32.000 --> 00:01:33.168
 Cargar más.
 
-00:01:20.946 --> 00:01:26.130
+00:01:33.168 --> 00:01:40.283
 Pulse para consultar el siguiente grupo de registros del paciente.
 
-00:01:26.130 --> 00:01:28.838
+00:01:40.283 --> 00:01:44.000
 El historial se carga por páginas.
 
-00:01:28.838 --> 00:01:30.691
+00:01:44.000 --> 00:01:46.209
 Ficha histórica adicional.
 
-00:01:30.691 --> 00:01:34.966
+00:01:46.209 --> 00:01:51.307
 Revise los campos conservados de otro expediente fusionado.
 
-00:01:34.966 --> 00:01:39.740
+00:01:51.307 --> 00:01:57.000
 La fusión preserva diferencias en lugar de inventar un dato único.
 
-00:01:39.740 --> 00:01:41.736
+00:01:57.000 --> 00:01:59.154
 Expediente clínico anterior.
 
-00:01:41.736 --> 00:01:47.226
+00:01:59.154 --> 00:02:05.077
 Con acceso clínico, revise los tratamientos y datos del expediente anterior.
 
-00:01:47.226 --> 00:01:52.716
+00:02:05.077 --> 00:02:11.000
 El tratamiento vigente conserva el expediente actualizado más recientemente.
 
-00:01:52.716 --> 00:01:53.588
+00:02:11.000 --> 00:02:11.978
 Reintentar.
 
-00:01:53.588 --> 00:01:59.211
+00:02:11.978 --> 00:02:18.289
 Si una sección falla, pulse su botón Reintentar tras revisar conexión.
 
-00:01:59.211 --> 00:02:03.409
+00:02:18.289 --> 00:02:23.000
 No duplique pacientes porque una carga haya fallado.
 
-00:02:03.409 --> 00:02:05.080
+00:02:23.000 --> 00:02:24.913
 Acceso administrativo.
 
-00:02:05.080 --> 00:02:09.106
+00:02:24.913 --> 00:02:29.522
 Secretaría consulta únicamente el alcance permitido.
 
-00:02:09.106 --> 00:02:13.891
+00:02:29.522 --> 00:02:35.000
 Las notas clínicas privadas siguen protegidas por el servidor.
 
-00:02:13.891 --> 00:02:15.610
+00:02:35.000 --> 00:02:36.849
 Compruebe lo aprendido.
 
-00:02:15.610 --> 00:02:24.578
+00:02:36.849 --> 00:02:46.497
 Un tratamiento en Expediente clínico anterior… La respuesta correcta es: Se conserva como historia del registro previo.
 
-00:02:24.578 --> 00:02:28.763
+00:02:46.497 --> 00:02:51.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

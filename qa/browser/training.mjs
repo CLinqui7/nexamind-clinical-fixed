@@ -59,7 +59,7 @@ try {
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('tab',{name:'Video de esta pantalla',exact:true}).click();
     const video = dialog.locator('video.training-video');
-    assert.match(await video.getAttribute('src'), /pages\/inicio\.mp4$/);
+    assert.match(await video.getAttribute('src'), /pages\/inicio\.mp4\?v=reading-music-2$/);
     await page.waitForFunction(()=>document.querySelector('video track')?.readyState===2);
     assert.ok(await video.locator('track').count());
     const media = await video.evaluate(element => new Promise((resolve, reject) => {

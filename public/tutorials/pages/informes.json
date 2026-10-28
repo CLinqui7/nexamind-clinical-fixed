@@ -1,0 +1,107 @@
+{
+  "id": "informes",
+  "title": "Resumen del paciente e informe post mortem",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Resumen del paciente e informe post mortem",
+      "text": "Los informes reúnen datos del expediente con una finalidad específica. Revise identidad, fechas y procedencia antes de imprimir.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Revise un resumen ficticio y explique la diferencia entre hecho documentado y conclusión no sustentada.",
+      "start": 15,
+      "end": 31
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Resumen del paciente",
+      "text": "Abra el resumen descriptivo desde el control disponible del expediente. El contenido depende de los registros autorizados.",
+      "start": 31,
+      "end": 43
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Tratamiento y medición principal",
+      "text": "Compruebe qué medicamento y escala fueron elegidos como referencia. No representa necesariamente todos los episodios históricos.",
+      "start": 43,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Situación actual",
+      "text": "Lea estado, riesgo, efectos y citas con sus datos de origen. Un resumen no añade una evaluación clínica nueva.",
+      "start": 55,
+      "end": 68
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Imprimir resumen",
+      "text": "Revise paciente y páginas en la vista de impresión. Proteja la copia al entregarla o archivarla.",
+      "start": 68,
+      "end": 80
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Cerrar resumen",
+      "text": "Regrese al expediente cuando haya terminado. Cerrar no modifica el contenido clínico.",
+      "start": 80,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Estado vital y fuente",
+      "text": "En Datos y seguro documente fallecimiento solo cuando corresponda y exista fuente. Se preservan fechas, documento y persona que confirmó.",
+      "start": 92,
+      "end": 106
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Manera documentada",
+      "text": "Seleccione la manera que consta en la fuente o conserve pendiente. No se deduce intención desde síntomas o tratamientos.",
+      "start": 106,
+      "end": 119
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Generar paquete médico legal",
+      "text": "Con permiso específico, abra el informe post mortem del expediente correcto. Revise calidad, procedencia y limitaciones de cada dato.",
+      "start": 119,
+      "end": 133
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Cronología y documentos de respaldo",
+      "text": "Distinga fecha del hecho, fecha de información y fecha de captura. Los textos de terceros deben conservar su atribución.",
+      "start": 133,
+      "end": 147
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Exportar o imprimir informe",
+      "text": "Revise el alcance autorizado y el destinatario antes de generar copias. El informe conserva información sensible y requiere protección.",
+      "start": 147,
+      "end": 161
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una causa o intención ausente en la fuente debe… La respuesta correcta es: Permanecer pendiente o no registrada. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 161,
+      "end": 177
+    }
+  ]
+}

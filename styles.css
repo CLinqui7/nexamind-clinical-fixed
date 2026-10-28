@@ -3377,6 +3377,18 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .training-intro p { margin:0; color:#536b84; line-height:1.5; font-size:13px; }
 .training-video { display:block; width:100%; aspect-ratio:16/10; max-height:420px; margin:15px 0 11px; border-radius:16px; background:#082a50; box-shadow:0 14px 28px rgba(5,49,110,.14); }
 .training-video-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:#60778c; font-size:12px; }
+.learning-video-player>p{line-height:1.7}
+.learning-video-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(270px,1fr);gap:20px;align-items:start;margin-bottom:20px}
+.learning-video-media{min-width:0}.learning-video-media .training-video{aspect-ratio:16/9;margin-top:0;max-height:none}
+.learning-video-reading{background:#f1f6fa;border:1px solid #cedeea;border-radius:16px;padding:22px;min-width:0;color:#123d67}
+.learning-video-reading label,.learning-video-reading small{display:block;line-height:1.6}
+.learning-video-reading select{display:block;width:100%;max-width:100%;padding:10px;margin:8px 0 16px;border:1px solid #b8cfdf;border-radius:9px;background:white;color:#123d67;text-overflow:ellipsis}
+.learning-video-reading h3{font-size:23px;line-height:1.35;margin:12px 0}
+.learning-video-copy{font-size:17px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}
+.learning-video-reading button{padding:10px;border:1px solid #b8cfdf;border-radius:9px;min-height:44px;background:white;color:#123d67;cursor:pointer}
+.learning-video-reading button:disabled{opacity:.45;cursor:default}
+@media(max-width:1000px){.learning-school .learning-video-layout{grid-template-columns:1fr}}
+@media(max-width:760px){.learning-video-layout{grid-template-columns:1fr}.learning-video-reading{padding:16px}.learning-video-copy{font-size:16px}}
 .training-guide { display:grid; gap:10px; }
 .training-guide section { display:flex; gap:14px; padding:16px; border:1px solid #e0eaf3; border-radius:15px; background:#fff; }
 .training-guide-number { flex:none; display:grid; place-items:center; width:34px; height:34px; border-radius:11px; background:#e9f2f9; color:#12527d; font-size:12px; font-weight:800; }

@@ -1,0 +1,123 @@
+{
+  "id": "ficha",
+  "title": "Crear, editar y archivar pacientes",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Crear, editar y archivar pacientes",
+      "text": "La ficha identifica al paciente. Una corrección conserva el mismo expediente y sus recursos asociados.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Crear, editar y archivar pacientes. En la práctica cree Paciente Demo Linkare, revise el contacto y localice Datos y seguro. No use personas reales para ensayar.",
+      "start": 12,
+      "end": 29
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Nombre completo",
+      "text": "Escriba el nombre como consta en la identificación; revise apellidos antes de guardar. Ayuda a localizar coincidencias con otros registros.",
+      "start": 29,
+      "end": 42
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Edad y datos personales",
+      "text": "Complete la edad conocida y los campos autorizados de identificación. Una edad histórica distinta puede conservarse como dato anterior.",
+      "start": 42,
+      "end": 56
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Teléfono y correo",
+      "text": "Registre los contactos correctos; para números internacionales conserve el código de país. El teléfono también ayuda a detectar duplicados.",
+      "start": 56,
+      "end": 69
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Seguro médico",
+      "text": "Indique si tiene seguro y complete aseguradora, plan, afiliación, póliza, copago y autorización si corresponden. La información aparece en el expediente administrativo.",
+      "start": 69,
+      "end": 83
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Tarifa habitual",
+      "text": "Si tiene permiso, registre la tarifa del paciente en su campo específico. La tarifa se guarda aparte del nombre.",
+      "start": 83,
+      "end": 96
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Diagnóstico, código, riesgo y estado",
+      "text": "Solo con permiso clínico, documente lo evaluado por el profesional. Los datos clínicos no se entregan a Secretaría sin el acceso correspondiente.",
+      "start": 96,
+      "end": 111
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Datos y seguro",
+      "text": "Desde el expediente pulse Datos y seguro para corregir una ficha existente. Guarde la corrección sobre el mismo paciente.",
+      "start": 111,
+      "end": 124
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Foto del paciente",
+      "text": "Pulse el control de cámara y elija una imagen autorizada. Compruebe que pertenece al paciente antes de confirmar.",
+      "start": 124,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Crear paciente y Guardar cambios",
+      "text": "Revise campos obligatorios y pulse una sola vez; espere confirmación del servidor. Si falla, el formulario debe conservar lo escrito para corregir o reintentar.",
+      "start": 137,
+      "end": 153
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Cancelar o X",
+      "text": "Cierre el formulario si aún no quiere guardar. Los cambios de ese formulario no se confirman.",
+      "start": 153,
+      "end": 165
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Archivar paciente",
+      "text": "Indique el motivo y revise la segunda confirmación con el nombre completo. Retira la ficha de activos y conserva su historia; puede afectar citas futuras.",
+      "start": 165,
+      "end": 180
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Error de duplicado o conflicto",
+      "text": "Abra el expediente coincidente o actualice la ficha antes de continuar. No cambie el nombre para eludir la comprobación.",
+      "start": 180,
+      "end": 194
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Para corregir un teléfono… La respuesta correcta es: Editar Datos y seguro del mismo paciente. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 194,
+      "end": 209
+    }
+  ]
+}

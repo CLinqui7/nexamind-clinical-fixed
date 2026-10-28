@@ -1,0 +1,107 @@
+{
+  "id": "agenda-impresa",
+  "title": "Agenda del día, notas y PDF",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Agenda del día, notas y PDF",
+      "text": "La hoja diaria organiza por hora las citas del calendario Doctor y los datos autorizados para preparar la jornada.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Agenda del día, notas y PDF. Seleccione otra fecha, vuelva a Hoy y revise una vista de impresión con datos ficticios.",
+      "start": 15,
+      "end": 30
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Fecha de la agenda",
+      "text": "Seleccione el día que quiere revisar o imprimir. El encabezado y los pacientes deben corresponder a esa fecha.",
+      "start": 30,
+      "end": 43
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Hoy",
+      "text": "Vuelva a la agenda de la fecha actual. Revise también el calendario y los estados incluidos.",
+      "start": 43,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Actualizar",
+      "text": "Recargue la hoja si hubo cambios en citas o tratamientos. Compruebe el resultado antes de imprimir.",
+      "start": 55,
+      "end": 67
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Orden por hora",
+      "text": "Lea la secuencia de citas y sus horarios. El orden no depende del nombre del paciente.",
+      "start": 67,
+      "end": 79
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Tratamientos activos",
+      "text": "Revise los medicamentos autorizados asociados al paciente. Una mención FoxPro histórica no se convierte por sí sola en tratamiento activo.",
+      "start": 79,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Nota de la cita",
+      "text": "Con permiso de edición, escriba la nota propia de esa cita y guarde. Se guarda aparte de la historia clínica y conserva su revisión.",
+      "start": 92,
+      "end": 108
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Guardar nota y conflicto",
+      "text": "Espere confirmación; si otro usuario cambió la nota, revise la nueva versión. No borre accidentalmente una actualización concurrente.",
+      "start": 108,
+      "end": 121
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Imprimir",
+      "text": "Prepare la vista y compruebe fecha, páginas y orientación antes de confirmar la impresión. La hoja puede contener información sensible.",
+      "start": 121,
+      "end": 134
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Guardar PDF",
+      "text": "Descargue el archivo y abra una página para revisar contenido y cortes. Conserve el PDF únicamente en un lugar autorizado.",
+      "start": 134,
+      "end": 147
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Permiso de hoja diaria",
+      "text": "El propietario puede conceder lectura y edición por separado. Ver la agenda no siempre incluye la hoja ni su edición.",
+      "start": 147,
+      "end": 161
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Antes de imprimir una agenda debe comprobar… La respuesta correcta es: La fecha, los pacientes y las páginas. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 161,
+      "end": 177
+    }
+  ]
+}

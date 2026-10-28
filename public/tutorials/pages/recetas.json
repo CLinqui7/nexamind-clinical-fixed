@@ -1,0 +1,131 @@
+{
+  "id": "recetas",
+  "title": "Recetas: crear, ordenar, corregir e imprimir",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Recetas: crear, ordenar, corregir e imprimir",
+      "text": "La receta guarda una instantánea de sus medicamentos. Compruebe paciente, pauta y datos del profesional antes de emitir o imprimir.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Revise una receta ficticia y explique la diferencia entre quitar su renglón y suspender el tratamiento.",
+      "start": 15,
+      "end": 32
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Nueva receta",
+      "text": "Con permiso de emisión, abra el formulario desde el paciente correcto. Secretaría puede corregir o anular recetas existentes cuando tenga permiso; emitir es un permiso distinto.",
+      "start": 32,
+      "end": 48
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Seleccionar medicamentos",
+      "text": "Elija los tratamientos activos que deben figurar y revise cada pauta. La receta conserva la información seleccionada en esa versión.",
+      "start": 48,
+      "end": 61
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Orden de tomas",
+      "text": "Ordene los renglones según los horarios indicados al paciente. El orden clínico no depende del alfabeto.",
+      "start": 61,
+      "end": 73
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Medicamento, dosis e indicación",
+      "text": "Revise nombre, dosis, unidad e instrucciones de cada renglón. No complete una pauta que no haya sido validada por el profesional.",
+      "start": 73,
+      "end": 88
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Cantidad e instrucciones generales",
+      "text": "Complete la cantidad y las instrucciones que correspondan. Revise que no contradigan los renglones de medicamentos.",
+      "start": 88,
+      "end": 100
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Observaciones internas",
+      "text": "Use este campo para información interna permitida. No aparece en la impresión destinada al paciente.",
+      "start": 100,
+      "end": 112
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Fecha y datos del médico",
+      "text": "Revise fecha, nombre profesional, especialidad y JVPM del encabezado. Los datos del consultorio se gestionan en Configuración.",
+      "start": 112,
+      "end": 125
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Guardar receta",
+      "text": "Revise y guarde una vez. Una receta nueva no sustituye la gestión del tratamiento del expediente.",
+      "start": 125,
+      "end": 137
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Editar receta",
+      "text": "Abra una receta existente y corrija los campos permitidos. La corrección crea revisión y conserva la anterior.",
+      "start": 137,
+      "end": 149
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Anular receta",
+      "text": "Escriba el motivo de la anulación. Permanece en historia y se imprime identificada como RECETA ANULADA.",
+      "start": 149,
+      "end": 161
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Imprimir y Guardar PDF",
+      "text": "Compruebe la vista final antes de entregar o descargar. El JVPM figura en el encabezado y se deja el espacio para firma y sello.",
+      "start": 161,
+      "end": 177
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Historial de la receta",
+      "text": "Revise número, estado, autor y revisiones. Una receta anulada no debe entregarse como receta vigente.",
+      "start": 177,
+      "end": 189
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Cancelar o quitar un renglón",
+      "text": "Cancele si no desea guardar; quite únicamente el renglón seleccionado antes de confirmar. No elimina el medicamento del expediente clínico.",
+      "start": 189,
+      "end": 204
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Anular una receta… La respuesta correcta es: Conserva la receta con motivo y estado de anulación. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 204,
+      "end": 219
+    }
+  ]
+}

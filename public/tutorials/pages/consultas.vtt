@@ -1,121 +1,118 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.712
-Capítulo.
-
-00:00:00.712 --> 00:00:03.639
+00:00:00.000 --> 00:00:03.228
 Listado de consultas y correcciones.
 
-00:00:03.639 --> 00:00:06.962
+00:00:03.228 --> 00:00:06.993
 Cada consulta conserva su estado y fecha.
 
-00:00:06.962 --> 00:00:12.262
+00:00:06.993 --> 00:00:13.000
 Los borradores y las notas firmadas requieren acciones diferentes.
 
-00:00:12.262 --> 00:00:14.045
+00:00:13.000 --> 00:00:15.194
 Cómo llegar y practicar.
 
-00:00:14.045 --> 00:00:19.097
+00:00:15.194 --> 00:00:21.411
 Abra Pacientes, seleccione la ficha correcta y la pestaña indicada.
 
-00:00:19.097 --> 00:00:25.264
+00:00:21.411 --> 00:00:29.000
 En la práctica abra una libreta, escriba una nota ficticia y vuelva al expediente.
 
-00:00:25.264 --> 00:00:26.584
+00:00:29.000 --> 00:00:30.744
 Iniciar consulta.
 
-00:00:26.584 --> 00:00:30.543
+00:00:30.744 --> 00:00:35.974
 Abra una nueva libreta desde el paciente correcto.
 
-00:00:30.543 --> 00:00:34.347
+00:00:35.974 --> 00:00:41.000
 Se genera un borrador asociado a ese expediente.
 
-00:00:34.347 --> 00:00:35.624
+00:00:41.000 --> 00:00:42.500
 Abrir consulta.
 
-00:00:35.624 --> 00:00:40.563
+00:00:42.500 --> 00:00:48.300
 Seleccione una entrada y revise su fecha, estado y autor.
 
-00:00:40.563 --> 00:00:44.565
+00:00:48.300 --> 00:00:53.000
 Puede ser editable, firmada o de solo lectura.
 
-00:00:44.565 --> 00:00:45.264
+00:00:53.000 --> 00:00:53.982
 Borrador.
 
-00:00:45.264 --> 00:00:49.227
+00:00:53.982 --> 00:00:59.545
 Continúe una nota sin firmar cuando tenga permiso.
 
-00:00:49.227 --> 00:00:53.112
+00:00:59.545 --> 00:01:05.000
 El autoguardado debe confirmarse antes de cerrar.
 
-00:00:53.112 --> 00:00:54.181
+00:01:05.000 --> 00:01:06.560
 Nota firmada.
 
-00:00:54.181 --> 00:00:57.468
+00:01:06.560 --> 00:01:11.360
 Consulte el texto y los datos de firma.
 
-00:00:57.468 --> 00:01:01.330
+00:01:11.360 --> 00:01:17.000
 La firma preserva el contenido de esa versión.
 
-00:01:01.330 --> 00:01:02.575
+00:01:17.000 --> 00:01:18.534
 Corregir consulta.
 
-00:01:02.575 --> 00:01:08.871
+00:01:18.534 --> 00:01:26.290
 Use la acción de corrección para documentar información posterior o rectificar con motivo.
 
-00:01:08.871 --> 00:01:13.506
+00:01:26.290 --> 00:01:32.000
 Se conserva el original firmado y se registra la versión o adenda.
 
-00:01:13.506 --> 00:01:14.691
+00:01:32.000 --> 00:01:33.496
 Anular consulta.
 
-00:01:14.691 --> 00:01:19.504
+00:01:33.496 --> 00:01:39.576
 Indique el motivo cuando una nota debe retirarse de uso clínico.
 
-00:01:19.504 --> 00:01:23.799
+00:01:39.576 --> 00:01:45.000
 El contenido firmado permanece y la anulación es visible.
 
-00:01:23.799 --> 00:01:25.505
+00:01:45.000 --> 00:01:47.226
 Historial de versiones.
 
-00:01:25.505 --> 00:01:28.917
+00:01:47.226 --> 00:01:51.677
 Revise quién cambió qué información y cuándo.
 
-00:01:28.917 --> 00:01:32.997
+00:01:51.677 --> 00:01:57.000
 No confunda fecha de atención con fecha de corrección.
 
-00:01:32.997 --> 00:01:34.161
+00:01:57.000 --> 00:01:58.782
 Cerrar libreta.
 
-00:01:34.161 --> 00:01:38.584
+00:01:58.782 --> 00:02:05.554
 Vuelva al expediente comprobando el estado del borrador.
 
-00:01:38.584 --> 00:01:40.835
+00:02:05.554 --> 00:02:09.000
 Cerrar no equivale a firmar.
 
-00:01:40.835 --> 00:01:42.860
+00:02:09.000 --> 00:02:11.377
 Filtros o estados visibles.
 
-00:01:42.860 --> 00:01:47.811
+00:02:11.377 --> 00:02:17.189
 Revise si está viendo borradores, firmadas o registros retirados.
 
-00:01:47.811 --> 00:01:52.762
+00:02:17.189 --> 00:02:23.000
 Una consulta puede conservarse aunque no esté en la vista activa.
 
-00:01:52.762 --> 00:01:54.363
+00:02:23.000 --> 00:02:24.957
 Permisos de consulta.
 
-00:01:54.363 --> 00:02:01.070
+00:02:24.957 --> 00:02:33.155
 Si una acción falta, el propietario debe revisar acceso clínico y gestión de consultas.
 
-00:02:01.070 --> 00:02:05.034
+00:02:33.155 --> 00:02:38.000
 No use otra cuenta compartida para eludir permisos.
 
-00:02:05.034 --> 00:02:06.785
+00:02:38.000 --> 00:02:40.000
 Compruebe lo aprendido.
 
-00:02:06.785 --> 00:02:14.781
+00:02:40.000 --> 00:02:49.130
 Para cambiar una nota firmada debe… La respuesta correcta es: Usar una corrección o adenda con historia.
 
-00:02:14.781 --> 00:02:19.046
+00:02:49.130 --> 00:02:54.000
 Puede repetir este capítulo en Ayuda, Escuela completa.

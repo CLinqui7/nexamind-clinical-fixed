@@ -1,0 +1,123 @@
+{
+  "id": "resumen",
+  "title": "Expediente: resumen y acciones frecuentes",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Expediente: resumen y acciones frecuentes",
+      "text": "Antes de actuar, compruebe el paciente en el encabezado. Cada pestaña muestra una parte de su expediente.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. Identifique al paciente, abra tres pestañas y vuelva a Resumen. Explique qué acción necesita para una dosis nueva.",
+      "start": 13,
+      "end": 31
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Volver al directorio",
+      "text": "Pulse la flecha del encabezado para regresar a Pacientes. Después seleccione otra ficha comprobando su identidad.",
+      "start": 31,
+      "end": 43
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Encabezado y etiquetas",
+      "text": "Lea nombre, edad, diagnóstico, riesgo y tratamiento principal. Las etiquetas reflejan datos guardados; no sustituyen la revisión clínica.",
+      "start": 43,
+      "end": 56
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Próxima cita y Agendar",
+      "text": "Revise si ya existe una cita y pulse Agendar para crear otra cuando corresponda. El formulario queda vinculado al paciente seleccionado.",
+      "start": 56,
+      "end": 71
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Compartir sus citas",
+      "text": "Cree un enlace solo para el alcance autorizado y entréguelo al destinatario correcto. Un enlace de paciente debe mostrar únicamente sus propias citas.",
+      "start": 71,
+      "end": 86
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Registrar evolución",
+      "text": "Abra el registro de evolución y complete mediciones y contexto. Queda una nueva observación fechada.",
+      "start": 86,
+      "end": 98
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Agregar medicamento",
+      "text": "Abra el formulario para documentar nombre, dosis y pauta. La validación y el permiso determinan si queda activo o pendiente de revisión.",
+      "start": 98,
+      "end": 112
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Cambiar dosis",
+      "text": "Seleccione el medicamento correcto y una fecha efectiva. El valor anterior se conserva en la historia de dosis.",
+      "start": 112,
+      "end": 124
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Nueva receta",
+      "text": "Abra una receta basada en el tratamiento revisado. Emitir una receta requiere su permiso específico.",
+      "start": 124,
+      "end": 136
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Iniciar consulta",
+      "text": "Abra la libreta del paciente y revise su identificación antes de escribir. La consulta queda ligada a este expediente.",
+      "start": 136,
+      "end": 149
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Subir archivo y Datos y seguro",
+      "text": "Use Subir archivo para un documento; use Datos y seguro para corregir identificación y póliza. Son operaciones diferentes y tienen permisos propios.",
+      "start": 149,
+      "end": 165
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Pestañas del expediente",
+      "text": "Abra Resumen, Medicamentos, Seguimiento, Efectos y controles, Consultas, Documentos, Recetas, Historial y Sistema anterior cuando estén disponibles. Cambiar de pestaña no significa guardar un formulario.",
+      "start": 165,
+      "end": 181
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Modo post mortem",
+      "text": "Revise la fecha y la fuente del registro de fallecimiento antes de generar documentación. Este estado limita nuevas consultas y recordatorios.",
+      "start": 181,
+      "end": 195
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Antes de registrar una evolución debe… La respuesta correcta es: Comprobar la identidad del expediente. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 195,
+      "end": 210
+    }
+  ]
+}

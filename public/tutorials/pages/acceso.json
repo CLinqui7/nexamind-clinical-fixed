@@ -1,0 +1,107 @@
+{
+  "id": "acceso",
+  "title": "Acceso, invitaciones y contraseña",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Acceso, invitaciones y contraseña",
+      "text": "Aprenda a entrar con su cuenta personal y a recuperar el acceso. El correo de invitación vincula al equipo con el consultorio correcto.",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra la pantalla de acceso. Localice los campos de acceso y explique la diferencia entre crear consultorio y aceptar una invitación. Use solo la práctica para ensayar.",
+      "start": 15,
+      "end": 32
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Correo",
+      "text": "Escriba la dirección con la que se registró o recibió la invitación; revise espacios y errores de escritura. La cuenta identifica sus permisos y su consultorio.",
+      "start": 32,
+      "end": 47
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Contraseña y mostrar contraseña",
+      "text": "Escriba su clave; el icono de ojo permite comprobar lo escrito. Ocúltela antes de compartir pantalla. Ver la clave no cambia ni restablece la contraseña.",
+      "start": 47,
+      "end": 63
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Ingresar a Linkare",
+      "text": "Complete correo y contraseña y pulse una vez. Espere a que termine la carga. Inicio se abre al validar la sesión y la membresía.",
+      "start": 63,
+      "end": 78
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Crear consultorio",
+      "text": "Use el registro únicamente para una clínica nueva. Complete nombre, consultorio, correo, contraseña y confirmación. Puede ser necesario confirmar el correo antes de entrar.",
+      "start": 78,
+      "end": 93
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Confirmar cuenta y reenviar confirmación",
+      "text": "Abra el enlace recibido en su correo. Si caducó, solicite una confirmación nueva. Después de confirmar, vuelva al acceso con su correo original.",
+      "start": 93,
+      "end": 109
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Olvidé mi contraseña",
+      "text": "Escriba su correo y solicite recuperación. Abra el enlace más reciente y establezca una nueva clave. La nueva contraseña sustituye la anterior; no cree otra cuenta.",
+      "start": 109,
+      "end": 125
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Aceptar invitación",
+      "text": "Abra el enlace enviado por el propietario y establezca su contraseña individual. Entra al consultorio que le invitó, con los permisos concedidos.",
+      "start": 125,
+      "end": 139
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Volver al inicio de sesión",
+      "text": "Cierre la recuperación o el registro para regresar al formulario de acceso. No cancela una cuenta ya creada ni una invitación enviada.",
+      "start": 139,
+      "end": 154
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Cuenta desactivada o enlace vencido",
+      "text": "Solicite al propietario revisar su acceso o reenviar la invitación. Repetir la contraseña no reactiva una membresía deshabilitada.",
+      "start": 154,
+      "end": 168
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Cerrar sesión",
+      "text": "Use el menú del usuario al terminar. Antes compruebe Cambios guardados. Evita que otra persona use su cuenta en un equipo compartido.",
+      "start": 168,
+      "end": 182
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Una secretaria invitada debe… La respuesta correcta es: Abrir su invitación y establecer su propia clave. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 182,
+      "end": 197
+    }
+  ]
+}

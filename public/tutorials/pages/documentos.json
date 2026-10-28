@@ -1,0 +1,123 @@
+{
+  "id": "documentos",
+  "title": "Documentos, archivos y plantillas",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Documentos, archivos y plantillas",
+      "text": "Los documentos permanecen vinculados al paciente y protegidos según su confidencialidad.",
+      "start": 0,
+      "end": 12
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. En un expediente ficticio abra una plantilla, identifique sus variables y cancele antes de generar si no hay datos completos.",
+      "start": 12,
+      "end": 31
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Subir archivo",
+      "text": "Seleccione el archivo correcto, categoría, fecha clínica y confidencialidad. Se guarda en almacenamiento privado junto con sus metadatos.",
+      "start": 31,
+      "end": 43
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Nombre y descripción",
+      "text": "Use un nombre claro y describa el contenido sin sustituir el archivo. Facilita localizarlo después.",
+      "start": 43,
+      "end": 55
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Categoría y confidencialidad",
+      "text": "Seleccione el tipo y nivel de acceso aplicables. Un permiso administrativo no autoriza documentos clínicos privados.",
+      "start": 55,
+      "end": 67
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Abrir o descargar",
+      "text": "Abra el documento autorizado y compruebe nombre, paciente y versión. El acceso se entrega mediante un enlace temporal protegido.",
+      "start": 67,
+      "end": 80
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Editar datos del documento",
+      "text": "Corrija nombre, categoría, fecha o descripción. El archivo original y los datos anteriores se conservan.",
+      "start": 80,
+      "end": 92
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Eliminar documento",
+      "text": "Indique el motivo para retirarlo de la lista activa. Se archiva con auditoría.",
+      "start": 92,
+      "end": 104
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Nuevo documento",
+      "text": "Elija una plantilla disponible de constancia, incapacidad, carta o formulario. La clasificación de la plantilla controla los datos permitidos.",
+      "start": 104,
+      "end": 117
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Plantilla y versión",
+      "text": "Revise el nombre y versión antes de completar variables. El documento guarda la versión exacta utilizada.",
+      "start": 117,
+      "end": 129
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Variables del documento",
+      "text": "Complete fechas, destinatario, días y contenido adicional según los campos que aparezcan. Revise ortografía y fechas antes de generar.",
+      "start": 129,
+      "end": 142
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Generar y guardar PDF",
+      "text": "Pulse una vez y espere la confirmación. Se guarda un PDF privado y una copia del texto generado.",
+      "start": 142,
+      "end": 155
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Imprimir o guardar copia",
+      "text": "Abra el PDF y compruebe los datos antes de entregar. Proteja también las copias descargadas e impresas.",
+      "start": 155,
+      "end": 168
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Cancelar",
+      "text": "Cierre sin generar cuando la información esté incompleta. No se crea un documento nuevo.",
+      "start": 168,
+      "end": 180
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Editar datos del documento modifica… La respuesta correcta es: Su descripción y metadatos, conservando el original. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 180,
+      "end": 195
+    }
+  ]
+}

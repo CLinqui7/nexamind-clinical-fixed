@@ -1,0 +1,115 @@
+{
+  "id": "captura",
+  "title": "Secretaría: medicamentos informados y revisión",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Secretaría: medicamentos informados y revisión",
+      "text": "Este formulario registra una comunicación del paciente. La aprobación clínica ocurre después y conserva la fuente.",
+      "start": 0,
+      "end": 13
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Pacientes, seleccione la ficha correcta y la pestaña indicada. En la práctica de Secretaría capture Medicamento ficticio y compruebe que queda pendiente de revisión.",
+      "start": 13,
+      "end": 29
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Registrar medicamento informado",
+      "text": "Abra la captura desde la ficha administrativa autorizada. El registro se vincula a ese paciente.",
+      "start": 29,
+      "end": 41
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Medicamento",
+      "text": "Escriba el nombre tal como lo informa la persona. Si hay dudas de escritura, aclárelas en la nota.",
+      "start": 41,
+      "end": 53
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Dosis y unidad",
+      "text": "Registre lo referido diferenciando la cantidad y la unidad. No proponga ni complete una dosis que no le comunicaron.",
+      "start": 53,
+      "end": 66
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Frecuencia",
+      "text": "Seleccione la pauta referida; use Otra y texto libre si corresponde. Conserve horarios o condiciones sin interpretarlos.",
+      "start": 66,
+      "end": 78
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Vía",
+      "text": "Registre la vía comunicada. Si no está confirmada, indique la duda en la nota para revisión.",
+      "start": 78,
+      "end": 90
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Fecha informada",
+      "text": "Registre la fecha que corresponda al dato recibido. No use una fecha para fingir un inicio clínicamente confirmado.",
+      "start": 90,
+      "end": 102
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Nota de captura",
+      "text": "Escriba la fuente y las dudas administrativas relevantes. Evite diagnósticos privados en esta captura.",
+      "start": 102,
+      "end": 114
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Enviar a revisión",
+      "text": "Revise nombre del paciente y campos y pulse una vez. Queda pendiente; no se activa el tratamiento.",
+      "start": 114,
+      "end": 126
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Cancelar",
+      "text": "Salga sin enviar cuando no haya datos suficientes. No se crea la comunicación.",
+      "start": 126,
+      "end": 138
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Revisar y activar",
+      "text": "El médico autorizado abre el pendiente y valida los datos actuales. La activación queda atribuida al profesional.",
+      "start": 138,
+      "end": 150
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Corregir o retirar un error",
+      "text": "El profesional usa los controles autorizados del recurso. La captura y sus revisiones deben conservar trazabilidad.",
+      "start": 150,
+      "end": 163
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Enviar a revisión significa… La respuesta correcta es: Registrar lo comunicado para valoración del médico. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 163,
+      "end": 178
+    }
+  ]
+}

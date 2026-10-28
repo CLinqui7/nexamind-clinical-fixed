@@ -1,0 +1,131 @@
+{
+  "id": "equipo",
+  "title": "Equipo, invitaciones y permisos",
+  "scenes": [
+    {
+      "kind": "intro",
+      "title": "Equipo, invitaciones y permisos",
+      "text": "El propietario administra cuentas individuales y permisos por función y calendario. Revise cada acceso con la cuenta de la persona.",
+      "start": 0,
+      "end": 14
+    },
+    {
+      "kind": "exercise",
+      "title": "Cómo llegar y practicar",
+      "text": "Abra Equipo, invitaciones y permisos. En la práctica abra Agregar usuario, revise Personalizados y cancele sin enviar una invitación real.",
+      "start": 14,
+      "end": 28
+    },
+    {
+      "kind": "control",
+      "controlIndex": 0,
+      "title": "Agregar usuario",
+      "text": "Escriba nombre, correo y rol de la persona. La invitación permite establecer una contraseña propia.",
+      "start": 28,
+      "end": 40
+    },
+    {
+      "kind": "control",
+      "controlIndex": 1,
+      "title": "Rol",
+      "text": "Seleccione médico, enfermería o secretaría según la función real. El rol no debe elegirse para eludir restricciones.",
+      "start": 40,
+      "end": 52
+    },
+    {
+      "kind": "control",
+      "controlIndex": 2,
+      "title": "Permisos recomendados",
+      "text": "Revise el conjunto sugerido antes de enviarlo. Un permiso concedido debe corresponder al trabajo de la persona.",
+      "start": 52,
+      "end": 64
+    },
+    {
+      "kind": "control",
+      "controlIndex": 3,
+      "title": "Personalizados",
+      "text": "Abra las casillas y lea cada acción. Ver, crear, editar y eliminar son capacidades diferentes.",
+      "start": 64,
+      "end": 76
+    },
+    {
+      "kind": "control",
+      "controlIndex": 4,
+      "title": "Permisos clínicos",
+      "text": "Conceda lectura y edición clínica solo a quien corresponda. Las notas y diagnósticos permanecen protegidos para Secretaría.",
+      "start": 76,
+      "end": 88
+    },
+    {
+      "kind": "control",
+      "controlIndex": 5,
+      "title": "Permisos de recetas",
+      "text": "Secretaría autorizada puede corregir o anular una receta existente. No equivale a emitir nuevas recetas ni leer todo el expediente.",
+      "start": 88,
+      "end": 102
+    },
+    {
+      "kind": "control",
+      "controlIndex": 6,
+      "title": "Permisos por calendario",
+      "text": "Revise Ver, Crear, Editar, Cancelar y Eliminar para Doctor, Esposa y General. Conceder una acción requiere el alcance de calendario adecuado.",
+      "start": 102,
+      "end": 116
+    },
+    {
+      "kind": "control",
+      "controlIndex": 7,
+      "title": "Enviar invitación",
+      "text": "Compruebe el correo y pulse una vez. Revise el estado de entrega; no comparta una contraseña por mensajes.",
+      "start": 116,
+      "end": 128
+    },
+    {
+      "kind": "control",
+      "controlIndex": 8,
+      "title": "Reenviar o revocar invitación",
+      "text": "Reenvíe si venció y revoque si ya no debe aceptarse. La persona debe utilizar el enlace válido más reciente.",
+      "start": 128,
+      "end": 142
+    },
+    {
+      "kind": "control",
+      "controlIndex": 9,
+      "title": "Editar usuario",
+      "text": "Cambie los datos o permisos de una cuenta existente y guarde. Compruebe el acceso después de actualizar la sesión.",
+      "start": 142,
+      "end": 155
+    },
+    {
+      "kind": "control",
+      "controlIndex": 10,
+      "title": "Desactivar cuenta",
+      "text": "Use la acción cuando una persona deba dejar de acceder. No elimina sus autorías clínicas previas.",
+      "start": 155,
+      "end": 167
+    },
+    {
+      "kind": "control",
+      "controlIndex": 11,
+      "title": "Cancelar",
+      "text": "Cierre el formulario si todavía no debe enviarse la invitación. Abrir el formulario no invita a nadie.",
+      "start": 167,
+      "end": 179
+    },
+    {
+      "kind": "control",
+      "controlIndex": 12,
+      "title": "Prueba por rol",
+      "text": "Ingrese con la cuenta autorizada de prueba para verificar qué ve y qué puede hacer. No use la cuenta propietaria como sustituto de esa prueba.",
+      "start": 179,
+      "end": 195
+    },
+    {
+      "kind": "quiz",
+      "title": "Compruebe lo aprendido",
+      "text": "Permiso para editar recetas de Secretaría permite… La respuesta correcta es: Corregir recetas existentes autorizadas. Puede repetir este capítulo en Ayuda, Escuela completa.",
+      "start": 195,
+      "end": 210
+    }
+  ]
+}

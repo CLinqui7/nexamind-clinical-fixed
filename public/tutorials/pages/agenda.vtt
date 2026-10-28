@@ -1,139 +1,136 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:00.752
-Capítulo.
-
-00:00:00.752 --> 00:00:04.096
+00:00:00.000 --> 00:00:03.592
 Agenda: mes, semana, día y calendarios.
 
-00:00:04.096 --> 00:00:09.948
+00:00:03.592 --> 00:00:10.039
 La agenda combina solo los calendarios que su cuenta puede consultar.
 
-00:00:09.948 --> 00:00:13.542
+00:00:10.039 --> 00:00:14.000
 Cada evento conserva su propio calendario.
 
-00:00:13.542 --> 00:00:15.454
+00:00:14.000 --> 00:00:16.368
 Cómo llegar y practicar.
 
-00:00:15.454 --> 00:00:19.038
+00:00:16.368 --> 00:00:20.809
 Abra Agenda: mes, semana, día y calendarios.
 
-00:00:19.038 --> 00:00:25.650
+00:00:20.809 --> 00:00:29.000
 Active dos calendarios en la práctica y cambie de Mes a Día sin modificar eventos.
 
-00:00:25.650 --> 00:00:28.326
+00:00:29.000 --> 00:00:32.143
 Filtros Doctor, Esposa y General.
 
-00:00:28.326 --> 00:00:32.137
+00:00:32.143 --> 00:00:36.619
 Active o desactive cada calendario autorizado.
 
-00:00:32.137 --> 00:00:35.867
+00:00:36.619 --> 00:00:41.000
 Ocultar un calendario no elimina sus eventos.
 
-00:00:35.867 --> 00:00:36.166
+00:00:41.000 --> 00:00:41.406
 Mes.
 
-00:00:36.166 --> 00:00:41.533
+00:00:41.406 --> 00:00:48.719
 Seleccione Mes para ver la distribución mensual y los días con eventos.
 
-00:00:41.533 --> 00:00:45.410
+00:00:48.719 --> 00:00:54.000
 Pulse un día o evento para inspeccionar su detalle.
 
-00:00:45.410 --> 00:00:45.945
+00:00:54.000 --> 00:00:54.689
 Semana.
 
-00:00:45.945 --> 00:00:49.997
+00:00:54.689 --> 00:00:59.902
 Seleccione Semana para comparar horarios entre días.
 
-00:00:49.997 --> 00:00:54.738
+00:00:59.902 --> 00:01:06.000
 La columna y posición corresponden a fecha y hora del evento.
 
-00:00:54.738 --> 00:00:55.070
+00:01:06.000 --> 00:01:06.500
 Día.
 
-00:00:55.070 --> 00:00:58.979
+00:01:06.500 --> 00:01:12.375
 Seleccione Día para concentrarse en una fecha.
 
-00:00:58.979 --> 00:01:02.721
+00:01:12.375 --> 00:01:18.000
 Revise duración y estado antes de modificar.
 
-00:01:02.721 --> 00:01:03.033
+00:01:18.000 --> 00:01:18.471
 Hoy.
 
-00:01:03.033 --> 00:01:07.483
+00:01:18.471 --> 00:01:25.176
 Pulse Hoy para volver a la fecha actual del consultorio.
 
-00:01:07.483 --> 00:01:10.684
+00:01:25.176 --> 00:01:30.000
 No cambia las fechas de citas guardadas.
 
-00:01:10.684 --> 00:01:12.932
+00:01:30.000 --> 00:01:32.829
 Flechas anterior y siguiente.
 
-00:01:12.932 --> 00:01:17.272
+00:01:32.829 --> 00:01:38.293
 Avance por meses, semanas o días según la vista activa.
 
-00:01:17.272 --> 00:01:20.217
+00:01:38.293 --> 00:01:42.000
 Lea el encabezado después de navegar.
 
-00:01:20.217 --> 00:01:21.196
+00:01:42.000 --> 00:01:43.248
 Nuevo evento.
 
-00:01:21.196 --> 00:01:25.340
+00:01:43.248 --> 00:01:48.528
 Abra el formulario y seleccione primero el calendario.
 
-00:01:25.340 --> 00:01:29.634
+00:01:48.528 --> 00:01:54.000
 Su permiso de creación debe existir para ese calendario.
 
-00:01:29.634 --> 00:01:31.615
+00:01:54.000 --> 00:01:56.380
 Evento en la cuadrícula.
 
-00:01:31.615 --> 00:01:37.063
+00:01:56.380 --> 00:02:02.926
 Pulse la tarjeta y confirme calendario, paciente, fecha y estado.
 
-00:01:37.063 --> 00:01:39.622
+00:02:02.926 --> 00:02:06.000
 Abre el detalle de ese evento.
 
-00:01:39.622 --> 00:01:41.849
+00:02:06.000 --> 00:02:08.476
 Filtros de estado y revisión.
 
-00:01:41.849 --> 00:01:47.684
+00:02:08.476 --> 00:02:14.963
 Seleccione pendientes, confirmadas o marcas administrativas según necesite.
 
-00:01:47.684 --> 00:01:52.214
+00:02:14.963 --> 00:02:20.000
 La selección modifica la vista, no el estado de las citas.
 
-00:01:52.214 --> 00:01:53.338
+00:02:20.000 --> 00:02:21.121
 Exportar vista.
 
-00:01:53.338 --> 00:02:00.156
+00:02:21.121 --> 00:02:27.920
 Exporte únicamente el alcance visible autorizado cuando necesite un archivo de calendario.
 
-00:02:00.156 --> 00:02:05.250
+00:02:27.920 --> 00:02:33.000
 Proteja el archivo; exportar no acredita sincronización automática.
 
-00:02:05.250 --> 00:02:06.376
+00:02:33.000 --> 00:02:34.535
 Agenda del día.
 
-00:02:06.376 --> 00:02:11.105
+00:02:34.535 --> 00:02:40.984
 Use la sección de agenda imprimible para una fecha específica.
 
-00:02:11.105 --> 00:02:14.783
+00:02:40.984 --> 00:02:46.000
 Tiene permiso propio y usa el calendario Doctor.
 
-00:02:14.783 --> 00:02:16.389
+00:02:46.000 --> 00:02:47.725
 Compartir calendarios.
 
-00:02:16.389 --> 00:02:20.549
+00:02:47.725 --> 00:02:52.196
 Revise alcance y destinatario antes de copiar un enlace.
 
-00:02:20.549 --> 00:02:25.950
+00:02:52.196 --> 00:02:58.000
 Los enlaces familiares muestran bloques ocupados sin información clínica.
 
-00:02:25.950 --> 00:02:27.803
+00:02:58.000 --> 00:02:59.975
 Compruebe lo aprendido.
 
-00:02:27.803 --> 00:02:34.571
+00:02:59.975 --> 00:03:07.190
 Ocultar General en un filtro… La respuesta correcta es: Cambia únicamente la vista.
 
-00:02:34.571 --> 00:02:39.082
+00:03:07.190 --> 00:03:12.000
 Puede repetir este capítulo en Ayuda, Escuela completa.
