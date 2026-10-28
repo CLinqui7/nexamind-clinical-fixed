@@ -125,6 +125,7 @@ import {
   loadDashboardSummary,
   loadProfileAssets,
   loadLegacyPatientHistory,
+  loadMergedClinicalHistory,
   loadHistoricalMedicationMentions,
   loadHistoricalMedicationSummary,
   saveHistoricalMedicationGroup,
@@ -1124,7 +1125,7 @@ class App extends React.Component {
 
   selectPatientTab = (patient,key) => {
     this.setState({patientTab:key});
-    if(key==='legacy'){this.loadPatientLegacyHistory(patient.id);this.loadHistoricalVisitSummary(patient.id);}
+    if(key==='legacy'){this.loadPatientLegacyHistory(patient.id);this.loadHistoricalVisitSummary(patient.id);if(this.can('clinicalView'))this.loadMergedClinicalHistory(patient.id);}
     if(key==='medications'&&patient.dataQuality==='historical'&&this.can('clinicalView')){
       this.loadHistoricalMedicationGroups(patient.id);
       this.loadHistoricalMedications(patient.id);
@@ -1170,8 +1171,20 @@ class App extends React.Component {
     try{
       const result=await loadLegacyPatientHistory(this.state.remoteOrganizationId,patientId,cursor,20);
       if(epoch!==this.authEpoch)return;
-      this.setState(previous=>{const before=previous.legacyHistoryByPatient[patientId]||{};return {legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...result,items:append?[...(before.items||[]),...(result.items||[])]:result.items||[],loading:false,loaded:true,error:''}}};});
+      this.setState(previous=>{const before=previous.legacyHistoryByPatient[patientId]||{};return {legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...before,...result,items:append?[...(before.items||[]),...(result.items||[])]:result.items||[],loading:false,loaded:true,error:''}}};});
     }catch(error){if(epoch===this.authEpoch)this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),loading:false,loaded:false,error:readableError(error)}}}));}
+  };
+
+  loadMergedClinicalHistory = async patientId => {
+    const current=this.state.legacyHistoryByPatient[patientId];
+    if(current?.mergedClinicalLoading||current?.mergedClinicalLoaded)return;
+    const epoch=this.authEpoch,org=this.state.remoteOrganizationId;
+    this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),mergedClinicalLoading:true,mergedClinicalError:''}}}));
+    try{
+      const mergedClinical=await loadMergedClinicalHistory(org,patientId);
+      if(epoch!==this.authEpoch||org!==this.state.remoteOrganizationId)return;
+      this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),mergedClinical:Array.isArray(mergedClinical)?mergedClinical:[],mergedClinicalLoading:false,mergedClinicalLoaded:true,mergedClinicalError:''}}}));
+    }catch(error){if(epoch===this.authEpoch)this.setState(previous=>({legacyHistoryByPatient:{...previous.legacyHistoryByPatient,[patientId]:{...(previous.legacyHistoryByPatient[patientId]||{}),mergedClinicalLoading:false,mergedClinicalError:readableError(error)}}}));}
   };
 
   closeModal = () => {if(!this.state.formSaving&&!this.state.documentBusy)this.setState({ modal: null, modalError: '' });};
@@ -3027,7 +3040,7 @@ class App extends React.Component {
     const state=this.state.legacyHistoryByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false,total:0};
     const visits=this.state.historicalVisitsByPatient[patient.id];
     const profile=patient.historicalProfile||{};
-    const profileRowsFor=entry=>[['Fecha de registro',entry.registeredOn],['Última actualización de origen',entry.sourceUpdatedOn],['Estado civil',entry.civilStatus],['Profesión',entry.profession],['Dirección histórica',entry.address],['Teléfono de casa',entry.homePhone],['Teléfono de oficina',entry.officePhone],['Celular',entry.mobilePhone],['Referido por',entry.referredBy],['Próxima fecha anotada',entry.nextAppointmentDate],['Cita descrita en origen',entry.scheduledAppointmentText]].filter(([,value])=>value);
+    const profileRowsFor=entry=>[['Edad registrada en expediente anterior',entry.mergedRecordAge],['Fecha de registro',entry.registeredOn],['Última actualización de origen',entry.sourceUpdatedOn],['Estado civil',entry.civilStatus],['Profesión',entry.profession],['Dirección histórica',entry.address],['Teléfono de casa',entry.homePhone],['Teléfono de oficina',entry.officePhone],['Celular',entry.mobilePhone],['Referido por',entry.referredBy],['Próxima fecha anotada',entry.nextAppointmentDate],['Cita descrita en origen',entry.scheduledAppointmentText]].filter(([,value])=>value);
     const profileRows=profileRowsFor(profile);
     const mergedProfiles=Array.isArray(profile.mergedProfiles)?profile.mergedProfiles:[];
     const renderPayload=entry=>{
@@ -3050,6 +3063,9 @@ class App extends React.Component {
       ${visits?.loaded?html`<${Card} title="Actividad de consulta en FoxPro" subtitle="Conteos de marcas y registros del sistema anterior; no equivalen a un total clínico de visitas confirmado."><dl className="legacy-profile-grid"><div><dt>Movimientos marcados como consulta</dt><dd>${visits.markedConsultations}</dd></div><div><dt>Último movimiento marcado como consulta</dt><dd>${visits.lastMarkedConsultationOn?formatDate(visits.lastMarkedConsultationOn):'No consta'}</dd></div><div><dt>Registros estadísticos</dt><dd>${visits.statisticsRows}</dd></div><div><dt>Movimientos totales</dt><dd>${visits.movementRows}</dd></div></dl></${Card}>`:null}
       ${profileRows.length?html`<${Card} title="Ficha administrativa histórica" subtitle=${profile.nameMissing?'El nombre no constaba en el origen; la ficha está marcada como incompleta.':'Campos conservados del registro de pacientes.'}><dl className="legacy-profile-grid">${profileRows.map(([label,value])=>html`<div key=${label}><dt>${label}</dt><dd>${String(value)}</dd></div>`)}</dl></${Card}>`:null}
       ${mergedProfiles.map((entry,index)=>{const rows=profileRowsFor(entry.profile||{});return rows.length?html`<${Card} key=${entry.sourcePatientId||index} title=${`Ficha histórica adicional ${index+1}`} subtitle="Datos conservados del expediente que se fusionó. Las diferencias permanecen visibles para su revisión."><dl className="legacy-profile-grid">${rows.map(([label,value])=>html`<div key=${label}><dt>${label}</dt><dd>${String(value)}</dd></div>`)}</dl></${Card}>`:null;})}
+      ${!administrativeOnly&&state.mergedClinicalError?html`<div className="sync-banner danger" role="alert"><span>${state.mergedClinicalError}</span><button onClick=${()=>this.loadMergedClinicalHistory(patient.id)}>Reintentar historia clínica fusionada</button></div>`:null}
+      ${!administrativeOnly&&state.mergedClinicalLoading?html`<p>Cargando expediente clínico anterior…</p>`:null}
+      ${!administrativeOnly?(state.mergedClinical||[]).map((entry,index)=>{const old=entry.clinical||{};const rows=[['Edad registrada',entry.previousAge],['Diagnóstico anterior',old.diagnosis],['Código anterior',old.diagnosisCode],['Riesgo anterior',old.risk],['Estado clínico anterior',old.status],['Antecedentes de seguridad anteriores',old.safetyHistory]].filter(([,value])=>value&&typeof value!=='object');return html`<${Card} key=${entry.sourcePatientId||index} title="Expediente clínico anterior" subtitle="Solo para revisión clínica. Se conserva como historia; el tratamiento vigente es el del expediente actualizado más recientemente.">${rows.length?html`<dl className="legacy-profile-grid">${rows.map(([label,value])=>html`<div key=${label}><dt>${label}</dt><dd>${String(value)}</dd></div>`)}</dl>`:null}${old.medications?.length?html`<h4>Tratamientos registrados anteriormente</h4><div className="admin-appointment-list">${old.medications.map((medication,medicationIndex)=>html`<div key=${medication.id||medicationIndex}><div><b>${medication.name||'Medicamento sin nombre'}</b><small>${[medication.dose,medication.frequency,medication.route].filter(Boolean).join(' · ')||'Dosis y frecuencia no registradas'}</small></div><${Badge} tone="neutral">Anterior</${Badge}></div>`)}</div>`:null}</${Card}>`;}):null}
       ${state.error?html`<div className="sync-banner danger" role="alert"><span>${state.error}</span><button onClick=${()=>this.loadPatientLegacyHistory(patient.id)}>Reintentar</button></div>`:null}
       ${state.loading&&!state.items?.length?html`<${EmptyState} icon="file" title="Cargando historia anterior" text="Consultando únicamente los registros de este paciente."/>`:null}
       ${state.loaded&&!state.items?.length?html`<${EmptyState} icon="file" title="Sin movimientos históricos visibles" text=${administrativeOnly?'No hay movimientos administrativos conservados para esta cuenta.':'No se encontraron eventos históricos vinculados.'}/>`:null}
