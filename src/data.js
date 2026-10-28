@@ -133,7 +133,7 @@ function normalizeMedication(medication, patient, index = 0) {
 }
 
 export function normalizePatient(patient = {}) {
-  const historical=patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro';
+  const historical=(patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro')&&patient.historicalProfile?.mergedRecordAge===undefined;
   const sourceMedications = Array.isArray(patient.medications) && patient.medications.length
     ? patient.medications
     : patient.medication && patient.medication.name && patient.medication.name !== 'Sin medicamento'

@@ -32,6 +32,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261027144042_editable_historical_medication_groups.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261027144440_normalize_historical_medication_group_names.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261028054604_merge_current_duplicate_patients.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261028055212_mark_merged_current_quality.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -701,6 +702,8 @@ test('DB: a current duplicate keeps the newer regimen and preserves older record
  assert.deepEqual(current.timeline.map(item=>item.title),['Actual','Anterior']);
  assert.equal((await db.query("select payload->>'archived' archived from public.linkare_records where organization_id=$1 and kind='patient_admin' and id=$2",[org,source])).rows[0].archived,'true');
  assert.equal((await db.query("select historical_profile->>'mergedRecordAge' age from linkare_private.legacy_patient_summary_v1 where organization_id=$1 and patient_id=$2",[org,target])).rows[0].age,'40');
+ assert.equal((await db.query("select data_quality from linkare_private.legacy_patient_summary_v1 where organization_id=$1 and patient_id=$2",[org,target])).rows[0].data_quality,'merged_current');
+ assert.equal((await db.query("select data_quality from linkare_private.patient_directory_v1 where organization_id=$1 and patient_id=$2",[org,target])).rows[0].data_quality,'merged_current');
  assert.equal((await db.query("select patient_id from linkare_private.legacy_medication_mentions_v1 where id=$1",[mention])).rows[0].patient_id,target);
  assert.equal((await db.query("select payload from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,source])).rows[0].payload.medications[0].dose,'10 mg');
  await actor('owner');

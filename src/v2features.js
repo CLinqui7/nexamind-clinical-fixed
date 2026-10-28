@@ -90,7 +90,7 @@ export function normalizeDeathRecord(value = {}) {
 }
 
 export function normalizePatientV2(patient = {}) {
-  const historical=patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro';
+  const historical=(patient.dataQuality==='historical'||patient.sourceSummary?.system==='FoxPro')&&patient.historicalProfile?.mergedRecordAge===undefined;
   return {
     preferredName: clean(patient.preferredName),
     pronouns: clean(patient.pronouns),

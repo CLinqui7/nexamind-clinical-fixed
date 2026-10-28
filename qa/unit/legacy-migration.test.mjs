@@ -35,3 +35,14 @@ test('historical normalization keeps unknown clinical values unknown and disable
  const patient=normalizeData({patients:[{id:'historical',name:'Historical QA',age:null,dataQuality:'historical',sourceSummary:{system:'FoxPro'},notificationPreferences:{enabled:true,channels:['whatsapp'],reminderHours:[24],consentStatus:'not_recorded'}}]}).patients[0];
  assert.equal(patient.age,null);assert.equal(patient.risk,'unrecorded');assert.equal(patient.status,'unrecorded');assert.equal(patient.lastVisit,null);assert.equal(patient.adherence,null);assert.equal(patient.functioningChange,null);assert.equal(patient.medication,null);assert.equal(patient.medications.length,0);assert.equal(patient.vitalStatus,'unconfirmed');assert.equal(patient.notificationPreferences.enabled,false);assert.deepEqual(patient.notificationPreferences.channels,[]);assert.equal(patient.createdAt,null);assert.equal(patient.updatedAt,null);
 });
+
+test('a newer clinical chart with merged FoxPro history keeps its current preferences',()=>{
+ const patient=normalizeData({patients:[{id:'merged-current',name:'Current QA',age:50,dataQuality:'historical',sourceSummary:{system:'FoxPro'},historicalProfile:{mergedRecordAge:'40'},risk:'low',status:'stable',notificationPreferences:{enabled:true,channels:['whatsapp'],reminderHours:[24],consentStatus:'granted'}}]}).patients[0];
+ assert.equal(patient.age,50);
+ assert.equal(patient.risk,'low');
+ assert.equal(patient.status,'stable');
+ assert.equal(patient.notificationPreferences.enabled,true);
+ assert.deepEqual(patient.notificationPreferences.channels,['whatsapp']);
+ assert.deepEqual(patient.notificationPreferences.reminderHours,[24]);
+ assert.equal(patient.dataQuality,'historical');
+});
