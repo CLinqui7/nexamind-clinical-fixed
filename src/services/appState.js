@@ -172,6 +172,15 @@ export function loadLegacyPatientHistory(organizationId,patientId,cursor=null,li
 export function loadMergedClinicalHistory(organizationId,patientId){
   return rpc('linkare_merged_clinical_history_v1',{org:organizationId,p_patient_id:patientId});
 }
+export function loadMedicationCourse(organizationId,patientId,name,cursor=null){
+  return rpc('linkare_medication_course_v1',{org:organizationId,p_patient_id:patientId,p_name:name,p_cursor:cursor});
+}
+export function saveMedicationCourse(organizationId,patientId,name,event){
+  return rpc('linkare_save_medication_course_v1',{org:organizationId,p_patient_id:patientId,p_name:name,p_event:event});
+}
+export function loadMedicationCourseGroups(organizationId,patientId,cursor=null){
+  return rpc('linkare_medication_course_groups_v1',{org:organizationId,p_patient_id:patientId,p_cursor:cursor});
+}
 export function loadHistoricalMedicationMentions(organizationId,patientId,cursor=null,limit=20){
   return rpc('linkare_legacy_medication_page_v1',{org:organizationId,p_patient_id:patientId,p_cursor:cursor,p_limit:Math.min(20,limit)});
 }

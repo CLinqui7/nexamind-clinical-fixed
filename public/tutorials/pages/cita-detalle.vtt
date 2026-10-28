@@ -1,0 +1,157 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.711
+Capítulo.
+
+00:00:00.711 --> 00:00:03.949
+Detalle, estados y eliminación de citas.
+
+00:00:03.949 --> 00:00:07.741
+El detalle permite gestionar una cita concreta.
+
+00:00:07.741 --> 00:00:12.717
+Cada acción puede requerir un permiso distinto por calendario.
+
+00:00:12.717 --> 00:00:14.535
+Cómo llegar y practicar.
+
+00:00:14.535 --> 00:00:18.018
+Abra Detalle, estados y eliminación de citas.
+
+00:00:18.018 --> 00:00:24.984
+Abra una cita ficticia y distinga confirmar, cancelar y eliminar antes de usar cada acción.
+
+00:00:24.984 --> 00:00:26.088
+Abrir detalle.
+
+00:00:26.088 --> 00:00:30.820
+Pulse el evento y compruebe paciente, calendario y horario.
+
+00:00:30.820 --> 00:00:34.447
+Las acciones siguientes afectan a ese evento.
+
+00:00:34.447 --> 00:00:35.006
+Editar.
+
+00:00:35.006 --> 00:00:41.552
+Abra el formulario si necesita corregir fecha, hora, duración o datos permitidos.
+
+00:00:41.552 --> 00:00:45.384
+Guarde y compruebe la nueva posición en agenda.
+
+00:00:45.384 --> 00:00:47.056
+Pendiente y Confirmada.
+
+00:00:47.056 --> 00:00:51.852
+Seleccione el estado que corresponda a la coordinación realizada.
+
+00:00:51.852 --> 00:00:54.832
+La marca queda atribuida en el servidor.
+
+00:00:54.832 --> 00:00:56.708
+Completada y No asistió.
+
+00:00:56.708 --> 00:01:01.163
+Registre el resultado administrativo cuando corresponda.
+
+00:01:01.163 --> 00:01:04.055
+No asistió es distinto de cancelada.
+
+00:01:04.055 --> 00:01:05.100
+Cancelar cita.
+
+00:01:05.100 --> 00:01:08.682
+Use la acción de cancelación y su confirmación.
+
+00:01:08.682 --> 00:01:13.757
+Conserva el evento cancelado y no equivale a eliminarlo de la base.
+
+00:01:13.757 --> 00:01:15.957
+Marcar revisión administrativa.
+
+00:01:15.957 --> 00:01:21.564
+Indique que necesita revisión o que ya se revisó según los controles visibles.
+
+00:01:21.564 --> 00:01:24.900
+Alimenta el filtro Por revisar del directorio.
+
+00:01:24.900 --> 00:01:26.220
+Iniciar consulta.
+
+00:01:26.220 --> 00:01:30.957
+Con permiso clínico, abra la consulta vinculada al paciente.
+
+00:01:30.957 --> 00:01:34.607
+Verifique de nuevo la identidad en la libreta.
+
+00:01:34.607 --> 00:01:35.772
+Eliminar evento.
+
+00:01:35.772 --> 00:01:38.974
+Revise la confirmación del evento correcto.
+
+00:01:38.974 --> 00:01:44.360
+La eliminación es recuperable y depende de la revisión actual del evento.
+
+00:01:44.360 --> 00:01:46.279
+Actualizar ante conflicto.
+
+00:01:46.279 --> 00:01:51.518
+Si la cita cambió mientras estaba abierta, vuelva a cargar el detalle.
+
+00:01:51.518 --> 00:01:55.577
+Evita aplicar un estado o nota al paciente equivocado.
+
+00:01:55.577 --> 00:01:56.696
+Agregar a Google.
+
+00:01:56.696 --> 00:02:02.491
+Abra el enlace del evento y revise los datos antes de guardarlo en su cuenta de Google.
+
+00:02:02.491 --> 00:02:06.309
+El enlace no demuestra que el evento se haya incorporado.
+
+00:02:06.309 --> 00:02:07.940
+Sincronizar con Google.
+
+00:02:07.940 --> 00:02:15.103
+Si la cuenta está conectada y el botón aparece, solicite la sincronización y compruebe el resultado.
+
+00:02:15.103 --> 00:02:20.351
+No repita una sincronización de resultado incierto sin revisar su estado.
+
+00:02:20.351 --> 00:02:21.947
+Agregar a Apple o ICS.
+
+00:02:21.947 --> 00:02:27.606
+Descargue el archivo autorizado e impórtelo en el calendario que corresponda.
+
+00:02:27.606 --> 00:02:31.523
+El archivo puede contener datos sensibles de la cita.
+
+00:02:31.523 --> 00:02:32.758
+Cerrar detalle.
+
+00:02:32.758 --> 00:02:36.382
+Pulse X o Cerrar para regresar a la agenda.
+
+00:02:36.382 --> 00:02:39.676
+Cerrar no cambia por sí solo el estado.
+
+00:02:39.676 --> 00:02:41.054
+Acciones ausentes.
+
+00:02:41.054 --> 00:02:48.707
+Solicite al propietario revisar permisos de Ver, Crear, Editar, Cancelar y Eliminar del calendario.
+
+00:02:48.707 --> 00:02:52.993
+Poder ver una cita no concede todos los demás permisos.
+
+00:02:52.993 --> 00:02:54.811
+Compruebe lo aprendido.
+
+00:02:54.811 --> 00:03:02.635
+Tener permiso de cancelar… La respuesta correcta es: No concede automáticamente permiso de editar.
+
+00:03:02.635 --> 00:03:07.060
+Puede repetir este capítulo en Ayuda, Escuela completa.

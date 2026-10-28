@@ -1,6 +1,12 @@
 export function readableError(error) {
   const text=String(error?.message || error || 'No se pudo completar la operación.');
   const messages={
+    COURSE_REVISION_CONFLICT:'Otra persona cambió este evento. Conserve su texto y pulse Actualizar historia antes de volver a editar.',
+    INVALID_COURSE_EVENT:'Revise tipo de evento, fecha no futura y fuente o motivo. Puede dejar la fecha vacía si no se conoce.',
+    INVALID_MEDICATION_NAME:'Escriba un nombre de medicamento de al menos dos caracteres.',
+    COURSE_EVENT_ARCHIVED:'Este evento fue retirado del listado. Actualice la historia para consultar los registros disponibles.',
+    ARCHIVE_REASON_REQUIRED:'Escriba un motivo de al menos tres caracteres para retirar el evento.',
+    COURSE_EVENT_NOT_FOUND:'El evento ya no está disponible con estos datos. Actualice la historia.',
     SUBSCRIPTION_REQUIRED:'Seleccione o renueve un plan para guardar registros. Puede consultar la información existente.',
     REVISION_CONFLICT:'Otra persona modificó este registro. Sus cambios no se sobrescribieron. Copie sus anotaciones y recargue los datos antes de continuar.',
     APPOINTMENT_NOT_FOUND:'El evento ya no está disponible. Actualice la agenda.',

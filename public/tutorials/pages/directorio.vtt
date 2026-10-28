@@ -1,0 +1,133 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.699
+Capítulo.
+
+00:00:00.699 --> 00:00:03.497
+Directorio y búsqueda de pacientes.
+
+00:00:03.497 --> 00:00:07.461
+Busque primero para evitar expedientes duplicados.
+
+00:00:07.461 --> 00:00:13.212
+El directorio consulta la base completa y presenta resultados en páginas.
+
+00:00:13.212 --> 00:00:14.846
+Cómo llegar y practicar.
+
+00:00:14.846 --> 00:00:17.636
+Abra Directorio y búsqueda de pacientes.
+
+00:00:17.636 --> 00:00:25.464
+Busque un paciente ficticio en el recorrido seguro y explique por qué debe probar Todos antes de crear otra ficha.
+
+00:00:25.464 --> 00:00:26.630
+Buscar paciente.
+
+00:00:26.630 --> 00:00:33.114
+Escriba una parte del nombre o teléfono; espere el resultado antes de volver a escribir.
+
+00:00:33.114 --> 00:00:37.631
+La consulta no se limita a las tarjetas de la página visible.
+
+00:00:37.631 --> 00:00:38.354
+Recientes.
+
+00:00:38.354 --> 00:00:44.000
+Seleccione la cohorte de actividad reciente y lea la fecha de corte mostrada.
+
+00:00:44.000 --> 00:00:48.198
+La fecha de actividad no equivale a la fecha de creación.
+
+00:00:48.198 --> 00:00:48.639
+Todos.
+
+00:00:48.639 --> 00:00:52.602
+Use Todos cuando no encuentre a alguien en Recientes.
+
+00:00:52.602 --> 00:00:57.886
+Un expediente antiguo puede existir aunque no tenga actividad reciente.
+
+00:00:57.886 --> 00:00:58.871
+Sin actividad.
+
+00:00:58.871 --> 00:01:05.134
+Seleccione Sin actividad para localizar expedientes sin una actividad válida registrada.
+
+00:01:05.134 --> 00:01:11.537
+Esto no significa que la persona no haya sido atendida: puede faltar evidencia utilizable.
+
+00:01:11.537 --> 00:01:14.045
+En esta página y total no archivado.
+
+00:01:14.045 --> 00:01:18.853
+Lea el contador de tarjetas y el total del consultorio por separado.
+
+00:01:18.853 --> 00:01:23.799
+El contador de la página no representa todos los pacientes de la base.
+
+00:01:23.799 --> 00:01:24.564
+Archivados.
+
+00:01:24.564 --> 00:01:30.473
+Abra la vista de archivados para consultar expedientes retirados del listado activo.
+
+00:01:30.473 --> 00:01:34.991
+Archivar conserva historia y no equivale a destruir al paciente.
+
+00:01:34.991 --> 00:01:36.645
+Tarjeta del paciente.
+
+00:01:36.645 --> 00:01:40.976
+Compare nombre y contacto y pulse la tarjeta correcta.
+
+00:01:40.976 --> 00:01:44.599
+Se carga ese expediente por su identificador.
+
+00:01:44.599 --> 00:01:46.096
+Anterior y siguiente.
+
+00:01:46.096 --> 00:01:50.445
+Avance o retroceda en la paginación conservando los filtros.
+
+00:01:50.445 --> 00:01:55.721
+La ausencia de una tarjeta en esta página no implica que se haya borrado.
+
+00:01:55.721 --> 00:01:56.871
+Nuevo paciente.
+
+00:01:56.871 --> 00:02:00.167
+Pulse después de buscar nombre y teléfono.
+
+00:02:00.167 --> 00:02:02.544
+Complete los datos requeridos.
+
+00:02:02.544 --> 00:02:08.753
+La base rechaza un duplicado activo con el mismo nombre y teléfono normalizados.
+
+00:02:08.753 --> 00:02:10.814
+Abrir expediente existente.
+
+00:02:10.814 --> 00:02:17.226
+Si el formulario detecta coincidencia, elija la ficha existente y revise sus datos.
+
+00:02:17.226 --> 00:02:21.730
+Evita repartir notas y medicamentos entre dos expedientes.
+
+00:02:21.730 --> 00:02:22.583
+Reintentar.
+
+00:02:22.583 --> 00:02:27.314
+Si falla la búsqueda, compruebe conexión y pulse Reintentar.
+
+00:02:27.314 --> 00:02:31.812
+Un error de carga no demuestra que el paciente no exista.
+
+00:02:31.812 --> 00:02:33.588
+Compruebe lo aprendido.
+
+00:02:33.588 --> 00:02:41.847
+Si un paciente no aparece en Recientes… La respuesta correcta es: Buscar en Todos y comprobar el contacto.
+
+00:02:41.847 --> 00:02:46.169
+Puede repetir este capítulo en Ayuda, Escuela completa.

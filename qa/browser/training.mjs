@@ -57,8 +57,11 @@ try {
     await login(page, role);
     await page.getByRole('button', { name: 'Ayuda', exact: true }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab',{name:'Video de esta pantalla',exact:true}).click();
     const video = dialog.locator('video.training-video');
-    assert.match(await video.getAttribute('src'), role === 'secretary' ? /secretaria\.webm$/ : /doctor\.webm$/);
+    assert.match(await video.getAttribute('src'), /pages\/inicio\.mp4$/);
+    await page.waitForFunction(()=>document.querySelector('video track')?.readyState===2);
+    assert.ok(await video.locator('track').count());
     const media = await video.evaluate(element => new Promise((resolve, reject) => {
       if (element.readyState >= 1) return resolve({ duration: element.duration, width: element.videoWidth });
       element.addEventListener('loadedmetadata', () => resolve({ duration: element.duration, width: element.videoWidth }), { once: true });

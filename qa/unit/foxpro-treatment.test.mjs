@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {explicitVisitDate,foxproDatedSections,recordedSchedule,documentedTreatmentSignals} from '../../src/domain/foxpro-treatment.js';
+test('FoxPro chronology uses explicit visit headings without inventing start or stop dates',()=>{
+ assert.equal(explicitVisitDate('* Cita del 5 de mayo de 2025'),'2025-05-05');
+ assert.equal(explicitVisitDate('Cita 17 de agosto de 1999'),'1999-08-17');
+ assert.equal(explicitVisitDate('Consulta 21/09/2026'),'2026-09-21');
+ assert.equal(explicitVisitDate('Próxima cita: 5 de mayo de 2025'),null);
+ assert.equal(explicitVisitDate('Cita programada 5 de mayo de 2025'),null);
+ assert.equal(explicitVisitDate('Cita del 31 de febrero de 2025'),null);
+ const sections=foxproDatedSections('* Cita del 5 de mayo de 2025\nFármaco QA 10 mg. cada noche\n* Cita del 8 de junio de 2025\nSe suspendió Fármaco QA.\n* Cita del 10 de julio de 2025\nOtro medicamento','farmaco qa');
+ assert.deepEqual(sections.map(x=>x.date),['2025-05-05','2025-06-08']);
+ assert.match(sections[1].text,/suspendió/);
+ assert.equal(recordedSchedule({excerpt:'Fármaco QA 10 mg. 1 por la noche'}),'1 por la noche');
+ assert.equal(recordedSchedule({excerpt:'Fármaco QA 10 mg'}),null);
+ assert.deepEqual(documentedTreatmentSignals('* Cita del 8 de junio de 2025\nSe suspendió Fármaco QA.','farmaco qa').map(x=>[x.type,x.date]),[['stop_instruction','2025-06-08']]);
+ assert.equal(documentedTreatmentSignals('No se suspende Fármaco QA. Si hay mareos, se suspende Fármaco QA. Se suspendió Otro Fármaco.','farmaco qa').length,0);
+ const scheduled='* Cita del 5 de mayo de 2025\nOtro medicamento\nPróxima cita 5 de junio de 2025\nSe inicia Fármaco QA.';
+ assert.equal(foxproDatedSections(scheduled,'farmaco qa').length,0);
+ assert.equal(documentedTreatmentSignals(scheduled,'farmaco qa','2025-05-05').length,0);
+});

@@ -6,7 +6,7 @@
   "description": "Linkare: cuentas individuales, equipo del consultorio, registros privados y planes de suscripción.",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-source.mjs && vite build && node scripts/check-dist.mjs",
+    "build": "node scripts/check-source.mjs && node scripts/build-training-manual.mjs && vite build && node scripts/check-dist.mjs",
     "preview": "vite preview",
     "test": "node scripts/test.mjs",
     "check:syntax": "node scripts/check-source.mjs",

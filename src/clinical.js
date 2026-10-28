@@ -632,8 +632,9 @@ export function changeMedicationDose(data, patientId, draft) {
   return { data: next };
 }
 
-export function setMedicationStatus(data, patientId, medicationId, status, reason = '') {
-  const date = nowIso();
+export function setMedicationStatus(data, patientId, medicationId, status, reason = '', effectiveDate = null) {
+  const date = effectiveDate ? clinicalDateIso(effectiveDate) : nowIso();
+  if(new Date(date)>new Date())throw new Error('La fecha efectiva del cambio no puede ser futura.');
   const normalizedStatus = ({held:'suspended',stopped:'discontinued'})[status] || status;
   const actor = data.settings?.activeUserId || null;
   const next = updatePatient(data, patientId, patient => {

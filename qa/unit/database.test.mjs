@@ -35,6 +35,7 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261028055212_mark_merged_current_quality.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261028060503_verify_foxpro_medication_sources.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261028060544_group_foxpro_prescription_prefix.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261028212050_medication_course_history.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -732,5 +733,32 @@ test('DB: a current duplicate keeps the newer regimen and preserves older record
  assert.equal(prior[0].clinical.medications[0].dose,'10 mg');
  await actor('secretary');
  await denied(()=>db.query('select public.linkare_merged_clinical_history_v1($1,$2)',[org,target]));
+ await actor('owner');
+});
+
+test('DB: treatment course separates FoxPro documentation from real dates and audits corrections',async()=>{
+ await actor('owner');
+ const patient='merge-current-new',name='Tratamiento QA';
+ const read=async()=>(await db.query('select public.linkare_medication_course_v1($1,$2,$3,null) data',[org,patient,name])).rows[0].data;
+ const saveEvent=async event=>(await db.query('select public.linkare_save_medication_course_v1($1,$2,$3,$4::jsonb) data',[org,patient,name,JSON.stringify(event)])).rows[0].data;
+ const before=(await db.query('select public.linkare_patient_detail_v1($1,$2) data',[org,patient])).rows[0].data.patient;
+ let course=await read();assert.equal(course.latestKnownStop,null);assert.equal(course.earliestKnownStart,null);
+ const start=await saveEvent({type:'start',date:'2020-01-10',dose:'10 mg',frequency:'cada noche',route:'oral',note:'Inicio documentado en receta de origen',expectedRevision:0});
+ const replay={id:'00000000-0000-4000-8000-000000000099',type:'note',date:'',note:'Reintento idempotente de prueba',expectedRevision:0};
+ await saveEvent(replay);assert.equal((await saveEvent(replay)).duplicate,true);
+ const groups=(await db.query('select public.linkare_medication_course_groups_v1($1,$2,null) data',[org,patient])).rows[0].data;assert.equal(groups.items.length,1);
+ const stop=await saveEvent({type:'stop',date:'2021-06-12',note:'Final documentado por el profesional',expectedRevision:0});
+ const unknown=await saveEvent({type:'note',date:'',note:'Fuente con fecha desconocida',expectedRevision:0});
+ course=await read();assert.equal(course.earliestKnownStart,'2020-01-10');assert.equal(course.latestKnownStop,'2021-06-12');
+ assert.equal(course.items.find(i=>i.eventId===unknown.id).date,null);
+ await saveEvent({id:start.id,type:'start',date:'2020-01-11',frequency:'cada 12 horas',note:'Fecha corregida cotejando la receta',expectedRevision:1});
+ await assert.rejects(()=>saveEvent({id:start.id,type:'start',note:'Versión obsoleta',expectedRevision:1}),/COURSE_REVISION_CONFLICT/);
+ await saveEvent({id:stop.id,archived:true,reason:'Registro añadido por error',expectedRevision:1});
+ course=await read();assert.equal(course.earliestKnownStart,'2020-01-11');assert.equal(course.latestKnownStop,null);
+ const after=(await db.query('select public.linkare_patient_detail_v1($1,$2) data',[org,patient])).rows[0].data.patient;
+ assert.deepEqual(after.medications,before.medications);assert.deepEqual(after.prescriptions,before.prescriptions);
+ await actor('secretary');await denied(()=>read());await denied(()=>saveEvent({type:'note',note:'No permitido',expectedRevision:0}));
+ await actor('other');await denied(()=>read());
+ await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from linkare_private.medication_course_audit_v1 where event_id=$1',[start.id])).rows[0].n,2);
  await actor('owner');
 });
