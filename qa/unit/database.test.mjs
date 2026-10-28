@@ -33,6 +33,8 @@ before(async()=>{
  await db.exec(fs.readFileSync('supabase/migrations/20261027144440_normalize_historical_medication_group_names.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261028054604_merge_current_duplicate_patients.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261028055212_mark_merged_current_quality.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261028060503_verify_foxpro_medication_sources.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261028060544_group_foxpro_prescription_prefix.sql','utf8'));
  for(const [name,id] of Object.entries(ids))await db.query('insert into auth.users values($1,$2,now(),$3)',[id,name+'@example.invalid',JSON.stringify({clinic_name:'QA '+name,full_name:name})]);
  await actor('owner');org=(await db.query('select public.linkare_bootstrap_v3(null) id')).rows[0].id;
  calendarIds=Object.fromEntries((await db.query('select code,id from public.linkare_calendars_v1 where organization_id=$1',[org])).rows.map(row=>[row.code,row.id]));
@@ -281,9 +283,9 @@ test('DB: historical medication mentions stay source-linked, idempotent and invi
  assert.equal((await apply()).rows[0].data.accepted,2);assert.equal((await apply()).rows[0].data.accepted,0);
  await assert.rejects(()=>db.query('select public.linkare_legacy_medication_apply_v1($1,$2,$3,$4::jsonb)',[org,batch,backup,JSON.stringify([{...item,sourceTextSha:'0'.repeat(64),id:'61000000-0000-5000-8000-000000000015'}])]),/HISTORY_SOURCE_MISMATCH/);
  assert.equal((await db.query('select public.linkare_legacy_medication_verify_v1($1,$2,$3) data',[org,batch,backup])).rows[0].data.ok,true);
- await actor('owner');const page=(await db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20) data',[org,patient])).rows[0].data;assert.equal(page.items.length,2);assert.equal(page.items[0].reviewStatus,'unreviewed');
+ await actor('owner');const page=(await db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20) data',[org,patient])).rows[0].data;assert.equal(page.items.length,2);assert.equal(page.items[0].reviewStatus,'unreviewed');assert.equal(page.items[0].sourceVerified,true);
  const grouped=(await db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20) data',[org,patient])).rows[0].data;
- assert.equal(grouped.items.length,1);assert.equal(grouped.items[0].mentionCount,2);assert.equal(grouped.items[0].strengthText,'40 mg');assert.equal(grouped.items[0].lastSeenOn,'2020-01-15');assert.equal(grouped.items[0].reviewStatus,'historical_unverified');assert.equal(grouped.hasMore,false);
+ assert.equal(grouped.items.length,1);assert.equal(grouped.items[0].mentionCount,2);assert.equal(grouped.items[0].strengthText,'40 mg');assert.equal(grouped.items[0].lastSeenOn,'2020-01-15');assert.equal(grouped.items[0].reviewStatus,'historical_unverified');assert.equal(grouped.items[0].sourceVerified,true);assert.equal(grouped.hasMore,false);
  const summary=(await db.query('select public.linkare_legacy_visit_summary_v1($1,$2) data',[org,patient])).rows[0].data;assert.equal(summary.markedConsultations,1);assert.equal(summary.lastMarkedConsultationOn,'2020-01-15');
  assert.equal((await db.query("select count(*)::int n from public.linkare_records where organization_id=$1 and kind='patient_clinical' and id=$2",[org,patient])).rows[0].n,0);
  await permissions('secretary',{patientsView:true,clinicalView:true});await denied(()=>db.query('select public.linkare_legacy_medication_page_v1($1,$2,null,20)',[org,patient]));await denied(()=>db.query('select public.linkare_legacy_medication_summary_v1($1,$2,null,20)',[org,patient]));
@@ -645,6 +647,7 @@ test('DB: correcting and archiving a historical medication group preserves the s
  let group=(await page()).find(item=>item.nameKey===nameKey);
  assert.equal(group.name,'Nombre corregido');assert.equal(group.strengthText,'20 mg');
  assert.equal(group.reviewStatus,'historical_unverified');
+ assert.equal(group.sourceVerified,false);
  await edit({archived:true,reason:'Registro duplicado'});
  group=(await page()).find(item=>item.nameKey===nameKey);
  assert.equal(group.archived,true);assert.equal(group.archiveReason,'Registro duplicado');
@@ -673,6 +676,24 @@ test('DB: accented punctuation variants share one unverified historical card',as
  assert.equal(groups.length,1);assert.equal(groups[0].mentionCount,2);
  assert.equal(groups[0].name,'Nombre corregido');
  assert.equal(groups[0].reviewStatus,'historical_unverified');
+});
+
+test('DB: FoxPro Rp prefix does not duplicate a medication card or alter source',async()=>{
+ await db.exec('reset role');
+ const history='00000000-0000-4000-8000-000000000092';
+ const mention='00000000-0000-4000-8000-000000000098';
+ const batch='00000000-0000-4000-8000-000000000091';
+ await db.query("insert into linkare_private.legacy_medication_mentions_v1(organization_id,id,batch_id,patient_id,history_id,source_text_sha,source_line,name,strength_text,source_excerpt,extraction_method) values($1,$2,$3,'merge-target',$4,repeat('e',64),3,'Rp. Medicamento ficticio','10 mg','Texto de origen intacto','synthetic')",[org,mention,batch,history]);
+ await actor('owner');
+ const items=(await db.query("select public.linkare_legacy_medication_summary_v1($1,'merge-target',null,20) data",[org])).rows[0].data.items;
+ const groups=items.filter(item=>item.nameKey==='medicamento ficticio');
+ assert.equal(groups.length,1);assert.equal(groups[0].mentionCount,3);
+ assert.equal(groups[0].name,'Nombre corregido');
+ assert.equal(groups[0].sourceVerified,true);
+ await db.exec('reset role');
+ const original=(await db.query('select name,source_excerpt from linkare_private.legacy_medication_mentions_v1 where id=$1',[mention])).rows[0];
+ assert.equal(original.name,'Rp. Medicamento ficticio');
+ assert.equal(original.source_excerpt,'Texto de origen intacto');
 });
 
 test('DB: a current duplicate keeps the newer regimen and preserves older records',async()=>{

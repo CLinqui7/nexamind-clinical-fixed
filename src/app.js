@@ -272,6 +272,13 @@ function Card({ children, className = '', title, subtitle, action, tour = null }
 }
 
 const hasLegacyHistory=patient=>['historical','merged_current'].includes(patient?.dataQuality)||patient?.hasLegacyRecord===true;
+const historicalMedicationBadge=item=>item.reviewStatus==='confirmed_current'
+  ?{tone:'success',label:'Uso actual confirmado por médico'}
+  :item.reviewStatus==='not_current'
+    ?{tone:'neutral',label:'Registrado en FoxPro · no actual'}
+    :item.sourceVerified
+      ?{tone:'blue',label:'Confirmado en FoxPro'}
+      :{tone:'warning',label:'Pendiente de cotejo de origen'};
 
 function Sparkline({ values = [], tone = 'purple' }) {
   if (!values.length) return null;
@@ -3007,14 +3014,14 @@ class App extends React.Component {
     const canReview=this.can('clinicalView')&&this.can('medicationsManage')&&['owner','doctor'].includes(this.activeUser()?.role);
     const activeItems=(state.items||[]).filter(item=>!item.archived);
     const archivedItems=(state.items||[]).filter(item=>item.archived);
-    return html`<${Card} className="span-12" title="Medicamentos históricos importados" subtitle="Agrupados por nombre registrado en FoxPro. La concentración y la indicación corresponden a la última mención fechada disponible, no a una dosis o tratamiento vigente.">
+    return html`<${Card} className="span-12" title="Medicamentos del historial FoxPro" subtitle="Cada tarjeta reúne las menciones de un medicamento en el expediente anterior. La etiqueta «Confirmado en FoxPro» acredita el texto de origen y la asociación con el paciente; la fecha, dosis y uso actual pueden ser distintos.">
       ${state.error?html`<div className="sync-banner danger" role="alert">No se pudo cargar el resumen histórico. <button onClick=${()=>this.loadHistoricalMedicationGroups(patient.id)}>Reintentar</button></div>`:null}
       ${state.loading&&!state.items?.length?html`<p>Cargando medicamentos históricos…</p>`:null}
       ${state.loaded&&!state.items?.length?html`<p>Sin nombres de medicamentos identificables en las anotaciones. Revise el texto original en “Sistema anterior”.</p>`:null}
       ${state.loaded&&!activeItems.length&&archivedItems.length?html`<p>Todos los medicamentos de esta página fueron archivados del listado. El texto de origen sigue disponible.</p>`:null}
       ${activeItems.length?html`<div className="medication-list">${activeItems.map(item=>html`
         <article key=${item.nameKey} className="medication-card medication-inactive">
-          <div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">Sistema anterior · ${item.mentionCount} mención(es)</span><h3>${item.name}</h3><p>${item.strengthText||'Concentración no registrada'}</p></div></div><${Badge} tone=${item.reviewStatus==='confirmed_current'?'success':item.reviewStatus==='not_current'?'neutral':'warning'}>${item.reviewStatus==='confirmed_current'?'Confirmado por médico':item.reviewStatus==='not_current'?'Revisado: no actual':'Histórico sin verificar'}</${Badge}></div>
+          <div className="medication-card-head"><div className="inline-title"><span className="medication-icon"><${Icon} name="medication"/></span><div><span className="eyebrow">Sistema anterior · ${item.mentionCount} mención(es)</span><h3>${item.name}</h3><p>${item.strengthText||'Concentración no registrada'}</p></div></div><${Badge} tone=${historicalMedicationBadge(item).tone}>${historicalMedicationBadge(item).label}</${Badge}></div>
           <div className="medication-info-grid"><div><span>Primera fecha conservada</span><b>${item.firstSeenOn?formatDate(item.firstSeenOn):'No consta'}</b></div><div><span>Última fecha conservada</span><b>${item.lastSeenOn?formatDate(item.lastSeenOn):'No consta'}</b></div></div>
           ${item.instructionText?html`<div className="notes-box"><span>Indicación anotada en origen</span><p>${item.instructionText}</p></div>`:null}
           <div className="notes-box"><span>Texto de origen</span><p>${item.sourceExcerpt}</p></div>
@@ -3028,11 +3035,11 @@ class App extends React.Component {
 
   renderHistoricalMedicationMentions(patient){
     const state=this.state.historicalMedicationsByPatient[patient.id]||{items:[],loading:false,loaded:false,error:'',hasMore:false};
-    return html`<${Card} className="span-12" title="Menciones de medicamentos en FoxPro" subtitle="Extraídas de anotaciones históricas; requieren revisión médica. No son tratamiento activo, receta ni dosis actual.">
+    return html`<${Card} className="span-12" title="Menciones de medicamentos en FoxPro" subtitle="Cada mención muestra si fue cotejada con el texto original. Estas anotaciones conservan la historia; no son una receta ni una dosis actual.">
       ${state.error?html`<div className="sync-banner danger" role="alert">No se pudo cargar esta sección. <button onClick=${()=>this.loadHistoricalMedications(patient.id)}>Reintentar</button></div>`:null}
       ${state.loading&&!state.items?.length?html`<p>Cargando menciones históricas…</p>`:null}
       ${state.loaded&&!state.items?.length?html`<p>No se detectaron menciones estructurables. Revise las anotaciones originales en “Sistema anterior”.</p>`:null}
-      ${(state.items||[]).length?html`<div className="admin-appointment-list">${state.items.map(mention=>html`<div key=${mention.id}><div><b>${mention.name} · ${mention.strengthText}</b><small>${mention.occurredOn?formatDate(mention.occurredOn):'Fecha no registrada'} · fuente histórica</small>${mention.instructionText?html`<small>Instrucción anotada: ${mention.instructionText}</small>`:null}<small>Texto de origen: ${mention.sourceExcerpt}</small></div><${Badge} tone=${mention.reviewStatus==='confirmed_current'?'success':mention.reviewStatus==='not_current'?'neutral':'warning'}>${mention.reviewStatus==='confirmed_current'?'Confirmado por médico':mention.reviewStatus==='not_current'?'Revisado: no actual':'Sin verificar'}</${Badge}>${this.can('clinicalView')&&this.can('medicationsManage')&&['owner','doctor'].includes(this.activeUser()?.role)&&mention.reviewStatus==='unreviewed'?html`<${Button} tone="secondary" icon="check" onClick=${()=>this.openHistoricalMedicationReview(patient,mention)}>Verificar medicamento</${Button}>`:null}</div>`)}</div>`:null}
+      ${(state.items||[]).length?html`<div className="admin-appointment-list">${state.items.map(mention=>html`<div key=${mention.id}><div><b>${mention.name} · ${mention.strengthText}</b><small>${mention.occurredOn?formatDate(mention.occurredOn):'Fecha no registrada'} · fuente histórica</small>${mention.instructionText?html`<small>Instrucción anotada: ${mention.instructionText}</small>`:null}<small>Texto de origen: ${mention.sourceExcerpt}</small></div><${Badge} tone=${historicalMedicationBadge(mention).tone}>${historicalMedicationBadge(mention).label}</${Badge}>${this.can('clinicalView')&&this.can('medicationsManage')&&['owner','doctor'].includes(this.activeUser()?.role)&&mention.reviewStatus==='unreviewed'?html`<${Button} tone="secondary" icon="check" onClick=${()=>this.openHistoricalMedicationReview(patient,mention)}>Confirmar uso actual</${Button}>`:null}</div>`)}</div>`:null}
       ${state.hasMore?html`<${Button} tone="secondary" disabled=${state.loading} onClick=${()=>this.loadHistoricalMedications(patient.id,true)}>${state.loading?'Cargando…':'Ver más menciones'}</${Button}>`:null}
       <p className="clinical-footnote">Puede haber menciones no reconocidas o instrucciones ambiguas. Consulte siempre el texto original antes de incorporar un medicamento al tratamiento vigente.</p>
     </${Card}>`;

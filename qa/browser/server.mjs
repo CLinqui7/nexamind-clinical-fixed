@@ -24,6 +24,8 @@ await db.exec(fs.readFileSync(root+'/supabase/migrations/20261027144042_editable
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261027144440_normalize_historical_medication_group_names.sql','utf8'));
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261028054604_merge_current_duplicate_patients.sql','utf8'));
 await db.exec(fs.readFileSync(root+'/supabase/migrations/20261028055212_mark_merged_current_quality.sql','utf8'));
+await db.exec(fs.readFileSync(root+'/supabase/migrations/20261028060503_verify_foxpro_medication_sources.sql','utf8'));
+await db.exec(fs.readFileSync(root+'/supabase/migrations/20261028060544_group_foxpro_prescription_prefix.sql','utf8'));
 await db.exec(`insert into auth.users values('10000000-0000-4000-8000-000000000001','owner@example.invalid',now(),'{"clinic_name":"QA Isolated","full_name":"QA Owner"}'),('10000000-0000-4000-8000-000000000002','other@example.invalid',now(),'{"clinic_name":"QA Other","full_name":"QA Other"}');`);
 await db.exec(`select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',false);select public.linkare_bootstrap_v3(null);`);
 for(const [name,role,id] of [['doctor','psychiatrist',3],['nurse','clinical_assistant',4],['secretary','secretary',5]]){
