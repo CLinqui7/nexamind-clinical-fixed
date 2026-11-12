@@ -34,7 +34,8 @@ test('the daily agenda print view is A4, chronological and escapes clinical text
   {appointmentId:'earlier',patientName:'Paciente temprano',lastAppointmentOn:'2026-09-24',start:'2026-10-06T14:00:00Z',end:'2026-10-06T14:45:00Z',medications:[],agendaNote:''},
  ]});
  assert.match(html,/@page\{size:A4/);
- assert.match(html,/onclick="window\.print\(\)"/);
+ assert.match(html,/data-print-agenda/);
+ assert.doesNotMatch(html,/<script>|onclick=/);
  assert.ok(html.indexOf('Paciente temprano')<html.indexOf('Paciente &lt;img src=x&gt;'));
  assert.match(html,/Consulta &lt;privada&gt;/);
  assert.match(html,/Medicina &lt;script&gt;/);

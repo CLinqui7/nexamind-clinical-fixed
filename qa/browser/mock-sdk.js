@@ -20,6 +20,7 @@ export function createClient(){return {
  resetPasswordForEmail:async(email)=>{q.calls.push({auth:'recover',email});return {error:null};},
  resend:async()=>({error:null}),updateUser:async()=>({error:null}),signOut:async()=>{q.session=null;q.callbacks.forEach(cb=>cb('SIGNED_OUT'));return {error:null};}},
  rpc:async(name,args)=>{q.calls.push({rpc:name,args:structuredClone(args)});
+ if(name==='linkare_record_activity_v1')return {data:true,error:null};
  if(name==='linkare_bootstrap_v3')return {data:ORG,error:null};
  if(name==='linkare_load_state_v3')return {data:{organizationId:ORG,userId:member(q.role).id,memberRole:q.role,entitled:true,payload:payload(),revisions:[...revisions].map(([k,v])=>({kind:k.split(':')[0],id:k.slice(k.indexOf(':')+1),revision:v}))},error:null};
  if(name==='linkare_save_changes_v3'){

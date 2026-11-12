@@ -16,6 +16,24 @@ async function rpc(name,args={},options={}) {
   if(error) { const e=new Error(readableError(error));e.code=error.code;e.original=error.message;throw e; }
   return data;
 }
+
+export function recordActivity(organizationId, requestId, action, agendaDate = null) {
+  return rpc('linkare_record_activity_v1', {
+    org: organizationId,
+    p_request_id: requestId,
+    p_action: action,
+    p_agenda_date: agendaDate,
+  });
+}
+
+export function loadActivityReport({refresh = false, before = null, action = null, asOf = null, signal} = {}) {
+  return rpc('linkare_activity_report_v1', {
+    p_refresh: refresh,
+    p_before: before,
+    p_action: action,
+    p_as_of: asOf,
+  }, {signal});
+}
 export async function signUpProduction({fullName,clinicName,email,password}) {
   const client=assertSupabaseConfigured();
   if(!String(fullName||'').trim() || !String(clinicName||'').trim())throw new Error('Complete su nombre y el nombre del consultorio.');

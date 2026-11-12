@@ -1,4 +1,5 @@
 import {LearningVideo} from './learning-video.js';
+import {ActivityReport} from './activity-report.js';
 import { assignablePermissions, calendarPermissionAllowed, permissionAllowed, PERMISSION_KEYS, ROLE_LABELS, OWNER_ONLY, defaultPermissions, changePermission } from './domain/permissions.js';
 import { formatConsultationFee, patientConsultationFee, patientDisplayName } from './domain/consultation-fee.js';
 import React from 'react';
@@ -118,6 +119,8 @@ import {
   captureReportedMedication,
   loadDailyAgenda,
   loadPrintableAgenda,
+  loadActivityReport,
+  recordActivity,
   saveAgendaNote,
   loadPatientDirectory,
   loadPatientDetail,
@@ -402,7 +405,7 @@ class App extends React.Component {
     this.authEpoch=0; this.mounted=false; this.persistTask=null;this.directoryCache=new PatientPageCache(4);this.directoryRequest=0;this.agendaRequest=0;this.secretaryAgendaRequest=0;this.agendaSheetRequest=0;this.profileAssetsRequest=0;this.profileAssetsPromise=null;
     const data=createEmptyData();
     this.state={
-      data,authenticatedUserId:null,authView:'login',
+      data,authenticatedUserId:null,authView:'login',activityReport:null,
       loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       passwordDraft:{password:'',confirmPassword:''},authNotice:'',loginError:'',loginBusy:false,
@@ -429,6 +432,17 @@ class App extends React.Component {
   applyProductionSession = async (session, requestedOrganizationName=null) => {
     const epoch=++this.authEpoch;
     this.tourSnapshot=null;
+    if (session.user.app_metadata?.linkare_activity_viewer === true) {
+      const activityReport = await loadActivityReport();
+      if (epoch !== this.authEpoch || !this.mounted) return;
+      clearTimeout(this.loadingTimer);
+      this.setState({
+        activityReport, authenticatedUserId: session.user.id, data: createEmptyData(),
+        remoteOrganizationId: null, remoteReady: false, productionLoading: false,
+        loginBusy: false, loginError: '', loginDraft: {email: '', password: '', showPassword: false},
+      });
+      return;
+    }
     const remote=await bootstrapAndLoadState(null,requestedOrganizationName);
     if(epoch!==this.authEpoch || !this.mounted)return;
     const data=normalizeData(remote.payload);
@@ -439,11 +453,13 @@ class App extends React.Component {
     const permissions=Object.fromEntries(PERMISSION_KEYS.map(k=>[k,permissionAllowed(user,k)]));
     setPersistenceBaseline(remote.organizationId,data,remote.revisions,permissions);
     clearTimeout(this.loadingTimer);
-    this.setState({data,authenticatedUserId:user.id,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
+    this.activityEntryId ||= crypto.randomUUID();
+    this.setState({data,authenticatedUserId:user.id,activityReport:null,remoteOrganizationId:remote.organizationId,remoteReady:true,subscriptionWritable:remote.entitled===true,complimentaryAccess:remote.complimentaryAccess===true,remoteSaveStatus:'saved',saveError:'',
       productionLoading:false,loginBusy:false,loginError:'',authNotice:'',loginDraft:{email:'',password:'',showPassword:false},
       registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},
       selectedPatientId:null,selectedCalendarIds:data.calendars.filter(calendar=>calendarPermissionAllowed(user,calendar,'View')).map(calendar=>calendar.id),view:'dashboard',modal:null,patientTab:'overview',activeEncounter:null,tourActive:false,tourSandbox:false,legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},projection:remote.projection,agendaPdfBusy:false,agendaPrintBusy:false,
       patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),profileAssetsLoaded:false,profileAssetsLoading:false},()=>{
+        this.recordUsage('access', null, this.activityEntryId);
         if(user.role==='owner'){this.loadSubscriptionInvoices();this.refreshTeam();}
         this.directoryCache.clear();this.loadIntegrationStatus();this.refreshDailyAgenda();this.refreshPatientDirectory({force:true});this.refreshDashboardSummary();if(this.can('appointmentsManage'))this.refreshAgendaRange();if(user.role==='secretary')this.refreshSecretaryAgenda();this.checkConsultationPrompt();
       });
@@ -584,7 +600,15 @@ class App extends React.Component {
     catch(_){if(epoch===this.authEpoch)this.setState({dailyAgendaLoading:false});}
   };
 
-  refreshAgendaSheet = async (date=this.state.agendaSheet.date) => {
+  recordUsage = (action, date = null, requestId = crypto.randomUUID()) => {
+    const {remoteOrganizationId, remoteReady, tourSandbox} = this.state;
+    if (!remoteReady || !remoteOrganizationId || tourSandbox) return;
+    recordActivity(remoteOrganizationId, requestId, action, date).catch(error => {
+      console.warn('No se registró la actividad.', error.code || 'request_failed');
+    });
+  };
+
+  refreshAgendaSheet = async (date=this.state.agendaSheet.date, recordOpen=false) => {
     if(!this.state.remoteOrganizationId||!this.can('agendaSheetView')||!this.canDoctorCalendar('View'))return;
     const epoch=this.authEpoch;const request=++this.agendaSheetRequest;
     this.setState({agendaSheetLoading:true,agendaSheetError:''});
@@ -592,13 +616,14 @@ class App extends React.Component {
       const agenda=await loadPrintableAgenda(this.state.remoteOrganizationId,date);
       if(epoch!==this.authEpoch||request!==this.agendaSheetRequest)return;
       this.setState({agendaSheet:agenda,agendaSheetLoading:false,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))});
+      if (recordOpen && this.state.view === 'agenda') this.recordUsage('agenda_open', date);
     }catch(error){if(epoch===this.authEpoch&&request===this.agendaSheetRequest)this.setState({agendaSheetLoading:false,agendaSheetError:readableError(error)});}
   };
 
   changeAgendaSheetDate = date => {
     const dirty=(this.state.agendaSheet.items||[]).some(item=>(this.state.agendaNoteDrafts[item.appointmentId]??'')!==(item.agendaNote||''));
     if(dirty&&!window.confirm('Hay notas de agenda sin guardar. ¿Cambiar de fecha y descartarlas?'))return;
-    this.setState(previous=>({agendaSheet:{...previous.agendaSheet,date}}),()=>this.refreshAgendaSheet(date));
+    this.setState(previous=>({agendaSheet:{...previous.agendaSheet,date}}),()=>this.refreshAgendaSheet(date,true));
   };
 
   saveAgendaSheetNote = async item => {
@@ -623,6 +648,7 @@ class App extends React.Component {
       const agenda=await loadPrintableAgenda(this.state.remoteOrganizationId,date);
       if(epoch!==this.authEpoch)return;
       await downloadDailyAgendaPdf(this.state.data.organization,agenda);
+      if (epoch === this.authEpoch) this.recordUsage('agenda_download', date);
       if(epoch===this.authEpoch)this.setState({agendaSheet:agenda,agendaPdfBusy:false,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))},()=>this.notify('Agenda descargada en PDF.'));
     }catch(error){if(epoch===this.authEpoch)this.setState({agendaPdfBusy:false,agendaSheetError:`No se pudo descargar el PDF. ${readableError(error)}`});}
   };
@@ -648,7 +674,16 @@ class App extends React.Component {
       printWindow.document.open();
       printWindow.document.write(buildDailyAgendaPrintHtml(this.state.data.organization,agenda));
       printWindow.document.close();
+      let automaticPrint;
+      const sendToPrint = () => {
+        clearTimeout(automaticPrint);
+        if (printWindow.closed || epoch !== this.authEpoch) return;
+        this.recordUsage('agenda_print', date);
+        printWindow.print();
+      };
+      printWindow.document.querySelector('[data-print-agenda]').addEventListener('click', sendToPrint);
       printWindow.focus();
+      automaticPrint = setTimeout(sendToPrint, 180);
       if(sameDate)this.setState({agendaSheet:agenda,agendaNoteDrafts:Object.fromEntries((agenda.items||[]).map(item=>[item.appointmentId,item.agendaNote||'']))});
     }catch(error){
       if(!printWindow.closed)printWindow.close();
@@ -1070,9 +1105,10 @@ class App extends React.Component {
   setView = view => {
     const required={patients:'patientsView',patient:'patientsView',agenda:'appointmentsManage',payments:'settingsManage',analytics:'analyticsView',alerts:'alertsView',settings:'settingsManage',notebook:'consultationsManage'};
     if(required[view]&&!this.can(required[view]))return this.permissionDenied();
+    const enteringAgenda = view === 'agenda' && this.state.view !== 'agenda';
     this.setState({view,mobileNav:false,appointmentDetails:null},()=>{
       if(view==='patients'&&!this.state.patientDirectory.items.length)this.refreshPatientDirectory();
-      if(view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet();}
+      if(view==='agenda'){this.refreshAgendaRange();this.refreshAgendaSheet(undefined, enteringAgenda);}
       if(view==='dashboard'&&this.activeUser()?.role==='secretary')this.refreshSecretaryAgenda();
     });
     if(view==='payments')this.loadSubscriptionInvoices();
@@ -3865,6 +3901,7 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   render() {
     if(this.state.productionLoading)return this.renderLoading();
+    if(this.state.activityReport)return html`<${ActivityReport} initialReport=${this.state.activityReport} onLogout=${this.logoutUser}/>`;
     if(!this.state.authenticatedUserId)return html`${this.renderLogin()}<button className="login-learning-button" type="button" onClick=${()=>this.setState({publicLearning:true})}>Tutorial de acceso e invitaciones</button>${this.state.publicLearning?html`<${Modal} title="Aprender a entrar a Linkare" onClose=${()=>this.setState({publicLearning:false})} size="xl"><${LearningCenter} initialId="acceso" allowedIds=${['acceso']} identity="public"/></${Modal}>`:null}`;
     if(location.pathname!=='/' && location.pathname!=='/index.html')return this.renderStatePage('search','Página no encontrada','La dirección no corresponde a una sección de Linkare.',()=>{history.replaceState({},'','/');this.setView('dashboard');},'Ir al inicio');
     const v=this.state.view;const s=this.state.data.settings;let body;
@@ -3942,8 +3979,9 @@ ${clinicalFields ? html`<${FormField} label="Nota de actualización"><textarea r
 
   clearSessionView = () => {
     this.tourSnapshot=null;this.tourDemoPatientId=null;this.tourDemoAppointmentId=null;
+    this.activityEntryId = null;
     this.authEpoch++;this.savingForm=false;this.persistedData=null;this.directoryAbort?.abort();this.agendaAbort?.abort();this.patientLookupAbort?.abort();this.directoryCache.clear();clearTimeout(this.persistTimer);clearTimeout(this.encounterSaveIndicatorTimer);clearTimeout(this.toastTimer);clearTimeout(this.patientSearchTimer);clearTimeout(this.patientLookupTimer);clearInterval(this.encounterTimer);resetPersistence();
-    this.setState({data:createEmptyData(),authenticatedUserId:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),
+    this.setState({data:createEmptyData(),authenticatedUserId:null,activityReport:null,remoteOrganizationId:null,remoteReady:false,subscriptionWritable:false,complimentaryAccess:false,remoteSaveStatus:'waiting',secretaryAgenda:{day:'',items:[],loading:false,error:'',loadedAt:0},dashboardNow:Date.now(),
       formSaving:false,modal:null,appointmentDetails:null,appointmentStatusBusyId:null,activeEncounter:null,appointmentPrompt:null,productionLoading:false,authView:'login',view:'dashboard',
       teamInvites:[],teamBusy:false,documentBusy:false,integrationBusy:false,wompiBusy:false,billingLoading:false,billingError:'',saveError:'',modalError:'',toast:null,search:'',selectedPatientId:null,promptDismissedFor:null,tourActive:false,tourSandbox:false,tourIndex:0,helpTab:'video',legacyHistoryByPatient:{},historicalMedicationsByPatient:{},historicalMedicationGroupsByPatient:{},historicalVisitsByPatient:{},patientDirectory:{scope:'recent',query:'',items:[],cursorStack:[null],pageIndex:0,nextCursor:null,hasMore:false,loading:false,error:'',asOf:null,cutoffDate:null},dashboardSummary:null,agendaRange:{loading:false,error:'',hasMore:false,nextCursor:null},patientLookup:{query:'',items:[],loading:false},projection:null,profileAssetsLoaded:false,profileAssetsLoading:false,agendaPdfBusy:false,agendaPrintBusy:false,passwordDraft:{password:'',confirmPassword:''},registerDraft:{fullName:'',clinicName:'',email:'',password:'',confirmPassword:'',showPassword:false},calendarStatus:{google:{connected:false},apple:{connected:false,feedUrl:''}},reminderProviders:{email:false,sms:false,whatsapp:false},wompiStatus:{state:'idle',app:null,error:''},billingData:{plans:[],subscription:null,orders:[]},loginDraft:{email:'',password:'',showPassword:false}});
   };
